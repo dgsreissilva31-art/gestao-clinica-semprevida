@@ -14,7 +14,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app', # O nome que vamos dar ao nosso módulo
+    # Removi o 'app' daqui
 ]
 
 # Configuração simples de Banco de Dados (SQLite por enquanto, depois Supabase)
