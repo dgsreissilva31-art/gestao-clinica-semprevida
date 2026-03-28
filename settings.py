@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # Chave de segurança
 SECRET_KEY = 'django-insecure-clinica-sempre-vida-ia-na-empresa'
 
-# Modo de depuração
+# Modo de depuração (True para ver erros, mude para False após finalizar)
 DEBUG = True
 
 # Permite que o link da Railway acesse o sistema
@@ -24,7 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-# Middleware (Whitenoise adicionado para arquivos estáticos)
+# Middleware (Whitenoise para arquivos estáticos na Railway)
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -56,11 +56,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'wsgi.application'
 
-# --- CONEXÃO COM O BANCO DE DADOS SUPABASE (MODO POOLER PARA RAILWAY) ---
-# Este link resolve o erro "Network is unreachable"
+# --- CONEXÃO COM O BANCO DE DADOS SUPABASE (CORRIGIDO PARA RAILWAY) ---
+# O usuário 'postgres.rslaudmbyfcxgtlbowis' é necessário para o modo Pooler
 DATABASES = {
     'default': dj_database_url.config(
-        default='postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:6543/postgres'
+        default='postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:5432/postgres'
     )
 }
 
@@ -85,5 +85,5 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Configuração para IDs de tabelas
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Configuração de Proxy para a Railway (Importante para HTTPS)
+# Configuração de Proxy para a Railway (HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
