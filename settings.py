@@ -2,14 +2,15 @@ import os
 from pathlib import Path
 import dj_database_url
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-clinica-sempre-vida-ia-na-empresa'
+SECRET_KEY = 'django-insecure-clinica-ia-naempresa'
 
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# Aplicações
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -19,6 +20,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
+# Middlewares
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -30,12 +32,13 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'urls'
+ROOT_URLCONF = 'core.urls'  # ajuste se seu projeto tiver outro nome
 
+# Templates
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -48,15 +51,16 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'wsgi.application'
+WSGI_APPLICATION = 'core.wsgi.application'  # ajuste se necessário
 
-# ✅ CONEXÃO CORRETA COM SUPABASE (DIRECT CONNECTION)
+# 🔥 BANCO DE DADOS SUPABASE (CORRETO)
 DATABASES = {
     'default': dj_database_url.parse(
         'postgresql://postgres:SUA_SENHA@db.rslaudmbyfcxgtlbowis.supabase.co:5432/postgres'
     )
 }
 
+# Validação de senha
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -64,14 +68,20 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# Idioma e timezone
 LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+# Arquivos estáticos
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Brancoise (para produção)
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Segurança (Railway)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
