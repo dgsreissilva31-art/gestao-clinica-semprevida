@@ -2,19 +2,17 @@ import os
 from pathlib import Path
 import dj_database_url
 
-# Caminho base do projeto
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Chave de segurança
-SECRET_KEY = 'django-insecure-clinica-sempre-vida-ia-na-empresa'
+SECRET_KEY = 'django-insecure-chave-clinica'
 
-# Modo de depuração (Ligado para testes)
 DEBUG = True
 
-# Permite que o link da Railway acesse o sistema
 ALLOWED_HOSTS = ['*']
 
-# Aplicações instaladas
+# ========================
+# APPS
+# ========================
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -24,7 +22,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-# Middleware (Whitenoise para arquivos estáticos na Railway)
+# ========================
+# MIDDLEWARE
+# ========================
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -36,12 +36,16 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'urls'
+ROOT_URLCONF = 'core.urls'
+WSGI_APPLICATION = 'core.wsgi.application'
 
+# ========================
+# TEMPLATES
+# ========================
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -54,27 +58,53 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'wsgi.application'
+# ========================
+# 🔥 BANCO DE DADOS (SUPABASE - POOLER CORRETO)
+# ========================
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- CONEXÃO COM O BANCO DE DADOS SUPABASE (CORRIGIDO) ---
-# O segredo aqui é o ponto final no usuário: postgres.[ID_DO_PROJETO]
-DATABASES = {
-    'default': dj_database_url.config(
-        default='postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:5432/postgres'
-    )
-}
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    }
+else:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            'postgresql://postgres.rslaudmbyfcxgtlbowis:SUA_SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres',
+            conn_max_age=600
+        )
+    }
 
-# Idioma e fuso horário
+# ========================
+# SENHAS
+# ========================
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+]
+
+# ========================
+# IDIOMA
+# ========================
 LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
-# Arquivos estáticos
-STATIC_URL = 'static/'
+# ========================
+# STATIC
+# ========================
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# ========================
+# DEFAULT
+# ========================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Configuração de Proxy para a Railway
+# ========================
+# RAILWAY HTTPS
+# ========================
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
