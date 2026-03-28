@@ -5,10 +5,10 @@ import dj_database_url
 # Caminho base do projeto
 BASE_DIR = Path(__file__).resolve().parent
 
-# Chave de segurança (Não alterar)
+# Chave de segurança
 SECRET_KEY = 'django-insecure-clinica-sempre-vida-ia-na-empresa'
 
-# Modo de depuração (Ligado para testes)
+# Modo de depuração
 DEBUG = True
 
 # Permite que o link da Railway acesse o sistema
@@ -24,7 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-# Configurações de segurança e middleware
+# Middleware (Whitenoise adicionado para arquivos estáticos)
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -36,7 +36,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Arquivo principal de rotas
 ROOT_URLCONF = 'urls'
 
 TEMPLATES = [
@@ -57,10 +56,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'wsgi.application'
 
-# --- CONEXÃO COM O BANCO DE DADOS SUPABASE ---
+# --- CONEXÃO COM O BANCO DE DADOS SUPABASE (MODO POOLER PARA RAILWAY) ---
+# Este link resolve o erro "Network is unreachable"
 DATABASES = {
     'default': dj_database_url.config(
-        default='postgresql://postgres:fZqMFxZDb0sa5aT3@db.rslaudmbyfcxgtlbowis.supabase.co:5432/postgres'
+        default='postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:6543/postgres'
     )
 }
 
@@ -78,12 +78,12 @@ TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
-# Arquivos estáticos (CSS, Imagens)
+# Arquivos estáticos
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Configuração para IDs de tabelas
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Configuração de Proxy para a Railway
+# Configuração de Proxy para a Railway (Importante para HTTPS)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
