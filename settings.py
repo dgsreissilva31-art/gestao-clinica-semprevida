@@ -2,15 +2,19 @@ import os
 from pathlib import Path
 import dj_database_url
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Caminho base do projeto
+BASE_DIR = Path(__file__).resolve().parent
 
-SECRET_KEY = 'django-insecure-clinica-ia-naempresa'
+# Chave de segurança
+SECRET_KEY = 'django-insecure-clinica-sempre-vida-ia-na-empresa'
 
+# Modo de depuração (Ligado para testes)
 DEBUG = True
 
+# Permite que o link da Railway acesse o sistema
 ALLOWED_HOSTS = ['*']
 
-# Aplicações
+# Aplicações instaladas
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -20,7 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-# Middlewares
+# Middleware (Whitenoise para arquivos estáticos na Railway)
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -32,13 +36,12 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'core.urls'  # ajuste se seu projeto tiver outro nome
+ROOT_URLCONF = 'urls'
 
-# Templates
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -51,37 +54,27 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'core.wsgi.application'  # ajuste se necessário
+WSGI_APPLICATION = 'wsgi.application'
 
-# 🔥 BANCO DE DADOS SUPABASE (CORRETO)
+# --- CONEXÃO COM O BANCO DE DADOS SUPABASE (CORRIGIDO) ---
+# O segredo aqui é o ponto final no usuário: postgres.[ID_DO_PROJETO]
 DATABASES = {
-    'default': dj_database_url.parse(
-        'postgresql://postgres:SUA_SENHA@db.rslaudmbyfcxgtlbowis.supabase.co:5432/postgres'
+    'default': dj_database_url.config(
+        default='postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:5432/postgres'
     )
 }
 
-# Validação de senha
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-]
-
-# Idioma e timezone
+# Idioma e fuso horário
 LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
 # Arquivos estáticos
-STATIC_URL = '/static/'
+STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# Brancoise (para produção)
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Segurança (Railway)
+# Configuração de Proxy para a Railway
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
