@@ -2,12 +2,16 @@ import os
 from pathlib import Path
 import dj_database_url
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Caminho base do projeto - Ajustado para estrutura simples
+BASE_DIR = Path(__file__).resolve().parent
 
-SECRET_KEY = 'django-insecure-chave-clinica'
+# Chave de segurança
+SECRET_KEY = 'django-insecure-chave-clinica-sempre-vida'
 
+# Modo de depuração
 DEBUG = True
 
+# Permite que o link da Railway acesse o sistema
 ALLOWED_HOSTS = ['*']
 
 # ========================
@@ -36,8 +40,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'core.urls'
-WSGI_APPLICATION = 'core.wsgi.application'
+# AJUSTE IMPORTANTE: Se seu arquivo no GitHub for 'urls.py', usamos 'urls'.
+# Se estiver dentro de uma pasta 'core', usamos 'core.urls'. 
+# Vou deixar 'urls' que é o padrão da sua estrutura anterior.
+ROOT_URLCONF = 'urls'
+WSGI_APPLICATION = 'wsgi.application'
 
 # ========================
 # TEMPLATES
@@ -45,7 +52,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -59,32 +66,18 @@ TEMPLATES = [
 ]
 
 # ========================
-# 🔥 BANCO DE DADOS (SUPABASE - POOLER CORRETO)
+# 🔥 BANCO DE DADOS (SUPABASE - POOLER CORRIGIDO)
 # ========================
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if DATABASE_URL:
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    }
-else:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            'postgresql://postgres.rslaudmbyfcxgtlbowis:SUA_SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres',
-            conn_max_age=600
-        )
-    }
+# Usando a senha fZqMFxZDb0sa5aT3 que você passou
+DATABASES = {
+    'default': dj_database_url.parse(
+        'postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:5432/postgres',
+        conn_max_age=600
+    )
+}
 
 # ========================
-# SENHAS
-# ========================
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-]
-
-# ========================
-# IDIOMA
+# IDIOMA E FUSO
 # ========================
 LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
@@ -92,19 +85,14 @@ USE_I18N = True
 USE_TZ = True
 
 # ========================
-# STATIC
+# STATIC (CONFIGURAÇÃO PARA RAILWAY)
 # ========================
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ========================
-# DEFAULT
+# SEGURANÇA E RAILWAY
 # ========================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# ========================
-# RAILWAY HTTPS
-# ========================
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
