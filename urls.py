@@ -299,7 +299,9 @@ def convenios_geral(request):
     return HttpResponse(base_html("Convênios", conteudo))
 
 
-# --- 8. TELA 5: GESTÃO DE EXAMES ---
+
+
+# --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM GRUPO) ---
 @csrf_exempt
 def exames_geral(request):
     mensagem = ""
@@ -312,13 +314,14 @@ def exames_geral(request):
     # Cadastro
     if request.method == "POST":
         nome = request.POST.get('nome')
+        grupo = request.POST.get('grupo')
         preparo = request.POST.get('preparo')
         valor = request.POST.get('valor')
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO exames (nome, preparo, valor_particular) VALUES (%s, %s, %s)",
-                    [nome, preparo, valor if valor else 0]
+                    "INSERT INTO exames (nome, grupo, preparo, valor_particular) VALUES (%s, %s, %s, %s)",
+                    [nome, grupo, preparo, valor if valor else 0]
                 )
             mensagem = '<div class="alert alert-success">✅ Exame cadastrado com sucesso!</div>'
         except Exception as e:
@@ -326,12 +329,12 @@ def exames_geral(request):
 
     # Busca Lista
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, preparo, valor_particular FROM exames ORDER BY nome")
+        cursor.execute("SELECT id, nome, preparo, valor_particular, grupo FROM exames ORDER BY grupo, nome")
         exames_lista = cursor.fetchall()
 
     linhas = "".join([f"""
         <tr>
-            <td><b>{ex[1]}</b></td>
+            <td><b>{ex[1]}</b><br><span class="badge bg-light text-dark border">{ex[4] if ex[4] else 'Geral'}</span></td>
             <td><small>{ex[2] if ex[2] else 'Sem preparo específico.'}</small></td>
             <td>R$ {ex[3]}</td>
             <td><a href="/exames/?delete_exame={ex[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir este exame?')"><i class="bi bi-trash"></i></a></td>
@@ -341,8 +344,9 @@ def exames_geral(request):
         <h4><i class="bi bi-microscope"></i> Cadastro de Exames</h4><hr>
         {mensagem}
         <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-8"><label class="form-label fw-bold">Nome do Exame</label><input type="text" name="nome" class="form-control" placeholder="Ex: Hemograma, Raio-X..." required></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Valor Particular (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
+            <div class="col-md-5"><label class="form-label fw-bold">Nome do Exame</label><input type="text" name="nome" class="form-control" placeholder="Ex: Hemograma" required></div>
+            <div class="col-md-4"><label class="form-label fw-bold">Grupo / Categoria</label><input type="text" name="grupo" class="form-control" placeholder="Ex: Sangue, Imagem..."></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
             <div class="col-12"><label class="form-label fw-bold">Instruções de Preparo</label><textarea name="preparo" class="form-control" rows="2" placeholder="Ex: Jejum de 8 horas..."></textarea></div>
             <div class="col-12"><button type="submit" class="btn btn-secondary w-100 fw-bold shadow-sm">Salvar Exame</button></div>
         </form>
@@ -350,14 +354,13 @@ def exames_geral(request):
         <h5>Lista de Exames</h5>
         <div class="table-responsive">
             <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Exame</th><th>Preparo</th><th>Valor</th><th>Ação</th></tr></thead>
+                <thead class="table-dark"><tr><th>Exame / Grupo</th><th>Preparo</th><th>Valor</th><th>Ação</th></tr></thead>
                 <tbody>{linhas if exames_lista else '<tr><td colspan="4" class="text-center text-muted">Nenhum exame cadastrado.</td></tr>'}</tbody>
             </table>
         </div>
         <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
     return HttpResponse(base_html("Exames", conteudo))
-
 
 
 
