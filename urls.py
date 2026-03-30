@@ -44,6 +44,10 @@ def base_html(titulo, conteudo):
                 <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
+               
+                
+                
+                
                 </ul>
         </div>
         <div class="main-content">
@@ -55,6 +59,8 @@ def base_html(titulo, conteudo):
 
 
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
+
+
 def painel_controle(request):
     conteudo = """
         <div class="mb-4">
@@ -80,22 +86,25 @@ def painel_controle(request):
                     <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white fw-bold">Acessar</a>
                 </div>
             </div>
-        <div class="col-md-4">
-    <div class="p-4 bg-info text-white rounded shadow-sm text-center">
-        <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
-        <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-    </div>
-  </div>
-<div class="col-md-3">
-    <div class="p-4 bg-secondary text-white rounded shadow-sm text-center">
-        <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2">Exames</h5>
-        <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-    </div>
-  </div>
-</div>
-        
+            
+            <div class="col-md-4">
+                <div class="p-4 bg-info text-white rounded shadow-sm text-center">
+                    <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
+                    <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-secondary text-white rounded shadow-sm text-center">
+                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2">Exames</h5>
+                    <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+                </div>
+            </div>
+        </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
+
+
 
 # --- 3. TELA 1: UNIDADES ---
 @csrf_exempt
