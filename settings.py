@@ -2,11 +2,21 @@ import os
 from pathlib import Path
 import dj_database_url
 
+# Caminho base do projeto
 BASE_DIR = Path(__file__).resolve().parent
-SECRET_KEY = 'django-insecure-chave-clinica-sempre-vida'
+
+# Chave de segurança
+SECRET_KEY = 'django-insecure-clinica-sempre-vida-final'
+
+# Modo de depuração (Ligado para vermos o erro se ele persistir)
 DEBUG = True
+
+# Permite que a Railway acesse o sistema
 ALLOWED_HOSTS = ['*']
 
+# ========================
+# APPS E MIDDLEWARE
+# ========================
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -27,6 +37,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# AQUI ESTAVA O ERRO 500: Ajustado para procurar na raiz e não na pasta 'core'
 ROOT_URLCONF = 'urls'
 WSGI_APPLICATION = 'wsgi.application'
 
@@ -46,7 +57,9 @@ TEMPLATES = [
     },
 ]
 
-# --- CONFIGURAÇÃO DE BANCO DE DADOS (DENTRO DOS PADRÕES DO POOLER) ---
+# ========================
+# 🔥 BANCO DE DADOS (POOLER PORTA 6543)
+# ========================
 DATABASES = {
     'default': dj_database_url.parse(
         'postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:6543/postgres',
@@ -54,6 +67,9 @@ DATABASES = {
     )
 }
 
+# ========================
+# CONFIGURAÇÕES GERAIS
+# ========================
 LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
