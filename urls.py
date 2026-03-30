@@ -146,3 +146,85 @@ urlpatterns = [
     path('', cadastro_unidade),
     path('unidades/lista/', lista_unidades),
 ]
+
+
+
+
+
+
+
+
+
+
+# --- TELA 2: GESTÃO DE ESPECIALIDADES ---
+@csrf_exempt
+def especialidades_geral(request):
+    mensagem = ""
+    # Lógica de Exclusão
+    if request.GET.get('delete_esp'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM especialidades WHERE id = %s", [request.GET.get('delete_esp')])
+        return HttpResponseRedirect('/especialidades/')
+
+    # Lógica de Cadastro
+    if request.method == "POST":
+        nome = request.POST.get('nome')
+        tipo = request.POST.get('tipo')
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
+            mensagem = '<div class="alert alert-success">✅ Especialidade Salva com Sucesso!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # Busca Lista
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome, tipo FROM especialidades ORDER BY tipo, nome")
+        dados = cursor.fetchall()
+
+    lista_html = "".join([f"""
+        <div class="unidade-item d-flex justify-content-between align-items-center">
+            <div>
+                <span class="unidade-nome">{d[1]}</span>
+                <small class="badge bg-info text-dark">{d[2]}</small>
+            </div>
+            <a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')">Excluir</a>
+        </div>""" for d in dados])
+
+    conteudo = f"""
+        <div class="text-center mb-4">
+            <span style="font-size: 40px;">🏥</span>
+            <h2 class="mt-2">Nova Especialidade</h2>
+        </div>
+        {mensagem}
+        <form method="POST" class="mb-4">
+            <div class="mb-3">
+                <label class="form-label fw-bold">Nome da Especialidade</label>
+                <input type="text" name="nome" class="form-control form-control-lg" placeholder="Ex: Pediatria" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold">Tipo</label>
+                <select name="tipo" class="form-select form-select-lg">
+                    <option value="Médica">Médica</option>
+                    <option value="Odontológica">Odontológica</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 btn-save shadow-sm">Salvar Especialidade</button>
+        </form>
+        <hr>
+        <h3 class="mb-3 text-center">📋 Especialidades Ativas</h3>
+        <div style="min-height: 150px;">
+            {lista_html if dados else '<p class="text-center text-muted">Nenhuma cadastrada.</p>'}
+        </div>
+        <div class="mt-4 d-grid gap-2">
+            <a href="/" class="btn btn-outline-secondary py-2 fw-bold">⬅️ Voltar para Unidades</a>
+        </div>
+    """
+    return HttpResponse(base_html("Especialidades", conteudo))
+
+# --- SUBSTITUA O SEU URLPATTERNS POR ESTE ---
+urlpatterns = [
+    path('', cadastro_unidade),
+    path('unidades/lista/', lista_unidades),
+    path('especialidades/', especialidades_geral),
+]
