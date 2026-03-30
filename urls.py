@@ -45,6 +45,7 @@ def base_html(titulo, conteudo):
                 <div class="menu-label">Administrativo</div>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
+                <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
             </ul>
         </div>
         <div class="main-content">
