@@ -15,11 +15,13 @@ def base_html(titulo, conteudo):
         <title>{titulo} - Sempre Vida</title>
         <style>
             body {{ background-color: #f0f2f5; padding: 15px; font-family: 'Segoe UI', sans-serif; }}
-            .card-box {{ max-width: 500px; margin: auto; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }}
-            .btn-save {{ padding: 15px; font-size: 1.1rem; font-weight: bold; border-radius: 10px; }}
-            .unidade-item {{ border-bottom: 1px solid #eee; padding: 15px 0; }}
-            .unidade-nome {{ font-size: 1.1rem; font-weight: bold; color: #2c3e50; display: block; }}
-            .unidade-info {{ font-size: 0.9rem; color: #6c757d; margin-top: 5px; }}
+            .card-box {{ max-width: 500px; margin: auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }}
+            .btn-menu {{ padding: 20px; font-size: 1.2rem; font-weight: bold; border-radius: 15px; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 15px; text-decoration: none; transition: 0.3s; }}
+            .btn-menu:hover {{ transform: scale(1.02); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }}
+            .btn-unidade {{ background-color: #198754; color: white; }}
+            .btn-especialidade {{ background-color: #0d6efd; color: white; }}
+            .btn-save {{ padding: 12px; font-weight: bold; border-radius: 10px; }}
+            .unidade-item {{ border-bottom: 1px solid #eee; padding: 12px 0; }}
         </style>
     </head>
     <body>
@@ -30,117 +32,83 @@ def base_html(titulo, conteudo):
     </html>
     """
 
-# --- TELA 1: CADASTRO / EDIÇÃO DE UNIDADE ---
+# --- TELA 0: PAINEL DE CONTROLE GERAL ---
+def painel_controle(request):
+    conteudo = """
+        <div class="text-center mb-4">
+            <h2 class="fw-bold">Painel de Gestão</h2>
+            <p class="text-muted">Sistema Sempre Vida</p>
+        </div>
+        <div class="d-grid">
+            <a href="/unidades/" class="btn-menu btn-unidade">
+                <span>🏢</span> Unidades
+            </a>
+            <a href="/especialidades/" class="btn-menu btn-especialidade">
+                <span>🏥</span> Especialidades
+            </a>
+            <button class="btn btn-light btn-menu text-muted" disabled>
+                <span>👤</span> Médico/Dentista (Em breve)
+            </button>
+            <button class="btn btn-light btn-menu text-muted" disabled>
+                <span>💰</span> Financeiro (Em breve)
+            </button>
+        </div>
+    """
+    return HttpResponse(base_html("Painel Geral", conteudo))
+
+# --- TELA 1: CADASTRO DE UNIDADE ---
 @csrf_exempt
 def cadastro_unidade(request):
     mensagem = ""
-    edit_id = request.GET.get('edit')
-    unidade_dados = {"id": "", "nome": "", "endereco": "", "telefone": ""}
-
-    if edit_id:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
-            row = cursor.fetchone()
-            if row:
-                unidade_dados = {"id": row[0], "nome": row[1], "endereco": row[2], "telefone": row[3]}
-
     if request.method == "POST":
-        id_post = request.POST.get('id')
-        nome = request.POST.get('nome')
-        endereco = request.POST.get('endereco')
-        telefone = request.POST.get('telefone')
-        
+        nome, end, tel = request.POST.get('nome'), request.POST.get('endereco'), request.POST.get('telefone')
         try:
             with connection.cursor() as cursor:
-                if id_post:
-                    cursor.execute(
-                        "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
-                        [nome, endereco, telefone, id_post]
-                    )
-                    mensagem = '<div class="alert alert-success">✅ Unidade Atualizada!</div>'
-                else:
-                    cursor.execute(
-                        "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", 
-                        [nome, endereco, telefone]
-                    )
-                    mensagem = '<div class="alert alert-success">✅ Unidade Cadastrada!</div>'
+                cursor.execute("INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", [nome, end, tel])
+            mensagem = '<div class="alert alert-success">✅ Unidade Cadastrada!</div>'
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
     conteudo = f"""
-        <div class="text-center mb-4">
-            <span style="font-size: 40px;">🏢</span>
-            <h2 class="mt-2">{"Editar Unidade" if edit_id else "Nova Unidade"}</h2>
-        </div>
+        <h3 class="text-center mb-4">🏢 Nova Unidade</h3>
         {mensagem}
         <form method="POST">
-            <input type="hidden" name="id" value="{unidade_dados['id']}">
-            <div class="mb-3">
-                <label class="form-label fw-bold">Nome da Unidade</label>
-                <input type="text" name="nome" class="form-control form-control-lg" value="{unidade_dados['nome']}" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label fw-bold">Endereço Completo</label>
-                <input type="text" name="endereco" class="form-control form-control-lg" value="{unidade_dados['endereco']}">
-            </div>
-            <div class="mb-3">
-                <label class="form-label fw-bold">Telefone</label>
-                <input type="tel" name="telefone" class="form-control form-control-lg" value="{unidade_dados['telefone']}">
-            </div>
-            <button type="submit" class="btn btn-success w-100 btn-save mt-3 shadow-sm">Salvar Unidade</button>
+            <input type="text" name="nome" class="form-control mb-2" placeholder="Nome" required>
+            <input type="text" name="endereco" class="form-control mb-2" placeholder="Endereço">
+            <input type="text" name="telefone" class="form-control mb-2" placeholder="Telefone">
+            <button type="submit" class="btn btn-success w-100 btn-save">Salvar Unidade</button>
         </form>
-        <div class="text-center mt-4 d-grid gap-2">
-            <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Ver Unidades Ativas</a>
-            <a href="/especialidades/" class="btn btn-outline-dark fw-bold">🏥 Gerenciar Especialidades</a>
+        <div class="mt-4 d-grid gap-2 text-center">
+            <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Listar Unidades</a>
+            <a href="/" class="btn btn-link">⬅️ Voltar ao Painel</a>
         </div>
     """
     return HttpResponse(base_html("Cadastro Unidade", conteudo))
 
-# --- TELA DE LISTAGEM DE UNIDADES ---
+# --- TELA: LISTAGEM DE UNIDADES ---
 def lista_unidades(request):
-    delete_id = request.GET.get('delete')
-    if delete_id:
+    if request.GET.get('delete'):
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM unidades WHERE id = %s", [delete_id])
+            cursor.execute("DELETE FROM unidades WHERE id = %s", [request.GET.get('delete')])
         return HttpResponseRedirect('/unidades/lista/')
+    
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome, endereco FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
 
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades ORDER BY nome ASC")
-            unidades = cursor.fetchall()
-        
-        itens = ""
-        for u in unidades:
-            itens += f"""
-            <div class="unidade-item">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div style="flex: 1;">
-                        <span class="unidade-nome">{u[1]}</span>
-                        <div class="unidade-info">📍 {u[2] if u[2] else 'Sem endereço'}</div>
-                        <div class="unidade-info">📞 {u[3] if u[3] else 'Sem telefone'}</div>
-                    </div>
-                    <div class="d-flex gap-2">
-                        <a href="/?edit={u[0]}" class="btn btn-sm btn-outline-warning">Editar</a>
-                        <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')">Excluir</a>
-                    </div>
-                </div>
-            </div>"""
+    itens = "".join([f'<div class="unidade-item d-flex justify-content-between"><div><b>{u[1]}</b><br><small>{u[2]}</small></div><a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger align-self-center">Excluir</a></div>' for u in unidades])
+    
+    conteudo = f"""
+        <h3 class="text-center mb-4">📋 Unidades Ativas</h3>
+        {itens if unidades else '<p class="text-muted">Nenhuma unidade.</p>'}
+        <div class="mt-4 d-grid gap-2">
+            <a href="/unidades/" class="btn btn-primary btn-save">➕ Nova Unidade</a>
+            <a href="/" class="btn btn-outline-secondary">⬅️ Painel Geral</a>
+        </div>
+    """
+    return HttpResponse(base_html("Lista Unidades", conteudo))
 
-        conteudo = f"""
-            <h3 class="mb-4 text-center">📋 Unidades Ativas</h3>
-            <div style="min-height: 200px;">
-                {itens if unidades else '<p class="text-center text-muted">Nenhuma cadastrada.</p>'}
-            </div>
-            <div class="mt-4 d-grid gap-2">
-                <a href="/" class="btn btn-primary btn-save shadow-sm">➕ Nova Unidade</a>
-                <a href="/" class="btn btn-outline-secondary py-2 fw-bold">⬅️ Voltar</a>
-            </div>
-        """
-        return HttpResponse(base_html("Lista de Unidades", conteudo))
-    except Exception as e:
-        return HttpResponse(f"Erro: {e}")
-
-# --- TELA 2: GESTÃO DE ESPECIALIDADES ---
+# --- TELA 2: ESPECIALIDADES ---
 @csrf_exempt
 def especialidades_geral(request):
     mensagem = ""
@@ -150,8 +118,7 @@ def especialidades_geral(request):
         return HttpResponseRedirect('/especialidades/')
 
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        tipo = request.POST.get('tipo')
+        nome, tipo = request.POST.get('nome'), request.POST.get('tipo')
         try:
             with connection.cursor() as cursor:
                 cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
@@ -163,49 +130,30 @@ def especialidades_geral(request):
         cursor.execute("SELECT id, nome, tipo FROM especialidades ORDER BY tipo, nome")
         dados = cursor.fetchall()
 
-    lista_html = "".join([f"""
-        <div class="unidade-item d-flex justify-content-between align-items-center">
-            <div>
-                <span class="unidade-nome">{d[1]}</span>
-                <small class="badge bg-info text-dark">{d[2]}</small>
-            </div>
-            <a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')">Excluir</a>
-        </div>""" for d in dados])
+    itens = "".join([f'<div class="unidade-item d-flex justify-content-between"><div><b>{d[1]}</b><br><small class="badge bg-info">{d[2]}</small></div><a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-outline-danger align-self-center">Excluir</a></div>' for d in dados])
 
     conteudo = f"""
-        <div class="text-center mb-4">
-            <span style="font-size: 40px;">🏥</span>
-            <h2 class="mt-2">Nova Especialidade</h2>
-        </div>
+        <h3 class="text-center mb-4">🏥 Especialidades</h3>
         {mensagem}
         <form method="POST" class="mb-4">
-            <div class="mb-3">
-                <label class="form-label fw-bold">Nome</label>
-                <input type="text" name="nome" class="form-control form-control-lg" placeholder="Ex: Pediatria" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label fw-bold">Tipo</label>
-                <select name="tipo" class="form-select form-select-lg">
-                    <option value="Médica">Médica</option>
-                    <option value="Odontológica">Odontológica</option>
-                </select>
-            </div>
-            <button type="submit" class="btn btn-primary w-100 btn-save shadow-sm">Salvar Especialidade</button>
+            <input type="text" name="nome" class="form-control mb-2" placeholder="Ex: Pediatria" required>
+            <select name="tipo" class="form-select mb-2">
+                <option value="Médica">Médica</option>
+                <option value="Odontológica">Odontológica</option>
+            </select>
+            <button type="submit" class="btn btn-primary w-100 btn-save">Salvar Especialidade</button>
         </form>
-        <hr>
-        <h3 class="mb-3 text-center">📋 Especialidades Ativas</h3>
-        <div style="min-height: 150px;">
-            {lista_html if dados else '<p class="text-center text-muted">Nenhuma cadastrada.</p>'}
-        </div>
-        <div class="mt-4">
-            <a href="/" class="btn btn-outline-secondary w-100 py-2 fw-bold">⬅️ Voltar para Unidades</a>
+        {itens}
+        <div class="mt-4 text-center">
+            <a href="/" class="btn btn-outline-secondary w-100">⬅️ Voltar ao Painel</a>
         </div>
     """
     return HttpResponse(base_html("Especialidades", conteudo))
 
-# --- ROTAS ---
+# --- ROTAS (PAINEL GERAL NO TOPO) ---
 urlpatterns = [
-    path('', cadastro_unidade),
+    path('', painel_controle),             # Página Principal agora é o Painel
+    path('unidades/', cadastro_unidade),
     path('unidades/lista/', lista_unidades),
     path('especialidades/', especialidades_geral),
 ]
