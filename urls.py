@@ -285,17 +285,9 @@ def convenios_geral(request):
 
 
 
-# --- 6. ROTAS ---
-urlpatterns = [
-    path('', painel_controle),
-    path('unidades/', cadastro_unidade),
-    path('unidades/lista/', lista_unidades),
-    path('especialidades/', especialidades_geral),
-    path('profissionais/', profissionais_geral),
-]
 
 
-# --- ESSA PARTE FICA NO FINAL DE TUDO NO URLS.PY ---
+# ---6. ROTAS ----
 urlpatterns = [
     path('', painel_controle),              # Painel Geral
     path('unidades/', cadastro_unidade),    # Cadastro Unidades
