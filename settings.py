@@ -6,9 +6,9 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent
 
 # Chave de segurança
-SECRET_KEY = 'django-insecure-clinica-sempre-vida-v3'
+SECRET_KEY = 'django-insecure-clinica-sempre-vida-v4-final'
 
-# Modo de depuração (Ativo para diagnóstico)
+# Modo de depuração (True para ver detalhes no site)
 DEBUG = True
 
 # Permite que a Railway acesse o sistema
@@ -37,6 +37,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Rota para o urls.py na raiz
 ROOT_URLCONF = 'urls'
 WSGI_APPLICATION = 'wsgi.application'
 
@@ -57,13 +58,13 @@ TEMPLATES = [
 ]
 
 # ========================
-# 🔥 BANCO DE DADOS (CONFIGURAÇÃO DE ALTA COMPATIBILIDADE)
+# 🔥 BANCO DE DADOS (TRANSACTION POOLER - AWS-1)
 # ========================
-# Mudamos para o formato de usuário que o Supabase exige no modo Transaction
+# Ajustado para o host aws-1 e porta 6543 conforme sua URL
 DATABASES = {
     'default': dj_database_url.parse(
-        'postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require',
-        conn_max_age=0  # Pooler prefere conexões curtas
+        'postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-1-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require',
+        conn_max_age=0
     )
 }
 
