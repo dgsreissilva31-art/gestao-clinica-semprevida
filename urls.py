@@ -90,15 +90,17 @@ def cadastro_unidade(request):
             </div>
             <button type="submit" class="btn btn-success w-100 btn-save mt-3 shadow-sm">Salvar Unidade</button>
         </form>
-        <div class="text-center mt-4">
-            <a href="/unidades/lista/" class="text-decoration-none text-primary fw-bold">📋 Ver Unidades Ativas</a>
+
+
+<div class="text-center mt-4 d-grid gap-2">
+            <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Ver Unidades Ativas</a>
+            <a href="/especialidades/" class="btn btn-outline-dark fw-bold">🏥 Gerenciar Especialidades</a>
         </div>
     """
     return HttpResponse(base_html("Cadastro Unidade", conteudo))
 
-# --- TELA 2: LISTAGEM COM BOTÃO VOLTAR ---
+# --- TELA DE LISTAGEM DE UNIDADES ---
 def lista_unidades(request):
-    # Lógica de Exclusão
     delete_id = request.GET.get('delete')
     if delete_id:
         with connection.cursor() as cursor:
@@ -122,7 +124,7 @@ def lista_unidades(request):
                     </div>
                     <div class="d-flex gap-2">
                         <a href="/?edit={u[0]}" class="btn btn-sm btn-outline-warning">Editar</a>
-                        <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir unidade?')">Excluir</a>
+                        <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')">Excluir</a>
                     </div>
                 </div>
             </div>"""
@@ -130,7 +132,7 @@ def lista_unidades(request):
         conteudo = f"""
             <h3 class="mb-4 text-center">📋 Unidades Ativas</h3>
             <div style="min-height: 200px;">
-                {itens if unidades else '<p class="text-center text-muted">Nenhuma unidade cadastrada.</p>'}
+                {itens if unidades else '<p class="text-center text-muted">Nenhuma cadastrada.</p>'}
             </div>
             <div class="mt-4 d-grid gap-2">
                 <a href="/" class="btn btn-primary btn-save shadow-sm">➕ Nova Unidade</a>
@@ -141,47 +143,25 @@ def lista_unidades(request):
     except Exception as e:
         return HttpResponse(f"Erro: {e}")
 
-# --- ROTAS ---
-urlpatterns = [
-    path('', cadastro_unidade),
-    path('unidades/lista/', lista_unidades),
-]
-
-
-
-# Altere esta parte final da função cadastro_unidade no seu código:
-        <div class="text-center mt-4 d-grid gap-2">
-            <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Ver Unidades Ativas</a>
-            <a href="/especialidades/" class="btn btn-outline-dark fw-bold">🏥 Gerenciar Especialidades</a>
-        </div>
-
-
-
-
-
-
 # --- TELA 2: GESTÃO DE ESPECIALIDADES ---
 @csrf_exempt
 def especialidades_geral(request):
     mensagem = ""
-    # Lógica de Exclusão
     if request.GET.get('delete_esp'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM especialidades WHERE id = %s", [request.GET.get('delete_esp')])
         return HttpResponseRedirect('/especialidades/')
 
-    # Lógica de Cadastro
     if request.method == "POST":
         nome = request.POST.get('nome')
         tipo = request.POST.get('tipo')
         try:
             with connection.cursor() as cursor:
                 cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
-            mensagem = '<div class="alert alert-success">✅ Especialidade Salva com Sucesso!</div>'
+            mensagem = '<div class="alert alert-success">✅ Especialidade Salva!</div>'
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # Busca Lista
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome, tipo FROM especialidades ORDER BY tipo, nome")
         dados = cursor.fetchall()
@@ -203,7 +183,7 @@ def especialidades_geral(request):
         {mensagem}
         <form method="POST" class="mb-4">
             <div class="mb-3">
-                <label class="form-label fw-bold">Nome da Especialidade</label>
+                <label class="form-label fw-bold">Nome</label>
                 <input type="text" name="nome" class="form-control form-control-lg" placeholder="Ex: Pediatria" required>
             </div>
             <div class="mb-3">
@@ -220,13 +200,13 @@ def especialidades_geral(request):
         <div style="min-height: 150px;">
             {lista_html if dados else '<p class="text-center text-muted">Nenhuma cadastrada.</p>'}
         </div>
-        <div class="mt-4 d-grid gap-2">
-            <a href="/" class="btn btn-outline-secondary py-2 fw-bold">⬅️ Voltar para Unidades</a>
+        <div class="mt-4">
+            <a href="/" class="btn btn-outline-secondary w-100 py-2 fw-bold">⬅️ Voltar para Unidades</a>
         </div>
     """
     return HttpResponse(base_html("Especialidades", conteudo))
 
-# --- SUBSTITUA O SEU URLPATTERNS POR ESTE ---
+# --- ROTAS ---
 urlpatterns = [
     path('', cadastro_unidade),
     path('unidades/lista/', lista_unidades),
