@@ -3,107 +3,102 @@ from django.http import HttpResponse
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 
-# --- FUNÇÃO 1: FORMULÁRIO DE CADASTRO (OTIMIZADO MOBILE) ---
+# --- FUNÇÃO: CADASTRO DE UNIDADES ---
 @csrf_exempt
-def formulario_paciente(request):
+def cadastro_unidade(request):
+    mensagem = ""
     if request.method == "POST":
         nome = request.POST.get('nome')
-        whatsapp = request.POST.get('whatsapp')
-        data_c = request.POST.get('data')
-        obs = request.POST.get('obs')
+        endereco = request.POST.get('endereco')
+        telefone = request.POST.get('telefone')
 
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO pacientes (nome, whatsapp, data_consulta, observacoes) VALUES (%s, %s, %s, %s)",
-                    [nome, whatsapp, data_c, obs]
+                    "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)",
+                    [nome, endereco, telefone]
                 )
-            return HttpResponse("<meta name='viewport' content='width=device-width, initial-scale=1'><div style='padding:20px; text-align:center;'><h1>✅ Sucesso!</h1><a href='/' style='display:block; margin-top:20px; font-size:20px;'>Cadastrar outro</a><br><a href='/lista' style='font-size:20px;'>Ver Lista</a></div>")
+            mensagem = '<div class="alert alert-success">✅ Unidade Cadastrada com Sucesso!</div>'
         except Exception as e:
-            return HttpResponse(f"<h1>❌ Erro</h1><p>{e}</p>")
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    html = """
+    html = f"""
     <!DOCTYPE html>
     <html lang="pt-br">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <title>Sempre Vida - Cadastro</title>
-        <style>
-            body { background-color: #f8f9fa; }
-            .card-mobile { width: 95%; max-width: 500px; margin: 20px auto; padding: 25px; border-radius: 15px; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-            .btn-lg-custom { padding: 15px; font-size: 1.2rem; }
-            input, textarea { font-size: 16px !important; } /* Evita zoom automático no iPhone */
-        </style>
+        <title>Unidades - Sempre Vida</title>
     </head>
-    <body>
-        <div class="card-mobile">
-            <h2 class="text-center mb-4">🩺 Cadastro Sempre Vida</h2>
+    <body class="bg-light p-3">
+        <div class="container bg-white p-4 rounded shadow-sm" style="max-width: 500px;">
+            <h3 class="text-center mb-4">🏢 Cadastro de Unidade</h3>
+            {mensagem}
             <form method="POST">
-                <div class="mb-3"><label class="form-label fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control form-control-lg" required></div>
-                <div class="mb-3"><label class="form-label fw-bold">WhatsApp</label><input type="tel" name="whatsapp" class="form-control form-control-lg" placeholder="(00) 00000-0000"></div>
-                <div class="mb-3"><label class="form-label fw-bold">Data da Consulta</label><input type="date" name="data" class="form-control form-control-lg"></div>
-                <div class="mb-3"><label class="form-label fw-bold">Observações</label><textarea name="obs" class="form-control" rows="3"></textarea></div>
-                <button type="submit" class="btn btn-primary w-100 btn-lg-custom shadow">Salvar Dados</button>
+                <div class="mb-3"><label class="form-label fw-bold">Nome da Unidade</label><input type="text" name="nome" class="form-control" required placeholder="Ex: Unidade Centro"></div>
+                <div class="mb-3"><label class="form-label">Endereço</label><input type="text" name="endereco" class="form-control"></div>
+                <div class="mb-3"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control"></div>
+                <button type="submit" class="btn btn-success w-100 mb-2">Salvar Unidade</button>
+                <a href="/unidades/lista" class="btn btn-outline-secondary w-100">📋 Listar Unidades</a>
             </form>
-            <div class="text-center mt-4"><a href="/lista" class="text-decoration-none text-secondary">📋 Ver lista de cadastrados</a></div>
+            <hr>
+            <a href="/" class="btn btn-link w-100">Voltar ao Início</a>
         </div>
     </body>
     </html>
     """
     return HttpResponse(html)
 
-# --- FUNÇÃO 2: LISTA DE PACIENTES (OTIMIZADA MOBILE) ---
-def lista_pacientes(request):
+# --- FUNÇÃO: LISTAGEM DE UNIDADES (COM EDITAR/EXCLUIR) ---
+def lista_unidades(request):
     try:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT nome, whatsapp, data_consulta FROM pacientes ORDER BY criado_em DESC")
-            pacientes = cursor.fetchall()
+            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades ORDER BY nome ASC")
+            unidades = cursor.fetchall()
         
         linhas = ""
-        for p in pacientes:
-            linhas += f"<tr><td>{p[0]}</td><td class='text-nowrap'>{p[1]}</td><td>{p[2]}</td></tr>"
+        for u in unidades:
+            linhas += f"""
+            <tr>
+                <td>{u[1]}</td>
+                <td>{u[3]}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning">Editar</button>
+                    <button class="btn btn-sm btn-danger">Excluir</button>
+                </td>
+            </tr>"""
 
-        html_lista = f"""
+        html = f"""
         <!DOCTYPE html>
         <html lang="pt-br">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-            <title>Sempre Vida - Lista</title>
-            <style>
-                body {{ background-color: #f8f9fa; font-size: 14px; }}
-                .container-mobile {{ width: 98%; margin: 10px auto; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
-                .table-responsive {{ border: none; }}
-                th {{ font-size: 12px; text-transform: uppercase; }}
-            </style>
+            <title>Lista de Unidades</title>
         </head>
-        <body>
-            <div class="container-mobile">
-                <h3 class="mb-3 text-center">📋 Pacientes</h3>
+        <body class="bg-light p-3">
+            <div class="container bg-white p-4 rounded shadow-sm">
+                <h3 class="mb-4">📋 Unidades Cadastradas</h3>
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm">
-                        <thead class="table-primary">
-                            <tr><th>Nome</th><th>WhatsApp</th><th>Data</th></tr>
-                        </thead>
-                        <tbody>
-                            {linhas}
-                        </tbody>
+                    <table class="table table-hover">
+                        <thead class="table-dark"><tr><th>Nome</th><th>Telefone</th><th>Ações</th></tr></thead>
+                        <tbody>{linhas}</tbody>
                     </table>
                 </div>
-                <div class="mt-4"><a href="/" class="btn btn-outline-primary w-100">Voltar ao Cadastro</a></div>
+                <a href="/unidades" class="btn btn-primary">Nova Unidade</a>
             </div>
         </body>
         </html>
         """
-        return HttpResponse(html_lista)
+        return HttpResponse(html)
     except Exception as e:
-        return HttpResponse(f"<h1>❌ Erro ao carregar lista</h1><p>{e}</p>")
+        return HttpResponse(f"Erro: {e}")
 
-# --- ROTAS ---
+# --- URLS ANTERIORES E NOVAS ---
 urlpatterns = [
-    path('', formulario_paciente),
-    path('lista/', lista_pacientes),
+    # Manter as rotas de pacientes que já funcionam
+    path('unidades/', cadastro_unidade),
+    path('unidades/lista/', lista_unidades),
 ]
