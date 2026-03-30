@@ -292,3 +292,14 @@ urlpatterns = [
     path('especialidades/', especialidades_geral),
     path('profissionais/', profissionais_geral),
 ]
+
+
+# --- ESSA PARTE FICA NO FINAL DE TUDO NO URLS.PY ---
+urlpatterns = [
+    path('', painel_controle),              # Painel Geral
+    path('unidades/', cadastro_unidade),    # Cadastro Unidades
+    path('unidades/lista/', lista_unidades), # Lista Unidades
+    path('especialidades/', especialidades_geral), # Especialidades
+    path('profissionais/', profissionais_geral),   # Médicos/Dentistas
+    path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
+]
