@@ -44,6 +44,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
+                <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
                
                 
                 
@@ -99,7 +100,17 @@ def painel_controle(request):
                     <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
                 </div>
             </div>
-        </div>
+            <div class="col-md-4">
+    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
+        <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2">Odontologia</h5>
+        <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+      </div>
+    </div>
+</div>
+
+
+
+
     """
     return HttpResponse(base_html("Dashboard", conteudo))
 
@@ -363,7 +374,65 @@ def exames_geral(request):
     return HttpResponse(base_html("Exames", conteudo))
 
 
+# --- 9. TELA 6: GESTÃO DE ODONTOLOGIA ---
+@csrf_exempt
+def odonto_geral(request):
+    mensagem = ""
+    # Exclusão
+    if request.GET.get('delete_odonto'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM odontologia WHERE id = %s", [request.GET.get('delete_odonto')])
+        return HttpResponseRedirect('/odontologia/')
 
+    # Cadastro
+    if request.method == "POST":
+        proc = request.POST.get('procedimento')
+        grupo = request.POST.get('grupo')
+        valor = request.POST.get('valor')
+        obs = request.POST.get('observacoes')
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes) VALUES (%s, %s, %s, %s)",
+                    [proc, grupo, valor if valor else 0, obs]
+                )
+            mensagem = '<div class="alert alert-success">✅ Procedimento odontológico salvo!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # Busca Lista
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, procedimento, grupo, valor_particular, observacoes FROM odontologia ORDER BY grupo, procedimento")
+        lista_odonto = cursor.fetchall()
+
+    linhas = "".join([f"""
+        <tr>
+            <td><b>{o[1]}</b><br><span class="badge bg-light text-dark border">{o[2] if o[2] else 'Geral'}</span></td>
+            <td>R$ {o[3]}</td>
+            <td><small>{o[4] if o[4] else '---'}</small></td>
+            <td><a href="/odontologia/?delete_odonto={o[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir este procedimento?')"><i class="bi bi-trash"></i></a></td>
+        </tr>""" for o in lista_odonto])
+
+    conteudo = f"""
+        <h4><i class="bi bi-mask"></i> Procedimentos Odontológicos</h4><hr>
+        {mensagem}
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-5"><label class="form-label fw-bold">Procedimento</label><input type="text" name="procedimento" class="form-control" placeholder="Ex: Extração de Siso" required></div>
+            <div class="col-md-4"><label class="form-label fw-bold">Grupo</label><input type="text" name="grupo" class="form-control" placeholder="Ex: Cirurgia, Estética..."></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
+            <div class="col-12"><label class="form-label fw-bold">Observações Técnicas</label><textarea name="observacoes" class="form-control" rows="2" placeholder="Notas sobre o procedimento..."></textarea></div>
+            <div class="col-12"><button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm" style="background-color: #555;">Salvar Procedimento</button></div>
+        </form>
+        <hr>
+        <div class="table-responsive">
+            <table class="table table-hover mt-2">
+                <thead class="table-dark"><tr><th>Procedimento / Grupo</th><th>Valor</th><th>Obs.</th><th>Ação</th></tr></thead>
+                <tbody>{linhas if lista_odonto else '<tr><td colspan="4" class="text-center text-muted">Nenhum procedimento cadastrado.</td></tr>'}</tbody>
+            </table>
+        </div>
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+    return HttpResponse(base_html("Odontologia", conteudo))
 
 
 
@@ -377,4 +446,5 @@ urlpatterns = [
     path('profissionais/', profissionais_geral),   # Médicos/Dentistas
     path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
     path('exames/', exames_geral),
+    path('odontologia/', odonto_geral),
 ]
