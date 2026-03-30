@@ -147,27 +147,79 @@ def especialidades_geral(request):
     conteudo = f"<h4>Especialidades</h4><hr><form method='POST' class='row g-2 mb-4'><div class='col-md-6'><input type='text' name='nome' class='form-control' placeholder='Especialidade' required></div><div class='col-md-4'><select name='tipo' class='form-select'><option value='Médica'>Médica</option><option value='Odontológica'>Odontológica</option></select></div><div class='col-md-2'><button type='submit' class='btn btn-primary w-100'>Salvar</button></div></form><table class='table table-sm table-hover'><thead><tr><th>Nome</th><th>Tipo</th><th>Ação</th></tr></thead><tbody>{itens}</tbody></table>"
     return HttpResponse(base_html("Especialidades", conteudo))
 
-# --- 5. TELA 3: PROFISSIONAIS ---
+
+# --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM TELEFONE E ENDEREÇO) ---
 @csrf_exempt
 def profissionais_geral(request):
     if request.GET.get('delete_prof'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM profissionais WHERE id = %s", [request.GET.get('delete_prof')])
         return HttpResponseRedirect('/profissionais/')
+
     if request.method == "POST":
-        nome, tipo, num, esp, tel = request.POST.get('nome'), request.POST.get('tipo'), request.POST.get('numero'), request.POST.get('especialidade_id'), request.POST.get('telefone')
+        nome = request.POST.get('nome')
+        tipo = request.POST.get('tipo')
+        num = request.POST.get('numero')
+        esp = request.POST.get('especialidade_id')
+        tel = request.POST.get('telefone')
+        end = request.POST.get('endereco')
+        
         with connection.cursor() as cursor:
-            cursor.execute("INSERT INTO profissionais (nome, conselho_tipo, conselho_numero, especialidade_id, telefone) VALUES (%s, %s, %s, %s, %s)", [nome, tipo, num, esp, tel])
+            cursor.execute(
+                "INSERT INTO profissionais (nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco) VALUES (%s, %s, %s, %s, %s, %s)", 
+                [nome, tipo, num, esp, tel, end]
+            )
         return HttpResponseRedirect('/profissionais/')
+
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         especialidades = cursor.fetchall()
-        cursor.execute("SELECT p.id, p.nome, p.conselho_tipo, p.conselho_numero, e.nome, p.telefone FROM profissionais p LEFT JOIN especialidades e ON p.especialidade_id = e.id ORDER BY p.nome")
+        
+        # Busca profissionais incluindo os novos campos
+        cursor.execute("""
+            SELECT p.id, p.nome, p.conselho_tipo, p.conselho_numero, e.nome, p.telefone, p.endereco 
+            FROM profissionais p 
+            LEFT JOIN especialidades e ON p.especialidade_id = e.id 
+            ORDER BY p.nome
+        """)
         profs = cursor.fetchall()
+
     opcoes = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in especialidades])
-    linhas = "".join([f'<tr><td>{p[1]}</td><td>{p[2]}: {p[3]}</td><td>{p[4] if p[4] else "---"}</td><td><a href="/profissionais/?delete_prof={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm(\'Excluir?\')"><i class="bi bi-trash"></i></a></td></tr>' for p in profs])
-    conteudo = f"<h4>Profissionais</h4><hr><form method='POST' class='row g-3 mb-4'><div class='col-md-4'><input type='text' name='nome' class='form-control' placeholder='Nome' required></div><div class='col-md-2'><select name='tipo' class='form-select'><option value='CRM'>CRM</option><option value='CRO'>CRO</option></select></div><div class='col-md-2'><input type='text' name='numero' class='form-control' placeholder='Número' required></div><div class='col-md-2'><select name='especialidade_id' class='form-select'>{opcoes}</select></div><div class='col-md-2'><button type='submit' class='btn btn-warning w-100'>Salvar</button></div></form><table class='table table-hover'><thead class='table-dark'><tr><th>Nome</th><th>Registro</th><th>Especialidade</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table>"
+    
+    linhas = "".join([f"""
+        <tr>
+            <td>{p[1]}<br><small class='text-muted'>📍 {p[6] if p[6] else '---'}</small></td>
+            <td>{p[2]}: {p[3]}</td>
+            <td>{p[4] if p[4] else "---"}</td>
+            <td>{p[5] if p[5] else "---"}</td>
+            <td><a href="/profissionais/?delete_prof={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Deseja excluir?')"><i class="bi bi-trash"></i></a></td>
+        </tr>""" for p in profs])
+
+    conteudo = f"""
+        <h4><i class="bi bi-person-badge"></i> Cadastro de Profissionais</h4><hr>
+        <form method='POST' class='row g-3 mb-4'>
+            <div class='col-md-4'><label class='form-label fw-bold'>Nome Completo</label><input type='text' name='nome' class='form-control' required></div>
+            <div class='col-md-2'><label class='form-label fw-bold'>Conselho</label><select name='tipo' class='form-select'><option value='CRM'>CRM</option><option value='CRO'>CRO</option></select></div>
+            <div class='col-md-2'><label class='form-label fw-bold'>Número</label><input type='text' name='numero' class='form-control' required></div>
+            <div class='col-md-4'><label class='form-label fw-bold'>Especialidade</label><select name='especialidade_id' class='form-select'>{opcoes}</select></div>
+            
+            <div class='col-md-4'><label class='form-label fw-bold'>Telefone</label><input type='text' name='telefone' class='form-control' placeholder='(00) 00000-0000'></div>
+            <div class='col-md-8'><label class='form-label fw-bold'>Endereço Completo</label><input type='text' name='endereco' class='form-control' placeholder='Rua, número, bairro...'></div>
+            
+            <div class='col-12'><button type='submit' class='btn btn-warning w-100 fw-bold'>Salvar Profissional</button></div>
+        </form>
+        <hr>
+        <div class='table-responsive'>
+            <table class='table table-hover'>
+                <thead class='table-dark'><tr><th>Nome / Endereço</th><th>Registro</th><th>Especialidade</th><th>Telefone</th><th>Ação</th></tr></thead>
+                <tbody>{linhas if profs else '<tr><td colspan="5" class="text-center">Nenhum cadastrado.</td></tr>'}</tbody>
+            </table>
+        </div>
+    """
     return HttpResponse(base_html("Profissionais", conteudo))
+
+
+
 
 # --- 6. ROTAS ---
 urlpatterns = [
