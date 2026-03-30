@@ -84,7 +84,14 @@ def painel_controle(request):
                     <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white fw-bold">Acessar</a>
                 </div>
             </div>
-        </div>
+        <div class="col-md-4">
+    <div class="p-4 bg-info text-white rounded shadow-sm text-center">
+        <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
+        <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+    </div>
+  </div>
+</div>
+        
     """
     return HttpResponse(base_html("Dashboard", conteudo))
 
