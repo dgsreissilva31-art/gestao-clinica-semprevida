@@ -3,37 +3,9 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 
-# --- TEMPLATE BASE (ESTILO DASHBOARD PROFISSIONAL) ---
-def base_html(titulo, conteudo):
-    return f"""
-    <!DOCTYPE html>
-    <html lang="pt-br">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-        <title>{titulo} - Sempre Vida</title>
-        <style>
-            :root {{ --sidebar-width: 250px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
-            body {{ background-color: #ecf0f5; font-family: 'Source Sans Pro', sans-serif; margin: 0; }}
-            .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; }}
-            .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; transition: 0.3s; }}
-            .sidebar-header {{ padding: 15px; color: white; background: #1a2226; font-size: 14px; display: flex; align-items: center; gap: 10px; }}
-            .sidebar-menu {{ list-style: none; padding: 0; margin: 0; }}
-            .sidebar-menu li a {{ padding: 12px 15px; display: block; color: #b8c7ce; text-decoration: none; border-left: 3px solid transparent; }}
-            .sidebar-menu li a:hover {{ background: #1e282c; color: white; border-left-color: #3c8dbc; }}
-            .menu-label {{ padding: 10px 15px; font-size: 12px; color: #4b646f; background: #1a2226; text-transform: uppercase; }}
-            .main-content {{ margin-left: var(--sidebar-width); padding: 70px 20px 20px; }}
-            .card-panel {{ background: white; border-top: 3px solid #d2d6de; border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); padding: 20px; }}
-            @media (max-width: 768px) {{ .sidebar {{ left: -250px; }} .main-content {{ margin-left: 0; }} .sidebar.active {{ left: 0; }} }}
-        </style>
-    </head>
-    <body>
-        <div class="navbar-top d-flex justify-content-between">
-            <div><i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> <span class="ms-2 fw-bold text-uppercase">milestone</span></div>
-            <div><i class="bi bi-person-circle"></i> Douglas Silva</div>
-        </div>
+# --- ATUALIZAÇÃO DO TEMPLATE BASE (MENU LATERAL) ---
+# Altere apenas a parte da <div class="sidebar"> dentro da sua função base_html:
+
         <div class="sidebar">
             <div class="sidebar-header">
                 <i class="bi bi-person-circle fs-3"></i>
@@ -42,22 +14,19 @@ def base_html(titulo, conteudo):
             <ul class="sidebar-menu">
                 <div class="menu-label">Navegação</div>
                 <li><a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                
                 <div class="menu-label">Administrativo</div>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
                 <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
+                
+                <div class="menu-label">Operacional</div>
+                <li><a href="#"><i class="bi bi-calendar-event"></i> Agendamentos</a></li>
+                <li><a href="#"><i class="bi bi-cash-stack"></i> Financeiro</a></li>
             </ul>
         </div>
-        <div class="main-content">
-            <div class="card-panel">{conteudo}</div>
-        </div>
-    </body>
-    </html>
-    """
 
-# --- DASHBOARD ---
-
-# --- TELA 0: PAINEL DE CONTROLE GERAL (ATUALIZADO) ---
+# --- ATUALIZAÇÃO DA TELA 0: PAINEL DE GESTÃO ---
 def painel_controle(request):
     conteudo = """
         <div class="mb-4">
@@ -67,26 +36,25 @@ def painel_controle(request):
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
-                    <i class="bi bi-building fs-1"></i><br><b>Unidades</b><br>
-                    <a href="/unidades/" class="btn btn-sm btn-light mt-2">Acessar</a>
+                    <i class="bi bi-building fs-1"></i><br><h5 class="mt-2">Unidades</h5>
+                    <a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="p-4 bg-success text-white rounded shadow-sm text-center">
-                    <i class="bi bi-hospital fs-1"></i><br><b>Especialidades</b><br>
-                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2">Acessar</a>
+                    <i class="bi bi-hospital fs-1"></i><br><h5 class="mt-2">Especialidades</h5>
+                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center">
-                    <i class="bi bi-person-badge fs-1"></i><br><b>Profissionais</b><br>
-                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white">Acessar</a>
+                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center border">
+                    <i class="bi bi-person-badge fs-1"></i><br><h5 class="mt-2">Profissionais</h5>
+                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white fw-bold">Acessar</a>
                 </div>
             </div>
         </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
 
 
 
