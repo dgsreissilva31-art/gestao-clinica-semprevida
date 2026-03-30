@@ -4,6 +4,7 @@ from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 
 # --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
+
 def base_html(titulo, conteudo):
     return f"""
     <!DOCTYPE html>
@@ -16,10 +17,9 @@ def base_html(titulo, conteudo):
         <title>{titulo} - Sempre Vida</title>
         <style>
             :root {{ --sidebar-width: 250px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
-            body {{ background-color: #ecf0f5; font-family: 'Source Sans Pro', sans-serif; margin: 0; }}
+            body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; }}
             .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; }}
             .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; }}
-            .sidebar-header {{ padding: 15px; color: white; background: #1a2226; font-size: 14px; display: flex; align-items: center; gap: 10px; }}
             .sidebar-menu {{ list-style: none; padding: 0; margin: 0; }}
             .sidebar-menu li a {{ padding: 12px 15px; display: block; color: #b8c7ce; text-decoration: none; border-left: 3px solid transparent; }}
             .sidebar-menu li a:hover {{ background: #1e282c; color: white; border-left-color: #3c8dbc; }}
@@ -35,10 +35,6 @@ def base_html(titulo, conteudo):
             <div><i class="bi bi-person-circle"></i> Douglas Silva</div>
         </div>
         <div class="sidebar">
-            <div class="sidebar-header">
-                <i class="bi bi-person-circle fs-3"></i>
-                <div><b>Douglas Silva</b><br><small><i class="bi bi-circle-fill text-success" style="font-size: 8px;"></i> Online</small></div>
-            </div>
             <ul class="sidebar-menu">
                 <div class="menu-label">Navegação</div>
                 <li><a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
@@ -46,10 +42,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
                 <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
-                <div class="menu-label">Operacional</div>
-                <li><a href="#"><i class="bi bi-calendar-event"></i> Agendamentos</a></li>
-                <li><a href="#"><i class="bi bi-cash-stack"></i> Financeiro</a></li>
-            </ul>
+                <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li> </ul>
         </div>
         <div class="main-content">
             <div class="card-panel">{conteudo}</div>
@@ -57,6 +50,7 @@ def base_html(titulo, conteudo):
     </body>
     </html>
     """
+
 
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 def painel_controle(request):
