@@ -149,7 +149,11 @@ urlpatterns = [
 
 
 
-
+# Altere esta parte final da função cadastro_unidade no seu código:
+        <div class="text-center mt-4 d-grid gap-2">
+            <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Ver Unidades Ativas</a>
+            <a href="/especialidades/" class="btn btn-outline-dark fw-bold">🏥 Gerenciar Especialidades</a>
+        </div>
 
 
 
