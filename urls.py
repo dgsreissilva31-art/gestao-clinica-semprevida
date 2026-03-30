@@ -55,25 +55,39 @@ def base_html(titulo, conteudo):
     """
 
 # --- DASHBOARD ---
+
+# --- TELA 0: PAINEL DE CONTROLE GERAL (ATUALIZADO) ---
 def painel_controle(request):
     conteudo = """
-        <h3 class="fw-bold mb-4">Painel de Gestão</h3>
+        <div class="mb-4">
+            <h3 class="fw-bold"><i class="bi bi-speedometer2"></i> Painel de Gestão</h3>
+            <p class="text-muted">Bem-vindo ao sistema Sempre Vida.</p>
+        </div>
         <div class="row g-3">
             <div class="col-md-4">
-                <div class="p-4 bg-primary text-white rounded shadow-sm">
-                    <i class="bi bi-building fs-1"></i><br><h5>Unidades</h5>
-                    <a href="/unidades/" class="btn btn-sm btn-light mt-2">Gerenciar</a>
+                <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
+                    <i class="bi bi-building fs-1"></i><br><b>Unidades</b><br>
+                    <a href="/unidades/" class="btn btn-sm btn-light mt-2">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-4 bg-success text-white rounded shadow-sm">
-                    <i class="bi bi-hospital fs-1"></i><br><h5>Especialidades</h5>
-                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2">Gerenciar</a>
+                <div class="p-4 bg-success text-white rounded shadow-sm text-center">
+                    <i class="bi bi-hospital fs-1"></i><br><b>Especialidades</b><br>
+                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2">Acessar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center">
+                    <i class="bi bi-person-badge fs-1"></i><br><b>Profissionais</b><br>
+                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white">Acessar</a>
                 </div>
             </div>
         </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
+
+
 
 # --- UNIDADES (CADASTRO) ---
 @csrf_exempt
