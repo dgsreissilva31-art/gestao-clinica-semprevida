@@ -37,7 +37,6 @@ def cadastro_unidade(request):
     edit_id = request.GET.get('edit')
     unidade_dados = {"id": "", "nome": "", "endereco": "", "telefone": ""}
 
-    # Se estiver editando, busca os dados atuais
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
@@ -53,13 +52,13 @@ def cadastro_unidade(request):
         
         try:
             with connection.cursor() as cursor:
-                if id_post: # Atualiza se já existir ID
+                if id_post:
                     cursor.execute(
                         "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
                         [nome, endereco, telefone, id_post]
                     )
                     mensagem = '<div class="alert alert-success">✅ Unidade Atualizada!</div>'
-                else: # Cria novo se não tiver ID
+                else:
                     cursor.execute(
                         "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", 
                         [nome, endereco, telefone]
@@ -90,9 +89,7 @@ def cadastro_unidade(request):
             </div>
             <button type="submit" class="btn btn-success w-100 btn-save mt-3 shadow-sm">Salvar Unidade</button>
         </form>
-
-
-<div class="text-center mt-4 d-grid gap-2">
+        <div class="text-center mt-4 d-grid gap-2">
             <a href="/unidades/lista/" class="btn btn-outline-primary fw-bold">📋 Ver Unidades Ativas</a>
             <a href="/especialidades/" class="btn btn-outline-dark fw-bold">🏥 Gerenciar Especialidades</a>
         </div>
