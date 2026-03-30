@@ -6,9 +6,9 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent
 
 # Chave de segurança
-SECRET_KEY = 'django-insecure-clinica-sempre-vida-v4-final'
+SECRET_KEY = 'django-insecure-clinica-sempre-vida-final-v5'
 
-# Modo de depuração (True para ver detalhes no site)
+# Modo de depuração (Deixamos True para confirmar o sucesso)
 DEBUG = True
 
 # Permite que a Railway acesse o sistema
@@ -60,7 +60,7 @@ TEMPLATES = [
 # ========================
 # 🔥 BANCO DE DADOS (TRANSACTION POOLER - AWS-1)
 # ========================
-# Ajustado para o host aws-1 e porta 6543 conforme sua URL
+# Ajustado para o host aws-1 e porta 6543 exatamente como na sua URL
 DATABASES = {
     'default': dj_database_url.parse(
         'postgresql://postgres.rslaudmbyfcxgtlbowis:fZqMFxZDb0sa5aT3@aws-1-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require',
