@@ -30,42 +30,52 @@ def base_html(titulo, conteudo):
     </html>
     """
 
-# --- TELA 1: CADASTRO DE NOVA UNIDADE ---
+# --- TELA 1: CADASTRO / EDIÇÃO DE UNIDADE ---
 @csrf_exempt
 def cadastro_unidade(request):
     mensagem = ""
-    # Se houver ID na URL, estamos editando
     edit_id = request.GET.get('edit')
-    unidade_dados = {"nome": "", "endereco": "", "telefone": ""}
+    unidade_dados = {"id": "", "nome": "", "endereco": "", "telefone": ""}
 
+    # Se estiver editando, busca os dados atuais
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
+            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
             row = cursor.fetchone()
             if row:
-                unidade_dados = {"nome": row[0], "endereco": row[1], "telefone": row[2]}
+                unidade_dados = {"id": row[0], "nome": row[1], "endereco": row[2], "telefone": row[3]}
 
     if request.method == "POST":
+        id_post = request.POST.get('id')
         nome = request.POST.get('nome')
         endereco = request.POST.get('endereco')
         telefone = request.POST.get('telefone')
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", 
-                    [nome, endereco, telefone]
-                )
-            mensagem = '<div class="alert alert-success">✅ Unidade Cadastrada com Sucesso!</div>'
+                if id_post: # Atualiza se já existir ID
+                    cursor.execute(
+                        "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
+                        [nome, endereco, telefone, id_post]
+                    )
+                    mensagem = '<div class="alert alert-success">✅ Unidade Atualizada!</div>'
+                else: # Cria novo se não tiver ID
+                    cursor.execute(
+                        "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", 
+                        [nome, endereco, telefone]
+                    )
+                    mensagem = '<div class="alert alert-success">✅ Unidade Cadastrada!</div>'
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
     conteudo = f"""
         <div class="text-center mb-4">
             <span style="font-size: 40px;">🏢</span>
-            <h2 class="mt-2">Nova Unidade</h2>
+            <h2 class="mt-2">{"Editar Unidade" if edit_id else "Nova Unidade"}</h2>
         </div>
         {mensagem}
         <form method="POST">
+            <input type="hidden" name="id" value="{unidade_dados['id']}">
             <div class="mb-3">
                 <label class="form-label fw-bold">Nome da Unidade</label>
                 <input type="text" name="nome" class="form-control form-control-lg" value="{unidade_dados['nome']}" required>
@@ -86,7 +96,7 @@ def cadastro_unidade(request):
     """
     return HttpResponse(base_html("Cadastro Unidade", conteudo))
 
-# --- TELA 2: LISTAGEM COM BOTÕES FUNCIONAIS ---
+# --- TELA 2: LISTAGEM COM BOTÃO VOLTAR ---
 def lista_unidades(request):
     # Lógica de Exclusão
     delete_id = request.GET.get('delete')
@@ -112,7 +122,7 @@ def lista_unidades(request):
                     </div>
                     <div class="d-flex gap-2">
                         <a href="/?edit={u[0]}" class="btn btn-sm btn-outline-warning">Editar</a>
-                        <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Deseja excluir esta unidade?')">Excluir</a>
+                        <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir unidade?')">Excluir</a>
                     </div>
                 </div>
             </div>"""
@@ -122,8 +132,9 @@ def lista_unidades(request):
             <div style="min-height: 200px;">
                 {itens if unidades else '<p class="text-center text-muted">Nenhuma unidade cadastrada.</p>'}
             </div>
-            <div class="mt-4">
-                <a href="/" class="btn btn-primary w-100 btn-save shadow-sm">➕ Nova Unidade</a>
+            <div class="mt-4 d-grid gap-2">
+                <a href="/" class="btn btn-primary btn-save shadow-sm">➕ Nova Unidade</a>
+                <a href="/" class="btn btn-outline-secondary py-2 fw-bold">⬅️ Voltar</a>
             </div>
         """
         return HttpResponse(base_html("Lista de Unidades", conteudo))
