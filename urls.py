@@ -42,7 +42,9 @@ def base_html(titulo, conteudo):
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
                 <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
-                <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li> </ul>
+                <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
+                <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
+                </ul>
         </div>
         <div class="main-content">
             <div class="card-panel">{conteudo}</div>
@@ -82,6 +84,12 @@ def painel_controle(request):
     <div class="p-4 bg-info text-white rounded shadow-sm text-center">
         <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
         <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+    </div>
+  </div>
+<div class="col-md-3">
+    <div class="p-4 bg-secondary text-white rounded shadow-sm text-center">
+        <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2">Exames</h5>
+        <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
     </div>
   </div>
 </div>
@@ -356,4 +364,5 @@ urlpatterns = [
     path('especialidades/', especialidades_geral), # Especialidades
     path('profissionais/', profissionais_geral),   # Médicos/Dentistas
     path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
+    path('exames/', exames_geral),
 ]
