@@ -1254,23 +1254,43 @@ def agendar_consulta(request):
     return HttpResponse(base_html("Agendar Consulta", conteudo))
 
 
-# --- TELA 14: RECEPÇÃO ---
+
+
+# --- TELA 14 FINAL: RECEPÇÃO INTEGRADA ---
 @csrf_exempt
 def recepcao_geral(request):
 
     data_hoje = datetime.date.today().strftime('%Y-%m-%d')
     unidade_filtro = request.GET.get('unidade')
 
-    mensagem = ""
-
     try:
         with connection.cursor() as cursor:
 
-            # 🔹 Lista de unidades (filtro)
+            # 🔹 LISTA UNIDADES
             cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
             unidades = cursor.fetchall()
 
-            # 🔹 BUSCA AGENDAMENTOS DO DIA
+            # 🔹 ALTERAÇÃO DE STATUS
+            if request.GET.get('acao'):
+                ag_id = request.GET.get('id')
+                acao = request.GET.get('acao')
+
+                if acao == "chegada":
+                    novo_status = "Aguardando"
+                elif acao == "finalizar":
+                    novo_status = "Finalizado"
+                else:
+                    novo_status = "Aguardando"
+
+                cursor.execute("""
+                    UPDATE agendamentos
+                    SET status = %s
+                    WHERE id = %s
+                """, [novo_status, ag_id])
+
+                return HttpResponseRedirect('/recepcao/')
+
+            # 🔹 BUSCAR AGENDA DO DIA
             query = """
                 SELECT 
                     ag.id,
@@ -1299,37 +1319,16 @@ def recepcao_geral(request):
             agenda = cursor.fetchall()
 
     except Exception as e:
-        return HttpResponse(base_html("Erro", f"<pre>{e}</pre>"))
+        return HttpResponse(base_html("Erro Recepção", f"<pre>{e}</pre>"))
 
-    # 🔹 ALTERAR STATUS
-    if request.GET.get('acao'):
-        ag_id = request.GET.get('id')
-        acao = request.GET.get('acao')
-
-        novo_status = "Aguardando"
-
-        if acao == "chegada":
-            novo_status = "Aguardando"
-        elif acao == "atendimento":
-            novo_status = "Em Atendimento"
-        elif acao == "finalizar":
-            novo_status = "Finalizado"
-
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                UPDATE agendamentos
-                SET status = %s
-                WHERE id = %s
-            """, [novo_status, ag_id])
-
-        return HttpResponseRedirect('/recepcao/')
-
-    # 🔹 Montar tabela
+    # 🔹 MONTAR TABELA
     linhas = ""
 
     for a in agenda:
 
         hora = a[4]
+
+        # 🔥 CONVERSÃO SEGURA DE HORÁRIO
         if isinstance(hora, str):
             hora = datetime.datetime.strptime(hora, '%H:%M:%S').strftime('%H:%M')
         else:
@@ -1351,15 +1350,23 @@ def recepcao_geral(request):
                 <td>{a[3]}</td>
                 <td><span class="badge bg-{cor}">{status}</span></td>
                 <td>
-                    <a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>
-                    <a href="/recepcao/?acao=atendimento&id={a[0]}" class="btn btn-sm btn-primary">Atender</a>
-                    <a href="/recepcao/?acao=finalizar&id={a[0]}" class="btn btn-sm btn-success">Finalizar</a>
+                    <a href="/recepcao/?acao=chegada&id={a[0]}" 
+                       class="btn btn-sm btn-warning">Chegada</a>
+
+                    <a href="/prontuario/?id={a[0]}" 
+                       class="btn btn-sm btn-primary">Atender</a>
+
+                    <a href="/recepcao/?acao=finalizar&id={a[0]}" 
+                       class="btn btn-sm btn-success">Finalizar</a>
                 </td>
             </tr>
         """
 
-    # 🔹 Select unidades
-    opts_unidades = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
+    # 🔹 SELECT UNIDADES
+    opts_unidades = "".join([
+        f'<option value="{u[0]}" {"selected" if str(u[0]) == str(unidade_filtro) else ""}>{u[1]}</option>'
+        for u in unidades
+    ])
 
     conteudo = f"""
         <h4><i class="bi bi-person-check"></i> Recepção de Pacientes</h4>
@@ -1385,18 +1392,17 @@ def recepcao_geral(request):
                         <th>Profissional</th>
                         <th>Unidade</th>
                         <th>Status</th>
-                        <th>Ação</th>
+                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {linhas if linhas else "<tr><td colspan='6'>Sem pacientes hoje</td></tr>"}
+                    {linhas if linhas else "<tr><td colspan='6' class='text-center'>Sem pacientes hoje</td></tr>"}
                 </tbody>
             </table>
         </div>
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 
 
