@@ -977,45 +977,46 @@ def agendas_config_geral(request):
 @csrf_exempt
 def marcar_consulta_publico(request):
     mensagem = ""
-    # Captura filtros da URL
-    unidade_id = request.GET.get('unidade')
-    especialidade_id = request.GET.get('especialidade')
-    data_selecionada = request.GET.get('data')
+    # 1. Captura com segurança (evita NoneType error)
+    unid = request.GET.get('unidade', '')
+    espec = request.GET.get('especialidade', '')
+    data_sel = request.GET.get('data', '')
 
-    # Lógica de Gravação (POST)
+    # 2. Lógica de Gravação (POST)
     if request.method == "POST":
-        agenda_id = request.POST.get('agenda_id')
+        ag_id = request.POST.get('agenda_id')
         hora = request.POST.get('horario')
-        data_f = request.POST.get('data_f')
-        nome_pac = request.POST.get('paciente_nome')
+        dt_f = request.POST.get('data_f')
+        nome = request.POST.get('paciente_nome', 'Paciente')
         
-        if agenda_id and hora and data_f:
+        if ag_id and hora and dt_f:
             try:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "INSERT INTO agendamentos (agenda_config_id, data_agendamento, horario_selecionado) VALUES (%s, %s, %s)",
-                        [agenda_id, data_f, hora]
+                        [ag_id, dt_f, hora]
                     )
-                return HttpResponse(f"<html><meta charset='utf-8'><script>alert('✅ Olá {nome_pac}, sua consulta foi agendada!'); window.location.href='/';</script></html>")
+                return HttpResponse(f"<html><meta charset='utf-8'><script>alert('Sucesso!'); window.location.href='/';</script></html>")
             except Exception as e:
-                mensagem = f"<div class='alert alert-danger'>Erro ao salvar: {e}</div>"
-        else:
-            mensagem = "<div class='alert alert-warning'>⚠️ Por favor, selecione um horário antes de confirmar.</div>"
+                mensagem = f"<div class='alert alert-danger small'>Erro ao salvar: {e}</div>"
 
-    # Busca Dados para os Filtros
+    # 3. Busca Unidades e Especialidades para os Selects
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades = cursor.fetchall()
+        lista_unid = cursor.fetchall()
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        especialidades = cursor.fetchall()
+        lista_espec = cursor.fetchall()
 
-        # Busca horários se houver filtros selecionados
+        # 4. Busca Horários Disponíveis (Protegido contra erros de data)
         grade = []
-        if unidade_id and especialidade_id and data_selecionada:
+        if unid and espec and data_sel:
             try:
-                dt = datetime.datetime.strptime(data_selecionada, '%Y-%m-%d')
-                dias_map = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado', 6:'Domingo'}
-                dia_nome = dias_map.get(dt.weekday())
+                # Converte string para objeto date com segurança
+                ano, mes, dia = map(int, data_sel.split('-'))
+                data_obj = datetime.date(ano, mes, dia)
+                
+                dias_semana = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado', 6:'Domingo'}
+                dia_txt = dias_semana.get(data_obj.weekday())
 
                 cursor.execute("""
                     SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim
@@ -1023,14 +1024,19 @@ def marcar_consulta_publico(request):
                     JOIN profissionais p ON ac.profissional_id = p.id
                     WHERE ac.unidade_id = %s AND ac.especialidade_id = %s
                     AND (ac.dia_semana = %s OR ac.data_especifica = %s)
-                """, [unidade_id, especialidade_id, dia_nome, data_selecionada])
+                """, [unid, espec, dia_txt, data_sel])
                 grade = cursor.fetchall()
-            except: grade = []
+            except Exception:
+                grade = [] # Se der erro na data, apenas retorna lista vazia em vez de Erro 500
 
-    # Opções dos Selects
-    opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unidade_id else ""}>{u[1]}</option>' for u in unidades])
-    opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==especialidade_id else ""}>{e[1]}</option>' for e in especialidades])
-    opts_horarios = "".join([f'<option value="{g[0]}|{g[2]}">{g[1]} às {g[2]}</option>' for g in grade])
+    # 5. Montagem do HTML Dinâmico
+    opts_u = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid else ""}>{u[1]}</option>' for u in lista_unid])
+    opts_e = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==espec else ""}>{e[1]}</option>' for e in lista_espec])
+    
+    # Previne erro se grade for vazia
+    opts_h = ""
+    if grade:
+        opts_h = "".join([f'<option value="{g[0]}|{g[2]}">{g[1]} - {g[2]}</option>' for g in grade])
 
     return HttpResponse(f"""
     <!DOCTYPE html>
@@ -1039,73 +1045,66 @@ def marcar_consulta_publico(request):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-        <title>Agendamento - Sempre Vida</title>
+        <title>Agendamento Sempre Vida</title>
         <style>
-            body {{ background: #f4f7f6; min-height: 100vh; padding: 20px; font-family: sans-serif; }}
-            .header-top {{ background: #3c8dbc; color: white; padding: 40px 20px; border-radius: 15px; text-center; margin-bottom: -50px; shadow: 0 4px 10px rgba(0,0,0,0.1); }}
-            .main-card {{ background: white; border-radius: 15px; padding: 30px; shadow: 0 10px 30px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; padding-top: 60px; }}
-            .btn-primary {{ background: #3c8dbc; border: none; padding: 12px; font-weight: bold; }}
+            body {{ background: linear-gradient(135deg, #3c8dbc, #1e282c); min-height: 100vh; padding: 20px; font-family: sans-serif; }}
+            .card {{ border-radius: 20px; border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }}
+            .btn-primary {{ background-color: #3c8dbc; border: none; font-weight: bold; }}
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="header-top text-center shadow">
-                <h2 class="fw-bold"><i class="bi bi-heart-pulse"></i> SEMPRE VIDA</h2>
-                <p>Agendamento Online de Consultas</p>
+        <div class="card mx-auto mt-4 p-4" style="max-width: 550px;">
+            <div class="text-center mb-4">
+                <h2 class="text-primary fw-bold">SEMPRE VIDA</h2>
+                <p class="text-muted small">Agendamento Online de Consultas</p>
             </div>
-            
-            <div class="main-card shadow">
-                {mensagem}
-                <form method="GET" class="row g-3">
-                    <div class="col-12"><label class="form-label fw-bold">Unidade</label>
-                        <select name="unidade" class="form-select" onchange="this.form.submit()"><option value="">Onde quer ser atendido?</option>{opts_unid}</select>
-                    </div>
-                    <div class="col-md-6"><label class="form-label fw-bold">Especialidade</label>
-                        <select name="especialidade" class="form-select" onchange="this.form.submit()"><option value="">Qual médico?</option>{opts_esp}</select>
-                    </div>
-                    <div class="col-md-6"><label class="form-label fw-bold">Data</label>
-                        <input type="date" name="data" class="form-control" value="{data_selecionada or ''}" onchange="this.form.submit()">
-                    </div>
-                </form>
 
-                <hr class="my-4">
+            {mensagem}
 
-                <form method="POST">
-                    <label class="form-label fw-bold text-primary">Horários Disponíveis</label>
-                    <select name="horario_full" class="form-select mb-3" required onchange="preencherCampos(this.value)">
-                        <option value="">{ 'Selecione um horário...' if grade else 'Nenhum horário para esta data' }</option>
-                        {opts_horarios}
+            <form method="GET" class="row g-2">
+                <div class="col-12">
+                    <label class="small fw-bold">Unidade</label>
+                    <select name="unidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Onde quer ser atendido?</option>{opts_u}
                     </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="small fw-bold">Especialidade</label>
+                    <select name="especialidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Qual médico?</option>{opts_e}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="small fw-bold">Data</label>
+                    <input type="date" name="data" class="form-control" value="{data_sel}" onchange="this.form.submit()">
+                </div>
+            </form>
 
-                    <input type="hidden" name="agenda_id" id="h_agenda">
-                    <input type="hidden" name="horario" id="h_hora">
-                    <input type="hidden" name="data_f" value="{data_selecionada}">
+            <hr class="my-4">
 
-                    <div class="p-3 bg-light rounded mb-3 border">
-                        <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Seu Nome Completo" required>
-                        <input type="text" name="paciente_tel" class="form-control" placeholder="Seu WhatsApp (Ex: 11999998888)" required>
-                    </div>
+            <form method="POST">
+                <label class="small fw-bold text-primary">Horários Disponíveis para esta Data:</label>
+                <select name="horario_full" class="form-select mb-3" required onchange="var d=this.value.split('|'); document.getElementById('ag_id').value=d[0]; document.getElementById('ho_id').value=d[1];">
+                    <option value="">{ 'Selecione um horário...' if grade else 'Nenhum horário disponível' }</option>
+                    {opts_h}
+                </select>
 
-                    <button type="submit" class="btn btn-primary w-100 rounded-pill shadow">CONFIRMAR MINHA CONSULTA</button>
-                    <div class="text-center mt-3"><a href="/admin-painel/" class="text-muted small">Acesso Restrito</a></div>
-                </form>
-            </div>
+                <input type="hidden" name="agenda_id" id="ag_id">
+                <input type="hidden" name="horario" id="ho_id">
+                <input type="hidden" name="data_f" value="{data_sel}">
+
+                <div class="p-3 bg-light rounded mb-3 border">
+                    <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Seu Nome Completo" required>
+                    <input type="text" name="paciente_tel" class="form-control" placeholder="Seu WhatsApp" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill">FINALIZAR AGENDAMENTO</button>
+                <div class="text-center mt-3"><a href="/admin-painel/" class="text-muted small text-decoration-none">Acesso Restrito</a></div>
+            </form>
         </div>
-
-        <script>
-            function preencherCampos(valor) {{
-                if(valor) {{
-                    var p = valor.split('|');
-                    document.getElementById('h_agenda').value = p[0];
-                    document.getElementById('h_hora').value = p[1];
-                }}
-            }}
-        </script>
     </body>
     </html>
     """)
-
 
 
 ROTA 6
