@@ -46,6 +46,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
                 <li><a href="/pacientes/"><i class="bi bi-people"></i> Pacientes</a></li>
+                <li><a href="/acessos/"><i class="bi bi-shield-lock"></i> Acessos</a></li>
                
                 
                 
@@ -111,6 +112,12 @@ def painel_controle(request):
     <div class="p-4 bg-danger text-white rounded shadow-sm text-center">
         <i class="bi bi-people fs-1"></i><br><h5 class="mt-2">Pacientes</h5>
         <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
+        <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2">Acessos</h5>
+        <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
     </div>
   </div>
 </div>
@@ -545,6 +552,77 @@ def pacientes_geral(request):
 
 
 
+from django.contrib.auth.models import User # Adicione este import no topo!
+
+# --- 11. TELA 8: GESTÃO DE ACESSOS E FUNCIONÁRIOS ---
+@csrf_exempt
+def acesso_geral(request):
+    mensagem = ""
+    
+    if request.method == "POST":
+        nome = request.POST.get('nome')
+        username = request.POST.get('username') # O login dele
+        senha = request.POST.get('senha')
+        cargo = request.POST.get('cargo')
+        cpf = request.POST.get('cpf')
+
+        try:
+            # 1. Cria o usuário no sistema de login do Django
+            if not User.objects.filter(username=username).exists():
+                user = User.objects.create_user(username=username, password=senha)
+                
+                # 2. Salva os detalhes extras na nossa tabela
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
+                        [user.id, nome, cargo, cpf]
+                    )
+                mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado com sucesso!</div>'
+            else:
+                mensagem = '<div class="alert alert-danger">❌ Este login já existe!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # Busca Lista de Funcionários
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
+        funcionarios = cursor.fetchall()
+
+    linhas = "".join([f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>" for f in funcionarios])
+
+    conteudo = f"""
+        <h4><i class="bi bi-shield-lock"></i> Controle de Acesso e Funcionários</h4><hr>
+        {mensagem}
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-6"><label class="form-label fw-bold">Nome do Funcionário</label><input type="text" name="nome" class="form-control" required></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Cargo</label>
+                <select name="cargo" class="form-select">
+                    <option value="Recepção">Recepção</option>
+                    <option value="Médico">Médico</option>
+                    <option value="Dentista">Dentista</option>
+                    <option value="Administrador">Administrador</option>
+                </select>
+            </div>
+            <div class="col-md-3"><label class="form-label fw-bold">CPF</label><input type="text" name="cpf" class="form-control" placeholder="000.000.000-00"></div>
+            
+            <div class="col-md-6"><label class="form-label fw-bold">Login (Usuário)</label><input type="text" name="username" class="form-control" placeholder="Ex: douglas.silva" required></div>
+            <div class="col-md-6"><label class="form-label fw-bold">Senha de Acesso</label><input type="password" name="senha" class="form-control" required></div>
+            
+            <div class="col-12"><button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm">CRIAR ACESSO AO SISTEMA</button></div>
+        </form>
+        <hr>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark"><tr><th>Nome</th><th>Cargo</th><th>CPF</th></tr></thead>
+                <tbody>{linhas if funcionarios else '<tr><td colspan="3" class="text-center">Nenhum funcionário cadastrado.</td></tr>'}</tbody>
+            </table>
+        </div>
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+    return HttpResponse(base_html("Acessos", conteudo))
+
+
+
 
 # ---6. ROTAS ----
 urlpatterns = [
@@ -557,4 +635,5 @@ urlpatterns = [
     path('exames/', exames_geral),
     path('odontologia/', odonto_geral),
     path('pacientes/', pacientes_geral),
+    path('acessos/', acesso_geral),
 ]
