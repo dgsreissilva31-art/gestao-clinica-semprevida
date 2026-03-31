@@ -981,7 +981,7 @@ def agendas_config_geral(request):
 
 
 
-# --- TELA 12 CORRIGIDA ---
+# --- TELA 12 FINAL (COM LINK PARA AGENDAMENTO) ---
 @csrf_exempt
 def agenda_diaria(request):
     try:
@@ -993,11 +993,10 @@ def agenda_diaria(request):
         dia_semana = dias[data_obj.weekday()]
 
         horarios = []
-        agendados = []
 
         with connection.cursor() as cursor:
 
-            # 🔹 BUSCA AGENDAS
+            # 🔹 BUSCAR AGENDAS
             cursor.execute("""
                 SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
                 FROM agendas_config ac
@@ -1008,12 +1007,12 @@ def agenda_diaria(request):
             agendas = cursor.fetchall()
 
             for ag in agendas:
-                nome_prof = ag[1]
+                prof_nome = ag[1]
                 inicio = ag[2]
                 fim = ag[3]
                 intervalo = ag[4] or 20
 
-                # 🔥 CONVERSÃO SEGURA (resolve erro do Supabase)
+                # 🔥 CONVERSÃO SEGURA (resolve erro do banco)
                 if isinstance(inicio, str):
                     inicio = datetime.datetime.strptime(inicio, '%H:%M:%S').time()
                 if isinstance(fim, str):
@@ -1024,21 +1023,22 @@ def agenda_diaria(request):
                 while hora_atual.time() < fim:
                     horarios.append({
                         "hora": hora_atual.strftime('%H:%M'),
-                        "profissional": nome_prof
+                        "profissional": prof_nome
                     })
+
                     hora_atual += datetime.timedelta(minutes=intervalo)
 
-            # 🔹 BUSCA AGENDAMENTOS
+            # 🔹 BUSCAR AGENDAMENTOS
             cursor.execute("""
-                SELECT horario_selecionado, paciente_id
+                SELECT horario_selecionado
                 FROM agendamentos
                 WHERE data_agendamento = %s
             """, [data_hoje])
 
             agendados_raw = cursor.fetchall()
 
-            # 🔥 MONTA DICIONÁRIO DE OCUPADOS
-            ocupados = {}
+            ocupados = set()
+
             for a in agendados_raw:
                 hora = a[0]
 
@@ -1047,26 +1047,39 @@ def agenda_diaria(request):
                 else:
                     hora = hora.strftime('%H:%M')
 
-                ocupados[hora] = "Paciente"
+                ocupados.add(hora)
 
-        # 🔹 MONTA TABELA
+        # 🔹 MONTAR TABELA
         linhas = ""
+
         for h in sorted(horarios, key=lambda x: x['hora']):
+
             if h['hora'] in ocupados:
                 status = "<span class='badge bg-danger'>Ocupado</span>"
+                botao = f"""
+                    <button class="btn btn-sm btn-danger" disabled>
+                        {h['hora']}
+                    </button>
+                """
             else:
                 status = "<span class='badge bg-success'>Livre</span>"
+                botao = f"""
+                    <a href="/agendar/?hora={h['hora']}&prof={h['profissional']}&data={data_hoje}" 
+                       class="btn btn-sm btn-outline-primary">
+                       {h['hora']}
+                    </a>
+                """
 
             linhas += f"""
                 <tr>
-                    <td><b>{h['hora']}</b></td>
+                    <td>{botao}</td>
                     <td>{h['profissional']}</td>
                     <td>{status}</td>
                 </tr>
             """
 
         conteudo = f"""
-            <h4>Agenda do Dia</h4>
+            <h4><i class="bi bi-calendar3"></i> Agenda do Dia</h4>
 
             <form method="GET" class="row mb-3">
                 <div class="col-md-4">
@@ -1077,26 +1090,26 @@ def agenda_diaria(request):
                 </div>
             </form>
 
-            <table class="table table-hover">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Hora</th>
-                        <th>Profissional</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas if linhas else "<tr><td colspan='3'>Sem horários</td></tr>"}
-                </tbody>
-            </table>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Horário</th>
+                            <th>Profissional</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {linhas if linhas else "<tr><td colspan='3' class='text-center'>Sem horários disponíveis</td></tr>"}
+                    </tbody>
+                </table>
+            </div>
         """
 
         return HttpResponse(base_html("Agenda do Dia", conteudo))
 
     except Exception as e:
-        return HttpResponse(base_html("Erro", f"<h4>Erro interno:</h4><pre>{e}</pre>"))
-
-
+        return HttpResponse(base_html("Erro", f"<h4>Erro:</h4><pre>{e}</pre>"))
 
 # ---6. ROTAS ----
 urlpatterns = [
