@@ -1,8 +1,8 @@
+import datetime
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
-
 # --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
 
 def base_html(titulo, conteudo):
@@ -797,7 +797,9 @@ def precos_exames_geral(request):
     return HttpResponse(base_html("Preços Exames", conteudo))
 
 
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (REFEITA) ---
+
+
+# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
 @csrf_exempt
 def agendas_config_geral(request):
     mensagem = ""
@@ -853,16 +855,25 @@ def agendas_config_geral(request):
         """)
         lista_agendas = cursor.fetchall()
 
-    # Montagem dos filtros (HTML)
     opts_prof = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in profs])
     opts_unid = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unids])
     opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in esps])
     
-    # Montagem das linhas da tabela
+    # Montagem das linhas da tabela com tratamento para evitar NameError
     linhas = ""
     for a in lista_agendas:
-        # Formatação amigável da data ou dia da semana
-        quando = f"Toda {a[3]}" if a[3] else datetime.datetime.strptime(str(a[4]), '%Y-%m-%d').strftime('%d/%m/%Y')
+        if a[3]: # Se tiver dia da semana
+            quando = f"Toda {a[3]}"
+        elif a[4]: # Se tiver data específica
+            # Converte a data do banco para o formato brasileiro
+            data_db = a[4]
+            if isinstance(data_db, str):
+                quando = datetime.datetime.strptime(data_db, '%Y-%m-%d').strftime('%d/%m/%Y')
+            else:
+                quando = data_db.strftime('%d/%m/%Y')
+        else:
+            quando = "Não definido"
+
         linhas += f"""
             <tr>
                 <td><b>{a[1]}</b><br><small>{a[7]}</small></td>
@@ -934,7 +945,7 @@ def agendas_config_geral(request):
                 </div>
 
                 <div class="col-12 mt-3">
-                    <button type="submit" class="btn btn-success w-100 fw-bold">SALVAR GRADE DE HORÁRIOS</button>
+                    <button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">SALVAR GRADE DE HORÁRIOS</button>
                 </div>
             </div>
         </form>
@@ -957,6 +968,8 @@ def agendas_config_geral(request):
         </div>
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
+
+
 
 
 
