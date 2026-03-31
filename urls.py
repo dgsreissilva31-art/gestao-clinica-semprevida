@@ -56,7 +56,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/agendar/"><i class="bi bi-calendar-plus"></i> Novo Agendamento</a></li>
                 <li><a href="/recepcao/"><i class="bi bi-person-check"></i> Recepção (Hoje)</a></li>
                 <li><a href="/recepcao/" class="nav-link text-white"><i class="bi bi-file-earmark-medical me-2"></i> Prontuários</a></li>
-                <li><a href="/caixa/" class="nav-link text-white"><i class="bi bi-cash-stack me-2"></i> Caixa do Dia</a></li>
+              
               
                
                 
