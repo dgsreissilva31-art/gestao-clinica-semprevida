@@ -1,5 +1,3 @@
-Algoritimo Django – Telas de Cadastro – 21:48 as 21:48
-
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
