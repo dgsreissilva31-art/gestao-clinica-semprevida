@@ -1406,6 +1406,170 @@ def recepcao_geral(request):
 
 
 
+# --- TELA 15: PRONTUÁRIO ---
+@csrf_exempt
+def prontuario_geral(request):
+
+    agendamento_id = request.GET.get('id')
+    mensagem = ""
+
+    try:
+        with connection.cursor() as cursor:
+
+            # 🔹 Buscar dados do agendamento
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.nome,
+                    p.telefone,
+                    c.nome,
+                    pr.id,
+                    pr.nome,
+                    ag.data_agendamento,
+                    ag.horario_selecionado
+                FROM agendamentos ag
+                JOIN pacientes p ON ag.paciente_id = p.id
+                LEFT JOIN convenios c ON p.convenio_id = c.id
+                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                JOIN profissionais pr ON ac.profissional_id = pr.id
+                WHERE ag.id = %s
+            """, [agendamento_id])
+
+            dados = cursor.fetchone()
+
+            if not dados:
+                return HttpResponse(base_html("Erro", "Agendamento não encontrado"))
+
+            paciente_id = dados[0]
+            paciente_nome = dados[1]
+            telefone = dados[2]
+            convenio = dados[3] or "Particular"
+            profissional_id = dados[4]
+            profissional_nome = dados[5]
+            data = dados[6]
+            hora = dados[7]
+
+            # 🔹 Histórico do paciente
+            cursor.execute("""
+                SELECT data_atendimento, diagnostico, procedimentos
+                FROM prontuarios
+                WHERE paciente_id = %s
+                ORDER BY data_atendimento DESC
+            """, [paciente_id])
+
+            historico = cursor.fetchall()
+
+    except Exception as e:
+        return HttpResponse(base_html("Erro", f"<pre>{e}</pre>"))
+
+    # 🔹 SALVAR PRONTUÁRIO
+    if request.method == "POST":
+
+        queixa = request.POST.get('queixa')
+        anamnese = request.POST.get('anamnese')
+        diagnostico = request.POST.get('diagnostico')
+        procedimentos = request.POST.get('procedimentos')
+        obs = request.POST.get('observacoes')
+
+        try:
+            with connection.cursor() as cursor:
+
+                cursor.execute("""
+                    INSERT INTO prontuarios 
+                    (paciente_id, profissional_id, data_atendimento, hora,
+                     queixa, anamnese, diagnostico, procedimentos, observacoes)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, [
+                    paciente_id,
+                    profissional_id,
+                    data,
+                    hora,
+                    queixa,
+                    anamnese,
+                    diagnostico,
+                    procedimentos,
+                    obs
+                ])
+
+                # 🔹 finalizar atendimento automaticamente
+                cursor.execute("""
+                    UPDATE agendamentos
+                    SET status = 'Finalizado'
+                    WHERE id = %s
+                """, [agendamento_id])
+
+            mensagem = "<div class='alert alert-success'>✅ Prontuário salvo!</div>"
+
+        except Exception as e:
+            mensagem = f"<div class='alert alert-danger'>❌ Erro: {e}</div>"
+
+    # 🔹 montar histórico
+    linhas_hist = ""
+    for h in historico:
+        linhas_hist += f"""
+            <tr>
+                <td>{h[0]}</td>
+                <td>{h[1]}</td>
+                <td>{h[2]}</td>
+            </tr>
+        """
+
+    conteudo = f"""
+        <h4><i class="bi bi-file-medical"></i> Prontuário</h4>
+        {mensagem}
+
+        <div class="mb-3">
+            <b>Paciente:</b> {paciente_nome} <br>
+            <b>Telefone:</b> {telefone} <br>
+            <b>Convênio:</b> {convenio} <br><br>
+
+            <b>Profissional:</b> {profissional_nome} <br>
+            <b>Data:</b> {data} <br>
+            <b>Hora:</b> {hora}
+        </div>
+
+        <form method="POST">
+
+            <label>Queixa Principal</label>
+            <textarea name="queixa" class="form-control mb-2"></textarea>
+
+            <label>Anamnese</label>
+            <textarea name="anamnese" class="form-control mb-2"></textarea>
+
+            <label>Diagnóstico</label>
+            <textarea name="diagnostico" class="form-control mb-2"></textarea>
+
+            <label>Procedimentos</label>
+            <textarea name="procedimentos" class="form-control mb-2"></textarea>
+
+            <label>Observações</label>
+            <textarea name="observacoes" class="form-control mb-3"></textarea>
+
+            <button class="btn btn-success w-100">Salvar Prontuário</button>
+        </form>
+
+        <hr>
+
+        <h5>Histórico do Paciente</h5>
+
+        <table class="table table-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th>Data</th>
+                    <th>Diagnóstico</th>
+                    <th>Procedimentos</th>
+                </tr>
+            </thead>
+            <tbody>
+                {linhas_hist if linhas_hist else "<tr><td colspan='3'>Sem histórico</td></tr>"}
+            </tbody>
+        </table>
+    """
+
+    return HttpResponse(base_html("Prontuário", conteudo))
+
+
+
 
 
 # ---6. ROTAS ----
@@ -1426,5 +1590,6 @@ urlpatterns = [
     path('agenda-diaria/', agenda_diaria),
     path('agendar/', agendar_consulta),
     path('recepcao/', recepcao_geral),
+    path('prontuario/', prontuario_geral),
    
 ]
