@@ -978,7 +978,9 @@ def agendas_config_geral(request):
 
 
 
-# --- 15. TELA 12: AGENDAMENTO PÚBLICO (TELA DE ABERTURA) ---
+# --- 15. TELA 12: AGENDAMENTO PÚBLICO (CORRIGIDA) ---
+import datetime
+
 @csrf_exempt
 def marcar_consulta_publico(request):
     mensagem = ""
@@ -986,11 +988,12 @@ def marcar_consulta_publico(request):
     espec = request.GET.get('especialidade')
     data_sel = request.GET.get('data')
 
-    # 1. Lógica de Gravação (POST) - Protegida
+    # --- 1. SALVAR AGENDAMENTO ---
     if request.method == "POST":
         ag_id = request.POST.get('agenda_id')
         hora = request.POST.get('horario')
         dt_f = request.POST.get('data_f')
+
         if ag_id and hora and dt_f:
             try:
                 with connection.cursor() as cursor:
@@ -998,43 +1001,75 @@ def marcar_consulta_publico(request):
                         "INSERT INTO agendamentos (agenda_config_id, data_agendamento, horario_selecionado) VALUES (%s, %s, %s)",
                         [ag_id, dt_f, hora]
                     )
-                return HttpResponse("<html><meta charset='utf-8'><script>alert('✅ Agendado com sucesso!'); window.location.href='/';</script></html>")
+                return HttpResponse("""
+                    <html><meta charset='utf-8'>
+                    <script>
+                        alert('✅ Agendado com sucesso!');
+                        window.location.href='/';
+                    </script>
+                    </html>
+                """)
             except Exception as e:
                 mensagem = f"<div class='alert alert-danger'>Erro: {e}</div>"
 
-    # 2. Busca de Dados para os Filtros
+    # --- 2. BUSCAR DADOS ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
+
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         especialidades = cursor.fetchall()
 
         grade = []
-        # SÓ BUSCA SE TIVER DATA (Isso evita o Erro 500 ao abrir a página)
+
+        # Só processa se tiver todos os filtros
         if unid and espec and data_sel:
             try:
-                # Transforma a data do input em dia da semana
                 dt_obj = datetime.datetime.strptime(data_sel, '%Y-%m-%d')
-                # MAPA COMPLETO (Incluindo Domingo 6)
-                dias_map = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado', 6:'Domingo'}
+
+                dias_map = {
+                    0: 'Segunda-feira',
+                    1: 'Terça-feira',
+                    2: 'Quarta-feira',
+                    3: 'Quinta-feira',
+                    4: 'Sexta-feira',
+                    5: 'Sábado',
+                    6: 'Domingo'
+                }
+
                 dia_nome = dias_map.get(dt_obj.weekday())
 
                 cursor.execute("""
                     SELECT ac.id, p.nome, ac.horario_inicio
                     FROM agendas_config ac
                     JOIN profissionais p ON ac.profissional_id = p.id
-                    WHERE ac.unidade_id = %s AND ac.especialidade_id = %s
+                    WHERE ac.unidade_id = %s 
+                    AND ac.especialidade_id = %s
                     AND (ac.dia_semana = %s OR ac.data_especifica = %s)
                 """, [unid, espec, dia_nome, data_sel])
+
                 grade = cursor.fetchall()
-            except:
-                grade = [] # Se a data for inválida, apenas retorna lista vazia
 
-    # 3. Montagem dos Selects HTML
-    opts_u = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid else ""}>{u[1]}</option>' for u in unidades])
-    opts_e = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==espec else ""}>{e[1]}</option>' for e in especialidades])
-    opts_h = "".join([f'<option value="{g[0]}|{g[2]}">{g[1]} - {g[2]}</option>' for g in grade])
+            except Exception:
+                grade = []
 
+    # --- 3. MONTAGEM DOS SELECTS ---
+    opts_u = "".join([
+        f'<option value="{u[0]}" {"selected" if str(u[0]) == str(unid) else ""}>{u[1]}</option>'
+        for u in unidades
+    ])
+
+    opts_e = "".join([
+        f'<option value="{e[0]}" {"selected" if str(e[0]) == str(espec) else ""}>{e[1]}</option>'
+        for e in especialidades
+    ])
+
+    opts_h = "".join([
+        f'<option value="{g[0]}|{g[2]}">{g[1]} - {g[2]}</option>'
+        for g in grade
+    ])
+
+    # --- 4. HTML ---
     return HttpResponse(f"""
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -1044,44 +1079,70 @@ def marcar_consulta_publico(request):
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <title>Sempre Vida - Agendamento</title>
     </head>
-    <body style="background: linear-gradient(135deg, #3c8dbc, #1e282c); min-height: 100vh; padding: 20px; display: flex; align-items: center;">
+    <body style="background: linear-gradient(135deg, #3c8dbc, #1e282c); min-height: 100vh; display: flex; align-items: center; padding:20px;">
         <div class="card mx-auto p-4 shadow-lg" style="max-width: 500px; border-radius: 15px;">
+            
             <div class="text-center mb-4">
                 <h2 class="fw-bold text-primary">SEMPRE VIDA</h2>
                 <p class="text-muted">Marque sua consulta</p>
             </div>
+
             {mensagem}
+
             <form method="GET" class="row g-3">
-                <div class="col-12"><label class="small fw-bold">Unidade</label>
-                    <select name="unidade" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_u}</select>
+                <div class="col-12">
+                    <label class="small fw-bold">Unidade</label>
+                    <select name="unidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Selecione...</option>
+                        {opts_u}
+                    </select>
                 </div>
-                <div class="col-12"><label class="small fw-bold">Especialidade</label>
-                    <select name="especialidade" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_e}</select>
+
+                <div class="col-12">
+                    <label class="small fw-bold">Especialidade</label>
+                    <select name="especialidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Selecione...</option>
+                        {opts_e}
+                    </select>
                 </div>
-                <div class="col-12"><label class="small fw-bold">Data</label>
+
+                <div class="col-12">
+                    <label class="small fw-bold">Data</label>
                     <input type="date" name="data" class="form-control" value="{data_sel or ''}" onchange="this.form.submit()">
                 </div>
             </form>
+
             <hr>
+
             <form method="POST">
                 <label class="small fw-bold text-success">Horários Disponíveis:</label>
-                <select name="h_full" class="form-select mb-3" required onchange="var p=this.value.split('|'); document.getElementById('ag').value=p[0]; document.getElementById('ho').value=p[1];">
-                    <option value="">{ 'Escolha o horário...' if grade else 'Sem horários para esta data' }</option>
+
+                <select name="h_full" class="form-select mb-3" required
+                    onchange="var p=this.value.split('|'); document.getElementById('ag').value=p[0]; document.getElementById('ho').value=p[1];">
+                    
+                    <option value="">
+                        {"Escolha o horário..." if grade else "Sem horários disponíveis"}
+                    </option>
                     {opts_h}
                 </select>
-                <input type="hidden" name="agenda_id" id="ag"><input type="hidden" name="horario" id="ho"><input type="hidden" name="data_f" value="{data_sel}">
+
+                <input type="hidden" name="agenda_id" id="ag">
+                <input type="hidden" name="horario" id="ho">
+                <input type="hidden" name="data_f" value="{data_sel or ''}">
+
                 <div class="bg-light p-3 rounded mb-3">
                     <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Nome Completo" required>
                     <input type="text" name="paciente_tel" class="form-control" placeholder="WhatsApp" required>
                 </div>
-                <button type="submit" class="btn btn-primary w-100 fw-bold py-2">CONFIRMAR AGENDAMENTO</button>
-                <div class="text-center mt-3"><a href="/admin-painel/" class="text-muted small">Acesso Restrito</a></div>
+
+                <button type="submit" class="btn btn-primary w-100 fw-bold py-2">
+                    CONFIRMAR AGENDAMENTO
+                </button>
             </form>
         </div>
     </body>
     </html>
     """)
-
 
 
 
