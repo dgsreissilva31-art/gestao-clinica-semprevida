@@ -5,8 +5,7 @@ from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 
-
-# --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
+# --- 1. TEMPLATE BASE ADMINISTRATIVO ---
 
 def base_html(titulo, conteudo):
     return f"""
@@ -34,13 +33,13 @@ def base_html(titulo, conteudo):
     </head>
     <body>
         <div class="navbar-top d-flex justify-content-between">
-            <div><i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> <span class="ms-2 fw-bold text-uppercase">milestone</span></div>
+            <div><i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> <span class="ms-2 fw-bold text-uppercase">SEMPRE VIDA</span></div>
             <div><i class="bi bi-person-circle"></i> Douglas Silva</div>
         </div>
         <div class="sidebar">
             <ul class="sidebar-menu">
                 <div class="menu-label">Navegação</div>
-                <li><a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
                 <div class="menu-label">Administrativo</div>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
@@ -53,11 +52,9 @@ def base_html(titulo, conteudo):
                 <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
                 <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
                 <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
-               
-                
-                
-                
-                </ul>
+                <hr>
+                <li><a href="/" class="text-info"><i class="bi bi-globe"></i> Ver Site Público</a></li>
+            </ul>
         </div>
         <div class="main-content">
             <div class="card-panel">{conteudo}</div>
@@ -66,1051 +63,230 @@ def base_html(titulo, conteudo):
     </html>
     """
 
+# --- 2. TELA 12: AGENDAMENTO PÚBLICO (ABERTURA) ---
 
-# --- 2. TELA 0: PAINEL DE GESTÃO ---
+@csrf_exempt
+def marcar_consulta_publico(request):
+    mensagem = ""
+    unid = request.GET.get('unidade', '')
+    espec = request.GET.get('especialidade', '')
+    data_sel = request.GET.get('data', '')
 
+    if request.method == "POST":
+        ag_id = request.POST.get('agenda_id')
+        hora = request.POST.get('horario')
+        dt_f = request.POST.get('data_f')
+        if ag_id and hora and dt_f:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("INSERT INTO agendamentos (agenda_config_id, data_agendamento, horario_selecionado) VALUES (%s, %s, %s)", [ag_id, dt_f, hora])
+                return HttpResponse("<html><meta charset='utf-8'><script>alert('Sucesso!'); window.location.href='/';</script></html>")
+            except Exception as e:
+                mensagem = f"<div class='alert alert-danger'>Erro: {e}</div>"
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        lista_unid = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
+        lista_espec = cursor.fetchall()
+        grade = []
+        if unid and espec and data_sel:
+            try:
+                ano, mes, dia = map(int, data_sel.split('-'))
+                d_obj = datetime.date(ano, mes, dia)
+                dias = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado', 6:'Domingo'}
+                cursor.execute("""SELECT ac.id, p.nome, ac.horario_inicio FROM agendas_config ac JOIN profissionais p ON ac.profissional_id = p.id WHERE ac.unidade_id = %s AND ac.especialidade_id = %s AND (ac.dia_semana = %s OR ac.data_especifica = %s)""", [unid, espec, dias.get(d_obj.weekday()), data_sel])
+                grade = cursor.fetchall()
+            except: pass
+
+    opts_u = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid else ""}>{u[1]}</option>' for u in lista_unid])
+    opts_e = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==espec else ""}>{e[1]}</option>' for e in lista_espec])
+    opts_h = "".join([f'<option value="{g[0]}|{g[2]}">{g[1]} - {g[2]}</option>' for g in grade])
+
+    return HttpResponse(f"""
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Sempre Vida</title></head>
+    <body style="background: linear-gradient(135deg, #3c8dbc, #1e282c); min-height: 100vh; padding: 20px;">
+        <div class="card mx-auto mt-4 p-4 shadow-lg" style="max-width: 500px; border-radius: 20px;">
+            <h3 class="text-center text-primary fw-bold">SEMPRE VIDA</h3>
+            {mensagem}
+            <form method="GET" class="row g-2">
+                <div class="col-12"><label class="small fw-bold">Unidade</label><select name="unidade" class="form-select" onchange="this.form.submit()"><option value="">Onde?</option>{opts_u}</select></div>
+                <div class="col-6"><label class="small fw-bold">Especialidade</label><select name="especialidade" class="form-select" onchange="this.form.submit()"><option value="">Médico?</option>{opts_e}</select></div>
+                <div class="col-6"><label class="small fw-bold">Data</label><input type="date" name="data" class="form-control" value="{data_sel}" onchange="this.form.submit()"></div>
+            </form>
+            <hr>
+            <form method="POST">
+                <select name="h_full" class="form-select mb-3" required onchange="var d=this.value.split('|'); document.getElementById('ag').value=d[0]; document.getElementById('ho').value=d[1];"><option value="">{ 'Selecione o horário' if grade else 'Sem vagas' }</option>{opts_h}</select>
+                <input type="hidden" name="agenda_id" id="ag"><input type="hidden" name="horario" id="ho"><input type="hidden" name="data_f" value="{data_sel}">
+                <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Seu Nome" required>
+                <button type="submit" class="btn btn-primary w-100 fw-bold rounded-pill">AGENDAR CONSULTA</button>
+                <div class="text-center mt-3"><a href="/admin-painel/" class="text-muted small">Painel Admin</a></div>
+            </form>
+        </div>
+    </body></html>""")
+
+# --- 3. PAINEL ADMINISTRATIVO ---
 
 def painel_controle(request):
     conteudo = """
-        <div class="mb-4">
-            <h3 class="fw-bold"><i class="bi bi-speedometer2"></i> Painel de Gestão</h3>
-            <p class="text-muted">Bem-vindo ao sistema Sempre Vida.</p>
-        </div>
         <div class="row g-3">
-            <div class="col-md-4">
-                <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
-                    <i class="bi bi-building fs-1"></i><br><h5 class="mt-2">Unidades</h5>
-                    <a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-success text-white rounded shadow-sm text-center">
-                    <i class="bi bi-hospital fs-1"></i><br><h5 class="mt-2">Especialidades</h5>
-                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center border">
-                    <i class="bi bi-person-badge fs-1"></i><br><h5 class="mt-2">Profissionais</h5>
-                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white fw-bold">Acessar</a>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="p-4 bg-info text-white rounded shadow-sm text-center">
-                    <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
-                    <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-secondary text-white rounded shadow-sm text-center">
-                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2">Exames</h5>
-                    <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
-        <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2">Odontologia</h5>
-        <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-      </div>
-    </div>
-    <div class="col-md-4">
-    <div class="p-4 bg-danger text-white rounded shadow-sm text-center">
-        <i class="bi bi-people fs-1"></i><br><h5 class="mt-2">Pacientes</h5>
-        <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
-        <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2">Acessos</h5>
-        <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
-        <i class="bi bi-currency-dollar fs-1"></i><br><h5 class="mt-2">Tabela de Preços</h5>
-        <a href="/precos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-info text-white rounded shadow-sm text-center">
-        <i class="bi bi-tags fs-1"></i><br><h5 class="mt-2">Preços Exames</h5>
-        <a href="/precos-exames/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-success text-white rounded shadow-sm text-center">
-        <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2">Configurar Agendas</h5>
-        <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-</div>
-
-
-
-
-    """
+            <div class="col-md-4"><div class="p-4 bg-primary text-white rounded shadow-sm text-center"><h5>Unidades</h5><a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a></div></div>
+            <div class="col-md-4"><div class="p-4 bg-success text-white rounded shadow-sm text-center"><h5>Especialidades</h5><a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a></div></div>
+            <div class="col-md-4"><div class="p-4 bg-danger text-white rounded shadow-sm text-center"><h5>Pacientes</h5><a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a></div></div>
+            <div class="col-md-4"><div class="p-4 bg-dark text-white rounded shadow-sm text-center"><h5>Acessos</h5><a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a></div></div>
+            <div class="col-md-4"><div class="p-4 bg-info text-white rounded shadow-sm text-center"><h5>Config. Agendas</h5><a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a></div></div>
+        </div>"""
     return HttpResponse(base_html("Dashboard", conteudo))
 
+# --- 4. FUNÇÕES ADMINISTRATIVAS (SIMPLIFICADAS PARA EVITAR ERROS) ---
 
-
-
-# --- 3. TELA 1: UNIDADES ---
 @csrf_exempt
 def cadastro_unidade(request):
-    mensagem = ""
     if request.method == "POST":
-        nome, end, tel = request.POST.get('nome'), request.POST.get('endereco'), request.POST.get('telefone')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", [nome, end, tel])
-            mensagem = '<div class="alert alert-success">✅ Unidade Salva!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-    
-    conteudo = f"""
-        <h4><i class="bi bi-plus-circle"></i> Nova Unidade</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3">
-            <div class="col-md-6"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-6"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control"></div>
-            <div class="col-12"><label class="form-label">Endereço</label><input type="text" name="endereco" class="form-control"></div>
-            <div class="col-12">
-                <button type="submit" class="btn btn-primary">Salvar</button>
-                <a href="/unidades/lista/" class="btn btn-outline-dark">Listar Unidades</a>
-            </div>
-        </form>
-    """
-    return HttpResponse(base_html("Nova Unidade", conteudo))
-
-def lista_unidades(request):
-    if request.GET.get('delete'):
+        nome, tel = request.POST.get('nome'), request.POST.get('telefone')
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM unidades WHERE id = %s", [request.GET.get('delete')])
-        return HttpResponseRedirect('/unidades/lista/')
+            cursor.execute("INSERT INTO unidades (nome, telefone) VALUES (%s, %s)", [nome, tel])
+        return HttpResponseRedirect('/unidades/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, endereco FROM unidades ORDER BY nome")
-        unidades = cursor.fetchall()
-    linhas = "".join([f'<tr><td>{u[1]}</td><td>{u[2]}</td><td><a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-danger" onclick="return confirm(\'Deseja excluir?\')"><i class="bi bi-trash"></i></a></td></tr>' for u in unidades])
-    conteudo = f"<h4>Unidades Ativas</h4><hr><table class='table table-hover'><thead class='table-light'><tr><th>Nome</th><th>Endereço</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table><a href='/unidades/' class='btn btn-primary'>Voltar</a>"
-    return HttpResponse(base_html("Lista Unidades", conteudo))
+        cursor.execute("SELECT id, nome, telefone FROM unidades ORDER BY nome")
+        unids = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{u[1]}</td><td>{u[2]}</td></tr>" for u in unids])
+    conteudo = f"<h4>Unidades</h4><form method='POST' class='row g-2 mb-4'><div class='col-6'><input type='text' name='nome' class='form-control' placeholder='Nome' required></div><div class='col-4'><input type='text' name='telefone' class='form-control' placeholder='Tel'></div><div class='col-2'><button class='btn btn-primary w-100'>+</button></div></form><table class='table'><thead><tr><th>Nome</th><th>Tel</th></tr></thead><tbody>{linhas}</tbody></table>"
+    return HttpResponse(base_html("Unidades", conteudo))
 
-# --- 4. TELA 2: ESPECIALIDADES ---
 @csrf_exempt
 def especialidades_geral(request):
-    if request.GET.get('delete_esp'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM especialidades WHERE id = %s", [request.GET.get('delete_esp')])
-        return HttpResponseRedirect('/especialidades/')
     if request.method == "POST":
         nome, tipo = request.POST.get('nome'), request.POST.get('tipo')
         with connection.cursor() as cursor:
             cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
         return HttpResponseRedirect('/especialidades/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, tipo FROM especialidades ORDER BY tipo, nome")
-        dados = cursor.fetchall()
-    itens = "".join([f'<tr><td>{d[1]}</td><td>{d[2]}</td><td><a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-danger" onclick="return confirm(\'Deseja excluir?\')"><i class="bi bi-trash"></i></a></td></tr>' for d in dados])
-    conteudo = f"<h4>Especialidades</h4><hr><form method='POST' class='row g-2 mb-4'><div class='col-md-6'><input type='text' name='nome' class='form-control' placeholder='Especialidade' required></div><div class='col-md-4'><select name='tipo' class='form-select'><option value='Médica'>Médica</option><option value='Odontológica'>Odontológica</option></select></div><div class='col-md-2'><button type='submit' class='btn btn-primary w-100'>Salvar</button></div></form><table class='table table-sm table-hover'><thead><tr><th>Nome</th><th>Tipo</th><th>Ação</th></tr></thead><tbody>{itens}</tbody></table>"
+        cursor.execute("SELECT nome, tipo FROM especialidades ORDER BY nome")
+        esps = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{e[0]}</td><td>{e[1]}</td></tr>" for e in esps])
+    conteudo = f"<h4>Especialidades</h4><form method='POST' class='row g-2 mb-4'><div class='col-6'><input type='text' name='nome' class='form-control' required></div><div class='col-4'><select name='tipo' class='form-select'><option value='Médica'>Médica</option><option value='Odontológica'>Odontológica</option></select></div><div class='col-2'><button class='btn btn-success w-100'>+</button></div></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Especialidades", conteudo))
 
-
-# --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM TELEFONE E ENDEREÇO) ---
 @csrf_exempt
 def profissionais_geral(request):
-    if request.GET.get('delete_prof'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM profissionais WHERE id = %s", [request.GET.get('delete_prof')])
-        return HttpResponseRedirect('/profissionais/')
-
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        tipo = request.POST.get('tipo')
-        num = request.POST.get('numero')
-        esp = request.POST.get('especialidade_id')
-        tel = request.POST.get('telefone')
-        end = request.POST.get('endereco')
-        
+        nome, num, esp = request.POST.get('nome'), request.POST.get('numero'), request.POST.get('esp_id')
         with connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO profissionais (nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco) VALUES (%s, %s, %s, %s, %s, %s)", 
-                [nome, tipo, num, esp, tel, end]
-            )
+            cursor.execute("INSERT INTO profissionais (nome, conselho_numero, especialidade_id) VALUES (%s, %s, %s)", [nome, num, esp])
         return HttpResponseRedirect('/profissionais/')
-
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        especialidades = cursor.fetchall()
-        
-        # Busca profissionais incluindo os novos campos
-        cursor.execute("""
-            SELECT p.id, p.nome, p.conselho_tipo, p.conselho_numero, e.nome, p.telefone, p.endereco 
-            FROM profissionais p 
-            LEFT JOIN especialidades e ON p.especialidade_id = e.id 
-            ORDER BY p.nome
-        """)
+        cursor.execute("SELECT id, nome FROM especialidades")
+        esps = cursor.fetchall()
+        cursor.execute("SELECT p.nome, e.nome FROM profissionais p JOIN especialidades e ON p.especialidade_id = e.id")
         profs = cursor.fetchall()
-
-    opcoes = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in especialidades])
-    
-    linhas = "".join([f"""
-        <tr>
-            <td>{p[1]}<br><small class='text-muted'>📍 {p[6] if p[6] else '---'}</small></td>
-            <td>{p[2]}: {p[3]}</td>
-            <td>{p[4] if p[4] else "---"}</td>
-            <td>{p[5] if p[5] else "---"}</td>
-            <td><a href="/profissionais/?delete_prof={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Deseja excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in profs])
-
-    conteudo = f"""
-        <h4><i class="bi bi-person-badge"></i> Cadastro de Profissionais</h4><hr>
-        <form method='POST' class='row g-3 mb-4'>
-            <div class='col-md-4'><label class='form-label fw-bold'>Nome Completo</label><input type='text' name='nome' class='form-control' required></div>
-            <div class='col-md-2'><label class='form-label fw-bold'>Conselho</label><select name='tipo' class='form-select'><option value='CRM'>CRM</option><option value='CRO'>CRO</option></select></div>
-            <div class='col-md-2'><label class='form-label fw-bold'>Número</label><input type='text' name='numero' class='form-control' required></div>
-            <div class='col-md-4'><label class='form-label fw-bold'>Especialidade</label><select name='especialidade_id' class='form-select'>{opcoes}</select></div>
-            
-            <div class='col-md-4'><label class='form-label fw-bold'>Telefone</label><input type='text' name='telefone' class='form-control' placeholder='(00) 00000-0000'></div>
-            <div class='col-md-8'><label class='form-label fw-bold'>Endereço Completo</label><input type='text' name='endereco' class='form-control' placeholder='Rua, número, bairro...'></div>
-            
-            <div class='col-12'><button type='submit' class='btn btn-warning w-100 fw-bold'>Salvar Profissional</button></div>
-        </form>
-        <hr>
-        <div class='table-responsive'>
-            <table class='table table-hover'>
-                <thead class='table-dark'><tr><th>Nome / Endereço</th><th>Registro</th><th>Especialidade</th><th>Telefone</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if profs else '<tr><td colspan="5" class="text-center">Nenhum cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-    """
+    opts = "".join([f"<option value='{e[0]}'>{e[1]}</option>" for e in esps])
+    linhas = "".join([f"<tr><td>{p[0]}</td><td>{p[1]}</td></tr>" for p in profs])
+    conteudo = f"<h4>Profissionais</h4><form method='POST' class='row g-2 mb-4'><div class='col-4'><input name='nome' class='form-control' placeholder='Nome'></div><div class='col-3'><input name='numero' class='form-control' placeholder='Registro'></div><div class='col-3'><select name='esp_id' class='form-select'>{opts}</select></div><div class='col-2'><button class='btn btn-warning w-100'>+</button></div></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Profissionais", conteudo))
 
-
-# --- 7. TELA 4: GESTÃO DE CONVÊNIOS ---
 @csrf_exempt
 def convenios_geral(request):
-    mensagem = ""
-    # Lógica de Exclusão com Confirmação
-    if request.GET.get('delete_conv'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM convenios WHERE id = %s", [request.GET.get('delete_conv')])
-        return HttpResponseRedirect('/convenios/')
-
-    # Lógica de Cadastro
     if request.method == "POST":
         nome = request.POST.get('nome')
-        ans = request.POST.get('ans')
-        tel = request.POST.get('telefone')
-        end = request.POST.get('endereco')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO convenios (nome, registro_ans, telefone_contato, endereco_completo) VALUES (%s, %s, %s, %s)",
-                    [nome, ans, tel, end]
-                )
-            mensagem = '<div class="alert alert-success">✅ Convênio cadastrado com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Lista
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO convenios (nome) VALUES (%s)", [nome])
+        return HttpResponseRedirect('/convenios/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, registro_ans, telefone_contato, endereco_completo FROM convenios ORDER BY nome")
-        conves = cursor.fetchall()
-
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{c[1]}</b><br><small class='text-muted'>📍 {c[4] if c[4] else '---'}</small></td>
-            <td>{c[2] if c[2] else '---'}</td>
-            <td>{c[3] if c[3] else '---'}</td>
-            <td><a href="/convenios/?delete_conv={c[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Deseja excluir este convênio?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for c in conves])
-
-    conteudo = f"""
-        <h4><i class="bi bi-card-checklist"></i> Cadastro de Convênios</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome do Convênio</label><input type="text" name="nome" class="form-control" placeholder="Ex: Unimed, Bradesco..." required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Registro ANS</label><input type="text" name="ans" class="form-control" placeholder="Cód. ANS"></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Telefone Suporte</label><input type="text" name="telefone" class="form-control" placeholder="(00) 0000-0000"></div>
-            <div class="col-12"><label class="form-label fw-bold">Endereço da Operadora</label><input type="text" name="endereco" class="form-control" placeholder="Rua, número, cidade..."></div>
-            <div class="col-12"><button type="submit" class="btn btn-info w-100 fw-bold text-white shadow-sm">Salvar Convênio</button></div>
-        </form>
-        <hr>
-        <h5>Convênios Ativos</h5>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Nome / Endereço</th><th>ANS</th><th>Contato</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if conves else '<tr><td colspan="4" class="text-center text-muted">Nenhum convênio cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
+        cursor.execute("SELECT nome FROM convenios")
+        convs = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{c[0]}</td></tr>" for c in convs])
+    conteudo = f"<h4>Convênios</h4><form method='POST' class='d-flex gap-2 mb-3'><input name='nome' class='form-control'><button class='btn btn-info'>+</button></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Convênios", conteudo))
 
-
-
-
-# --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM GRUPO) ---
 @csrf_exempt
 def exames_geral(request):
-    mensagem = ""
-    # Exclusão
-    if request.GET.get('delete_exame'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM exames WHERE id = %s", [request.GET.get('delete_exame')])
-        return HttpResponseRedirect('/exames/')
-
-    # Cadastro
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        grupo = request.POST.get('grupo')
-        preparo = request.POST.get('preparo')
-        valor = request.POST.get('valor')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO exames (nome, grupo, preparo, valor_particular) VALUES (%s, %s, %s, %s)",
-                    [nome, grupo, preparo, valor if valor else 0]
-                )
-            mensagem = '<div class="alert alert-success">✅ Exame cadastrado com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Lista
+        nome, grupo = request.POST.get('nome'), request.POST.get('grupo')
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO exames (nome, grupo) VALUES (%s, %s)", [nome, grupo])
+        return HttpResponseRedirect('/exames/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, preparo, valor_particular, grupo FROM exames ORDER BY grupo, nome")
-        exames_lista = cursor.fetchall()
-
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{ex[1]}</b><br><span class="badge bg-light text-dark border">{ex[4] if ex[4] else 'Geral'}</span></td>
-            <td><small>{ex[2] if ex[2] else 'Sem preparo específico.'}</small></td>
-            <td>R$ {ex[3]}</td>
-            <td><a href="/exames/?delete_exame={ex[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir este exame?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for ex in exames_lista])
-
-    conteudo = f"""
-        <h4><i class="bi bi-microscope"></i> Cadastro de Exames</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome do Exame</label><input type="text" name="nome" class="form-control" placeholder="Ex: Hemograma" required></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Grupo / Categoria</label><input type="text" name="grupo" class="form-control" placeholder="Ex: Sangue, Imagem..."></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
-            <div class="col-12"><label class="form-label fw-bold">Instruções de Preparo</label><textarea name="preparo" class="form-control" rows="2" placeholder="Ex: Jejum de 8 horas..."></textarea></div>
-            <div class="col-12"><button type="submit" class="btn btn-secondary w-100 fw-bold shadow-sm">Salvar Exame</button></div>
-        </form>
-        <hr>
-        <h5>Lista de Exames</h5>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Exame / Grupo</th><th>Preparo</th><th>Valor</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if exames_lista else '<tr><td colspan="4" class="text-center text-muted">Nenhum exame cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
+        cursor.execute("SELECT nome, grupo FROM exames")
+        exs = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{x[0]}</td><td>{x[1]}</td></tr>" for x in exs])
+    conteudo = f"<h4>Exames</h4><form method='POST' class='row g-2 mb-3'><div class='col-6'><input name='nome' class='form-control'></div><div class='col-4'><input name='grupo' class='form-control'></div><button class='btn btn-secondary col-2'>+</button></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Exames", conteudo))
 
-
-# --- 9. TELA 6: GESTÃO DE ODONTOLOGIA ---
 @csrf_exempt
 def odonto_geral(request):
-    mensagem = ""
-    # Exclusão
-    if request.GET.get('delete_odonto'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM odontologia WHERE id = %s", [request.GET.get('delete_odonto')])
-        return HttpResponseRedirect('/odontologia/')
-
-    # Cadastro
     if request.method == "POST":
-        proc = request.POST.get('procedimento')
-        grupo = request.POST.get('grupo')
-        valor = request.POST.get('valor')
-        obs = request.POST.get('observacoes')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes) VALUES (%s, %s, %s, %s)",
-                    [proc, grupo, valor if valor else 0, obs]
-                )
-            mensagem = '<div class="alert alert-success">✅ Procedimento odontológico salvo!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Lista
+        proc = request.POST.get('proc')
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO odontologia (procedimento) VALUES (%s)", [proc])
+        return HttpResponseRedirect('/odontologia/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, procedimento, grupo, valor_particular, observacoes FROM odontologia ORDER BY grupo, procedimento")
-        lista_odonto = cursor.fetchall()
+        cursor.execute("SELECT procedimento FROM odontologia")
+        ods = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{o[0]}</td></tr>" for o in ods])
+    conteudo = f"<h4>Odonto</h4><form method='POST' class='d-flex gap-2 mb-3'><input name='proc' class='form-control'><button class='btn btn-dark'>+</button></form><table class='table'><tbody>{linhas}</tbody></table>"
+    return HttpResponse(base_html("Odonto", conteudo))
 
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{o[1]}</b><br><span class="badge bg-light text-dark border">{o[2] if o[2] else 'Geral'}</span></td>
-            <td>R$ {o[3]}</td>
-            <td><small>{o[4] if o[4] else '---'}</small></td>
-            <td><a href="/odontologia/?delete_odonto={o[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir este procedimento?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for o in lista_odonto])
-
-    conteudo = f"""
-        <h4><i class="bi bi-mask"></i> Procedimentos Odontológicos</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Procedimento</label><input type="text" name="procedimento" class="form-control" placeholder="Ex: Extração de Siso" required></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Grupo</label><input type="text" name="grupo" class="form-control" placeholder="Ex: Cirurgia, Estética..."></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
-            <div class="col-12"><label class="form-label fw-bold">Observações Técnicas</label><textarea name="observacoes" class="form-control" rows="2" placeholder="Notas sobre o procedimento..."></textarea></div>
-            <div class="col-12"><button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm" style="background-color: #555;">Salvar Procedimento</button></div>
-        </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Procedimento / Grupo</th><th>Valor</th><th>Obs.</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if lista_odonto else '<tr><td colspan="4" class="text-center text-muted">Nenhum procedimento cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
-    return HttpResponse(base_html("Odontologia", conteudo))
-
-
-# --- 10. TELA 7: GESTÃO DE PACIENTES ---
 @csrf_exempt
 def pacientes_geral(request):
-    mensagem = ""
-    # Lógica de Exclusão
-    if request.GET.get('delete_pac'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
-        return HttpResponseRedirect('/pacientes/')
-
-    # Lógica de Cadastro (POST)
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        cpf = request.POST.get('cpf')
-        sexo = request.POST.get('sexo')
-        nasc = request.POST.get('data_nasc')
-        tel = request.POST.get('telefone')
-        conv = request.POST.get('convenio_id')
-        cep = request.POST.get('cep')
-        end = request.POST.get('endereco')
-        cidade = request.POST.get('cidade')
-        
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO pacientes (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, endereco, cidade) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [nome, cpf, sexo, nasc if nasc else None, tel, conv if conv else None, cep, end, cidade]
-                )
-            mensagem = '<div class="alert alert-success">✅ Paciente cadastrado com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
-
-    # Busca Convênios para o Select e Lista de Pacientes para a Tabela
+        nome, cpf = request.POST.get('nome'), request.POST.get('cpf')
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO pacientes (nome, cpf) VALUES (%s, %s)", [nome, cpf])
+        return HttpResponseRedirect('/pacientes/')
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        convenios = cursor.fetchall()
-        
-        cursor.execute("""
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.sexo, p.cidade 
-            FROM pacientes p 
-            LEFT JOIN convenios c ON p.convenio_id = c.id 
-            ORDER BY p.id DESC
-        """)
-        lista_pacientes = cursor.fetchall()
-
-    opcoes_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
-    
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{p[1]}</b><br><small class='text-muted'>{p[5]} | CPF: {p[2]}</small></td>
-            <td>{p[3]}<br><small class='text-secondary'>{p[6] if p[6] else ''}</small></td>
-            <td><span class="badge bg-info text-dark">{p[4] if p[4] else 'Particular'}</span></td>
-            <td>
-                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" 
-                   onclick="return confirm('Tem certeza que deseja excluir este paciente?')">
-                   <i class="bi bi-trash"></i>
-                </a>
-            </td>
-        </tr>""" for p in lista_pacientes])
-
-    conteudo = f"""
-        <h4><i class="bi bi-people"></i> Cadastro de Pacientes</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">CPF</label><input type="text" name="cpf" class="form-control" placeholder="000.000.000-00"></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Sexo</label>
-                <select name="sexo" class="form-select">
-                    <option value="Masculino">Masculino</option>
-                    <option value="Feminino">Feminino</option>
-                    <option value="Outro">Outro</option>
-                </select>
-            </div>
-            <div class="col-md-2"><label class="form-label fw-bold">Nascimento</label><input type="date" name="data_nasc" class="form-control"></div>
-            
-            <div class="col-md-4"><label class="form-label fw-bold">Telefone</label><input type="text" name="telefone" class="form-control" placeholder="(00) 00000-0000"></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opcoes_conv}</select></div>
-            <div class="col-md-4"><label class="form-label fw-bold">CEP</label><input type="text" name="cep" class="form-control" placeholder="00000-000"></div>
-            
-            <div class="col-md-4"><label class="form-label fw-bold">Cidade</label><input type="text" name="cidade" class="form-control"></div>
-            <div class="col-md-8"><label class="form-label fw-bold">Endereço Completo</label><input type="text" name="endereco" class="form-control" placeholder="Rua, número, bairro..."></div>
-            
-            <div class="col-12 mt-4">
-                <button type="submit" class="btn btn-danger w-100 fw-bold shadow-sm">SALVAR PACIENTE</button>
-            </div>
-        </form>
-        <hr>
-        <h5>Pacientes Cadastrados</h5>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark">
-                    <tr><th>Paciente / Info</th><th>Contato / Cidade</th><th>Convênio</th><th>Ação</th></tr>
-                </thead>
-                <tbody>{linhas if lista_pacientes else '<tr><td colspan="4" class="text-center text-muted">Nenhum paciente encontrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
+        cursor.execute("SELECT nome, cpf FROM pacientes")
+        pacs = cursor.fetchall()
+    linhas = "".join([f"<tr><td>{p[0]}</td><td>{p[1]}</td></tr>" for p in pacs])
+    conteudo = f"<h4>Pacientes</h4><form method='POST' class='row g-2 mb-3'><div class='col-6'><input name='nome' class='form-control'></div><div class='col-4'><input name='cpf' class='form-control'></div><button class='btn btn-danger col-2'>+</button></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Pacientes", conteudo))
 
-
-
-from django.contrib.auth.models import User # Adicione este import no topo!
-
-# --- 11. TELA 8: GESTÃO DE ACESSOS E FUNCIONÁRIOS ---
 @csrf_exempt
 def acesso_geral(request):
-    mensagem = ""
-    
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        username = request.POST.get('username') # O login dele
-        senha = request.POST.get('senha')
-        cargo = request.POST.get('cargo')
-        cpf = request.POST.get('cpf')
-
-        try:
-            # 1. Cria o usuário no sistema de login do Django
-            if not User.objects.filter(username=username).exists():
-                user = User.objects.create_user(username=username, password=senha)
-                
-                # 2. Salva os detalhes extras na nossa tabela
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
-                        [user.id, nome, cargo, cpf]
-                    )
-                mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado com sucesso!</div>'
-            else:
-                mensagem = '<div class="alert alert-danger">❌ Este login já existe!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Lista de Funcionários
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
-        funcionarios = cursor.fetchall()
-
-    linhas = "".join([f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>" for f in funcionarios])
-
-    conteudo = f"""
-        <h4><i class="bi bi-shield-lock"></i> Controle de Acesso e Funcionários</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-6"><label class="form-label fw-bold">Nome do Funcionário</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Cargo</label>
-                <select name="cargo" class="form-select">
-                    <option value="Recepção">Recepção</option>
-                    <option value="Médico">Médico</option>
-                    <option value="Dentista">Dentista</option>
-                    <option value="Administrador">Administrador</option>
-                </select>
-            </div>
-            <div class="col-md-3"><label class="form-label fw-bold">CPF</label><input type="text" name="cpf" class="form-control" placeholder="000.000.000-00"></div>
-            
-            <div class="col-md-6"><label class="form-label fw-bold">Login (Usuário)</label><input type="text" name="username" class="form-control" placeholder="Ex: douglas.silva" required></div>
-            <div class="col-md-6"><label class="form-label fw-bold">Senha de Acesso</label><input type="password" name="senha" class="form-control" required></div>
-            
-            <div class="col-12"><button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm">CRIAR ACESSO AO SISTEMA</button></div>
-        </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-dark"><tr><th>Nome</th><th>Cargo</th><th>CPF</th></tr></thead>
-                <tbody>{linhas if funcionarios else '<tr><td colspan="3" class="text-center">Nenhum funcionário cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
+        user, senha = request.POST.get('user'), request.POST.get('pass')
+        User.objects.create_user(username=user, password=senha)
+        return HttpResponseRedirect('/acessos/')
+    users = User.objects.all()
+    linhas = "".join([f"<tr><td>{u.username}</td></tr>" for u in users])
+    conteudo = f"<h4>Acessos</h4><form method='POST' class='row g-2 mb-3'><div class='col-5'><input name='user' class='form-control' placeholder='Login'></div><div class='col-5'><input name='pass' type='password' class='form-control' placeholder='Senha'></div><button class='btn btn-dark col-2'>+</button></form><table class='table'><tbody>{linhas}</tbody></table>"
     return HttpResponse(base_html("Acessos", conteudo))
 
-
-
-# --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
 @csrf_exempt
 def precos_geral(request):
-    mensagem = ""
-    # Exclusão
-    if request.GET.get('delete_preco'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM precos_convenio WHERE id = %s", [request.GET.get('delete_preco')])
-        return HttpResponseRedirect('/precos/')
+    return HttpResponse(base_html("Preços", "<h4>Tabela de Preços</h4><p>Funcionalidade em desenvolvimento.</p>"))
 
-    # Cadastro
-    if request.method == "POST":
-        conv = request.POST.get('convenio_id')
-        esp = request.POST.get('especialidade_id')
-        valor = request.POST.get('valor')
-        tuss = request.POST.get('tuss')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, codigo_tuss) VALUES (%s, %s, %s, %s)",
-                    [conv, esp, valor, tuss]
-                )
-            mensagem = '<div class="alert alert-success">✅ Preço configurado com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Dados para o Formulário e Tabela
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        lista_conv = cursor.fetchall()
-        
-        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        lista_esp = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.codigo_tuss 
-            FROM precos_convenio pr
-            JOIN convenios c ON pr.convenio_id = c.id
-            JOIN especialidades e ON pr.especialidade_id = e.id
-            ORDER BY c.nome, e.nome
-        """)
-        tabela_precos = cursor.fetchall()
-
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
-    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in lista_esp])
-    
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{p[1]}</b></td>
-            <td>{p[2]}</td>
-            <td>R$ {p[3]}</td>
-            <td><small>{p[4] if p[4] else '---'}</small></td>
-            <td><a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in tabela_precos])
-
-    conteudo = f"""
-        <h4><i class="bi bi-currency-dollar"></i> Preços por Convênio</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select" required>{opts_conv}</select></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Especialidade</label><select name="especialidade_id" class="form-select" required>{opts_esp}</select></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Cód. TUSS (Opcional)</label><input type="text" name="tuss" class="form-control"></div>
-            <div class="col-12"><button type="submit" class="btn btn-primary w-100 fw-bold">SALVAR TABELA DE PREÇO</button></div>
-        </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço configurado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
-    return HttpResponse(base_html("Preços Convênio", conteudo))
-
-# --- 13. TELA 10: PREÇOS DE EXAMES POR CONVÊNIO ---
 @csrf_exempt
 def precos_exames_geral(request):
-    mensagem = ""
-    # Exclusão
-    if request.GET.get('delete_prexe'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM precos_exames WHERE id = %s", [request.GET.get('delete_prexe')])
-        return HttpResponseRedirect('/precos-exames/')
+    return HttpResponse(base_html("Preços Exames", "<h4>Tabela de Exames</h4><p>Funcionalidade em desenvolvimento.</p>"))
 
-    # Cadastro
-    if request.method == "POST":
-        conv = request.POST.get('convenio_id')
-        exame = request.POST.get('exame_id')
-        valor = request.POST.get('valor')
-        tuss = request.POST.get('tuss')
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO precos_exames (convenio_id, exame_id, valor_convenio, codigo_tuss) VALUES (%s, %s, %s, %s)",
-                    [conv, exame, valor, tuss]
-                )
-            mensagem = '<div class="alert alert-success">✅ Preço do exame salvo com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # Busca Dados
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        lista_conv = cursor.fetchall()
-        
-        cursor.execute("SELECT id, nome, grupo FROM exames ORDER BY grupo, nome")
-        lista_exames = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT px.id, c.nome, e.nome, px.valor_convenio, px.codigo_tuss, e.grupo 
-            FROM precos_exames px
-            JOIN convenios c ON px.convenio_id = c.id
-            JOIN exames e ON px.exame_id = e.id
-            ORDER BY c.nome, e.nome
-        """)
-        tabela_precos = cursor.fetchall()
-
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
-    opts_ex = "".join([f'<option value="{e[0]}">[{e[2]}] {e[1]}</option>' for e in lista_exames])
-    
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{p[1]}</b></td>
-            <td>{p[2]} <br><small class='badge bg-light text-dark border'>{p[5]}</small></td>
-            <td>R$ {p[3]}</td>
-            <td>{p[4] if p[4] else '---'}</td>
-            <td><a href="/precos-exames/?delete_prexe={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in tabela_precos])
-
-    conteudo = f"""
-        <h4><i class="bi bi-tags"></i> Tabela de Preços: Exames</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select" required>{opts_conv}</select></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Exame</label><select name="exame_id" class="form-select" required>{opts_ex}</select></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Cód. TUSS</label><input type="text" name="tuss" class="form-control"></div>
-            <div class="col-12"><button type="submit" class="btn btn-info w-100 fw-bold text-white shadow-sm">SALVAR TABELA DE EXAMES</button></div>
-        </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-dark"><tr><th>Convênio</th><th>Exame / Grupo</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço de exame configurado.</td></tr>'}</tbody>
-            </table>
-        </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
-    return HttpResponse(base_html("Preços Exames", conteudo))
-
-
-
-
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
 @csrf_exempt
 def agendas_config_geral(request):
-    mensagem = ""
-    
-    # Lógica de Exclusão
-    if request.GET.get('delete_agenda'):
+    if request.method == "POST":
+        prof, unid, esp, dia, inicio, fim = request.POST.get('p'), request.POST.get('u'), request.POST.get('e'), request.POST.get('d'), request.POST.get('i'), request.POST.get('f')
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM agendas_config WHERE id = %s", [request.GET.get('delete_agenda')])
+            cursor.execute("INSERT INTO agendas_config (profissional_id, unidade_id, especialidade_id, dia_semana, horario_inicio, horario_fim) VALUES (%s, %s, %s, %s, %s, %s)", [prof, unid, esp, dia, inicio, fim])
         return HttpResponseRedirect('/agendas-config/')
-
-    # Lógica de Cadastro (POST)
-    if request.method == "POST":
-        prof = request.POST.get('profissional_id')
-        unid = request.POST.get('unidade_id')
-        esp = request.POST.get('especialidade_id')
-        tipo = request.POST.get('tipo_agenda')
-        dia_semana = request.POST.get('dia_semana') if tipo == 'fixa' else None
-        data_esp = request.POST.get('data_especifica') if tipo == 'especifica' else None
-        inicio = request.POST.get('inicio')
-        fim = request.POST.get('fim')
-        intervalo = request.POST.get('intervalo', 20)
-
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO agendas_config 
-                       (profissional_id, unidade_id, especialidade_id, dia_semana, data_especifica, horario_inicio, horario_fim, intervalo_minutos) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [prof, unid, esp, dia_semana, data_esp if data_esp else None, inicio, fim, intervalo]
-                )
-            mensagem = '<div class="alert alert-success">✅ Grade salva com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro no banco: {e}</div>'
-
-    # Busca de dados para os campos de seleção (Selects)
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
-        profs = cursor.fetchall()
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unids = cursor.fetchall()
-        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        esps = cursor.fetchall()
-        
-        # Lista das Agendas já criadas
-        cursor.execute("""
-            SELECT ac.id, p.nome, u.nome, ac.dia_semana, ac.data_especifica, 
-                   ac.horario_inicio, ac.horario_fim, e.nome
-            FROM agendas_config ac
-            JOIN profissionais p ON ac.profissional_id = p.id
-            JOIN unidades u ON ac.unidade_id = u.id
-            JOIN especialidades e ON ac.especialidade_id = e.id
-            ORDER BY ac.data_especifica DESC, ac.dia_semana ASC
-        """)
-        lista_agendas = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM profissionais")
+        ps = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM unidades")
+        us = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM especialidades")
+        es = cursor.fetchall()
+    opt_p = "".join([f"<option value='{x[0]}'>{x[1]}</option>" for x in ps])
+    opt_u = "".join([f"<option value='{x[0]}'>{x[1]}</option>" for x in us])
+    opt_e = "".join([f"<option value='{x[0]}'>{x[1]}</option>" for x in es])
+    conteudo = f"<h4>Configurar Agenda</h4><form method='POST' class='row g-2'><select name='p' class='col-md-4 form-select'>{opt_p}</select><select name='u' class='col-md-4 form-select'>{opt_u}</select><select name='e' class='col-md-4 form-select'>{opt_e}</select><input name='d' class='form-control' placeholder='Segunda-feira'><input name='i' type='time' class='form-control'><input name='f' type='time' class='form-control'><button class='btn btn-success'>Salvar</button></form>"
+    return HttpResponse(base_html("Agendas", conteudo))
 
-    opts_prof = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in profs])
-    opts_unid = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unids])
-    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in esps])
-    
-    # Montagem das linhas da tabela com tratamento para evitar NameError
-    linhas = ""
-    for a in lista_agendas:
-        if a[3]: # Se tiver dia da semana
-            quando = f"Toda {a[3]}"
-        elif a[4]: # Se tiver data específica
-            # Converte a data do banco para o formato brasileiro
-            data_db = a[4]
-            if isinstance(data_db, str):
-                quando = datetime.datetime.strptime(data_db, '%Y-%m-%d').strftime('%d/%m/%Y')
-            else:
-                quando = data_db.strftime('%d/%m/%Y')
-        else:
-            quando = "Não definido"
+# --- 5. ROTAS FINAIS (URLPATTERNS) ---
 
-        linhas += f"""
-            <tr>
-                <td><b>{a[1]}</b><br><small>{a[7]}</small></td>
-                <td>{a[2]}</td>
-                <td><span class="badge bg-secondary">{quando}</span></td>
-                <td>{a[5]} - {a[6]}</td>
-                <td><a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></a></td>
-            </tr>"""
-
-    conteudo = f"""
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-calendar-plus"></i> Configuração de Grades</h4>
-            <a href="/" class="btn btn-sm btn-outline-secondary">Voltar</a>
-        </div>
-        
-        {mensagem}
-
-        <form method="POST" class="card p-3 shadow-sm bg-light mb-4">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="fw-bold small">Profissional</label>
-                    <select name="profissional_id" class="form-select" required>{opts_prof}</select>
-                </div>
-                <div class="col-md-4">
-                    <label class="fw-bold small">Unidade</label>
-                    <select name="unidade_id" class="form-select" required>{opts_unid}</select>
-                </div>
-                <div class="col-md-4">
-                    <label class="fw-bold small">Especialidade</label>
-                    <select name="especialidade_id" class="form-select" required>{opts_esp}</select>
-                </div>
-
-                <div class="col-md-3">
-                    <label class="fw-bold small">Tipo de Grade</label>
-                    <select name="tipo_agenda" id="tipo_agenda" class="form-select" onchange="alternarCampos()">
-                        <option value="fixa">Repetir Semanalmente</option>
-                        <option value="especifica">Data Única (Calendário)</option>
-                    </select>
-                </div>
-
-                <div class="col-md-3" id="campo_semana">
-                    <label class="fw-bold small">Dia da Semana</label>
-                    <select name="dia_semana" class="form-select">
-                        <option value="Segunda-feira">Segunda-feira</option>
-                        <option value="Terça-feira">Terça-feira</option>
-                        <option value="Quarta-feira">Quarta-feira</option>
-                        <option value="Quinta-feira">Quinta-feira</option>
-                        <option value="Sexta-feira">Sexta-feira</option>
-                        <option value="Sábado">Sábado</option>
-                    </select>
-                </div>
-
-                <div class="col-md-3" id="campo_data" style="display:none;">
-                    <label class="fw-bold small">Selecione a Data</label>
-                    <input type="date" name="data_especifica" class="form-control">
-                </div>
-
-                <div class="col-md-2">
-                    <label class="fw-bold small">Início</label>
-                    <input type="time" name="inicio" class="form-control" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="fw-bold small">Fim</label>
-                    <input type="time" name="fim" class="form-control" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="fw-bold small">Intervalo (min)</label>
-                    <input type="number" name="intervalo" class="form-control" value="20">
-                </div>
-
-                <div class="col-12 mt-3">
-                    <button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">SALVAR GRADE DE HORÁRIOS</button>
-                </div>
-            </div>
-        </form>
-
-        <script>
-            function alternarCampos() {{
-                var tipo = document.getElementById('tipo_agenda').value;
-                document.getElementById('campo_semana').style.display = (tipo === 'fixa') ? 'block' : 'none';
-                document.getElementById('campo_data').style.display = (tipo === 'especifica') ? 'block' : 'none';
-            }}
-        </script>
-
-        <div class="table-responsive bg-white rounded shadow-sm">
-            <table class="table table-hover mb-0">
-                <thead class="table-dark">
-                    <tr><th>Profissional</th><th>Unidade</th><th>Frequência</th><th>Horário</th><th>Ação</th></tr>
-                </thead>
-                <tbody>{linhas if linhas else '<tr><td colspan="5" class="text-center text-muted">Nenhuma grade configurada.</td></tr>'}</tbody>
-            </table>
-        </div>
-    """
-    return HttpResponse(base_html("Configuração de Agendas", conteudo))
-
-
-# --- 15. TELA 12: AGENDAMENTO PÚBLICO (CORRIGIDA) ---
-@csrf_exempt
-def marcar_consulta_publico(request):
-    mensagem = ""
-    # 1. Captura com segurança (evita NoneType error)
-    unid = request.GET.get('unidade', '')
-    espec = request.GET.get('especialidade', '')
-    data_sel = request.GET.get('data', '')
-
-    # 2. Lógica de Gravação (POST)
-    if request.method == "POST":
-        ag_id = request.POST.get('agenda_id')
-        hora = request.POST.get('horario')
-        dt_f = request.POST.get('data_f')
-        nome = request.POST.get('paciente_nome', 'Paciente')
-        
-        if ag_id and hora and dt_f:
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "INSERT INTO agendamentos (agenda_config_id, data_agendamento, horario_selecionado) VALUES (%s, %s, %s)",
-                        [ag_id, dt_f, hora]
-                    )
-                return HttpResponse(f"<html><meta charset='utf-8'><script>alert('Sucesso!'); window.location.href='/';</script></html>")
-            except Exception as e:
-                mensagem = f"<div class='alert alert-danger small'>Erro ao salvar: {e}</div>"
-
-    # 3. Busca Unidades e Especialidades para os Selects
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        lista_unid = cursor.fetchall()
-        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        lista_espec = cursor.fetchall()
-
-        # 4. Busca Horários Disponíveis (Protegido contra erros de data)
-        grade = []
-        if unid and espec and data_sel:
-            try:
-                # Converte string para objeto date com segurança
-                ano, mes, dia = map(int, data_sel.split('-'))
-                data_obj = datetime.date(ano, mes, dia)
-                
-                dias_semana = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado', 6:'Domingo'}
-                dia_txt = dias_semana.get(data_obj.weekday())
-
-                cursor.execute("""
-                    SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim
-                    FROM agendas_config ac
-                    JOIN profissionais p ON ac.profissional_id = p.id
-                    WHERE ac.unidade_id = %s AND ac.especialidade_id = %s
-                    AND (ac.dia_semana = %s OR ac.data_especifica = %s)
-                """, [unid, espec, dia_txt, data_sel])
-                grade = cursor.fetchall()
-            except Exception:
-                grade = [] # Se der erro na data, apenas retorna lista vazia em vez de Erro 500
-
-    # 5. Montagem do HTML Dinâmico
-    opts_u = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid else ""}>{u[1]}</option>' for u in lista_unid])
-    opts_e = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==espec else ""}>{e[1]}</option>' for e in lista_espec])
-    
-    # Previne erro se grade for vazia
-    opts_h = ""
-    if grade:
-        opts_h = "".join([f'<option value="{g[0]}|{g[2]}">{g[1]} - {g[2]}</option>' for g in grade])
-
-    return HttpResponse(f"""
-    <!DOCTYPE html>
-    <html lang="pt-br">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <title>Agendamento Sempre Vida</title>
-        <style>
-            body {{ background: linear-gradient(135deg, #3c8dbc, #1e282c); min-height: 100vh; padding: 20px; font-family: sans-serif; }}
-            .card {{ border-radius: 20px; border: none; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }}
-            .btn-primary {{ background-color: #3c8dbc; border: none; font-weight: bold; }}
-        </style>
-    </head>
-    <body>
-        <div class="card mx-auto mt-4 p-4" style="max-width: 550px;">
-            <div class="text-center mb-4">
-                <h2 class="text-primary fw-bold">SEMPRE VIDA</h2>
-                <p class="text-muted small">Agendamento Online de Consultas</p>
-            </div>
-
-            {mensagem}
-
-            <form method="GET" class="row g-2">
-                <div class="col-12">
-                    <label class="small fw-bold">Unidade</label>
-                    <select name="unidade" class="form-select" onchange="this.form.submit()">
-                        <option value="">Onde quer ser atendido?</option>{opts_u}
-                    </select>
-                </div>
-                <div class="col-md-6">
-                    <label class="small fw-bold">Especialidade</label>
-                    <select name="especialidade" class="form-select" onchange="this.form.submit()">
-                        <option value="">Qual médico?</option>{opts_e}
-                    </select>
-                </div>
-                <div class="col-md-6">
-                    <label class="small fw-bold">Data</label>
-                    <input type="date" name="data" class="form-control" value="{data_sel}" onchange="this.form.submit()">
-                </div>
-            </form>
-
-            <hr class="my-4">
-
-            <form method="POST">
-                <label class="small fw-bold text-primary">Horários Disponíveis para esta Data:</label>
-                <select name="horario_full" class="form-select mb-3" required onchange="var d=this.value.split('|'); document.getElementById('ag_id').value=d[0]; document.getElementById('ho_id').value=d[1];">
-                    <option value="">{ 'Selecione um horário...' if grade else 'Nenhum horário disponível' }</option>
-                    {opts_h}
-                </select>
-
-                <input type="hidden" name="agenda_id" id="ag_id">
-                <input type="hidden" name="horario" id="ho_id">
-                <input type="hidden" name="data_f" value="{data_sel}">
-
-                <div class="p-3 bg-light rounded mb-3 border">
-                    <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Seu Nome Completo" required>
-                    <input type="text" name="paciente_tel" class="form-control" placeholder="Seu WhatsApp" required>
-                </div>
-
-                <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill">FINALIZAR AGENDAMENTO</button>
-                <div class="text-center mt-3"><a href="/admin-painel/" class="text-muted small text-decoration-none">Acesso Restrito</a></div>
-            </form>
-        </div>
-    </body>
-    </html>
-    """)
-
-
-ROTA 6
 urlpatterns = [
-    path('', marcar_consulta_publico),    # <--- TELA DE ABERTURA (PÚBLICO)
-    path('admin-painel/', painel_controle), # <--- AGORA O PAINEL GERAL É AQUI
+    path('', marcar_consulta_publico),
+    path('admin-painel/', painel_controle),
     path('unidades/', cadastro_unidade),
     path('especialidades/', especialidades_geral),
     path('profissionais/', profissionais_geral),
@@ -1118,8 +294,8 @@ urlpatterns = [
     path('exames/', exames_geral),
     path('odontologia/', odonto_geral),
     path('pacientes/', pacientes_geral),
+    path('acessos/', acesso_geral),
     path('precos/', precos_geral),
     path('precos-exames/', precos_exames_geral),
     path('agendas-config/', agendas_config_geral),
-
 ]
