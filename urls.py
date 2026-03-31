@@ -49,6 +49,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/acessos/"><i class="bi bi-shield-lock"></i> Acessos</a></li>
                 <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
                 <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
+                <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
                
                 
                 
@@ -132,6 +133,12 @@ def painel_controle(request):
     <div class="p-4 bg-info text-white rounded shadow-sm text-center">
         <i class="bi bi-tags fs-1"></i><br><h5 class="mt-2">Preços Exames</h5>
         <a href="/precos-exames/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="p-4 bg-success text-white rounded shadow-sm text-center">
+        <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2">Configurar Agendas</h5>
+        <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
     </div>
   </div>
 </div>
@@ -789,6 +796,96 @@ def precos_exames_geral(request):
     """
     return HttpResponse(base_html("Preços Exames", conteudo))
 
+# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS ---
+@csrf_exempt
+def agendas_config_geral(request):
+    mensagem = ""
+    if request.GET.get('delete_agenda'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM agendas_config WHERE id = %s", [request.GET.get('delete_agenda')])
+        return HttpResponseRedirect('/agendas-config/')
+
+    if request.method == "POST":
+        prof = request.POST.get('profissional_id')
+        unid = request.POST.get('unidade_id')
+        esp = request.POST.get('especialidade_id')
+        dia = request.POST.get('dia_semana')
+        inicio = request.POST.get('inicio')
+        fim = request.POST.get('fim')
+        intervalo = request.POST.get('intervalo')
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO agendas_config (profissional_id, unidade_id, especialidade_id, dia_semana, horario_inicio, horario_fim, intervalo_minutos) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    [prof, unid, esp, dia, inicio, fim, intervalo]
+                )
+            mensagem = '<div class="alert alert-success">✅ Agenda configurada com sucesso!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # Busca Dados para os Selects
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+        profs = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unids = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
+        esps = cursor.fetchall()
+        
+        # Busca Lista de Agendas Configuradas
+        cursor.execute("""
+            SELECT ac.id, p.nome, u.nome, e.nome, ac.dia_semana, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
+            FROM agendas_config ac
+            JOIN profissionais p ON ac.profissional_id = p.id
+            JOIN unidades u ON ac.unidade_id = u.id
+            JOIN especialidades e ON ac.especialidade_id = e.id
+            ORDER BY p.nome, ac.dia_semana
+        """)
+        lista_agendas = cursor.fetchall()
+
+    opts_prof = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in profs])
+    opts_unid = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unids])
+    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in esps])
+    dias = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+    opts_dias = "".join([f'<option value="{d}">{d}</option>' for d in dias])
+
+    linhas = "".join([f"""
+        <tr>
+            <td><b>{a[1]}</b><br><small>{a[3]}</small></td>
+            <td>{a[2]}</td>
+            <td>{a[4]}<br><small>{a[5]} às {a[6]} ({a[7]}min)</small></td>
+            <td><a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></a></td>
+        </tr>""" for a in lista_agendas])
+
+    conteudo = f"""
+        <h4><i class="bi bi-calendar-check"></i> Configurar Agendas</h4><hr>
+        {mensagem}
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-4"><label class="form-label fw-bold">Profissional</label><select name="profissional_id" class="form-select" required>{opts_prof}</select></div>
+            <div class="col-md-4"><label class="form-label fw-bold">Unidade de Atendimento</label><select name="unidade_id" class="form-select" required>{opts_unid}</select></div>
+            <div class="col-md-4"><label class="form-label fw-bold">Especialidade</label><select name="especialidade_id" class="form-select" required>{opts_esp}</select></div>
+            
+            <div class="col-md-3"><label class="form-label fw-bold">Dia da Semana</label><select name="dia_semana" class="form-select">{opts_dias}</select></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Início</label><input type="time" name="inicio" class="form-control" required></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Fim</label><input type="time" name="fim" class="form-control" required></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Tempo Consulta (min)</label><input type="number" name="intervalo" class="form-control" value="20"></div>
+            
+            <div class="col-12"><button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">DEFINIR GRADE DE HORÁRIOS</button></div>
+        </form>
+        <hr>
+        <div class="table-responsive">
+            <table class="table table-hover mt-2">
+                <thead class="table-dark"><tr><th>Profissional / Espec.</th><th>Unidade</th><th>Horário Atendimento</th><th>Ação</th></tr></thead>
+                <tbody>{linhas if lista_agendas else '<tr><td colspan="4" class="text-center">Nenhuma agenda configurada.</td></tr>'}</tbody>
+            </table>
+        </div>
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+    return HttpResponse(base_html("Configurar Agendas", conteudo))
+
+
+
 
 
 
@@ -809,4 +906,5 @@ urlpatterns = [
     path('acessos/', acesso_geral),
     path('precos/', precos_geral),
     path('precos-exames/', precos_exames_geral),
+    path('agendas-config/', agendas_config_geral),
 ]
