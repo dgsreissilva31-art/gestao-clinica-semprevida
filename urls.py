@@ -1111,6 +1111,138 @@ def agenda_diaria(request):
     except Exception as e:
         return HttpResponse(base_html("Erro", f"<h4>Erro:</h4><pre>{e}</pre>"))
 
+
+# --- TELA 13: AGENDAMENTO ---
+@csrf_exempt
+def agendar_consulta(request):
+
+    data = request.GET.get('data')
+    hora = request.GET.get('hora')
+    prof_nome = request.GET.get('prof')
+
+    mensagem = ""
+
+    try:
+        with connection.cursor() as cursor:
+
+            # 🔹 Buscar ID do profissional
+            cursor.execute("SELECT id FROM profissionais WHERE nome = %s", [prof_nome])
+            prof = cursor.fetchone()
+            profissional_id = prof[0] if prof else None
+
+            # 🔹 Buscar especialidade e unidade
+            cursor.execute("""
+                SELECT e.nome, u.nome, e.id, u.id
+                FROM agendas_config ac
+                JOIN especialidades e ON ac.especialidade_id = e.id
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ac.profissional_id = %s
+                LIMIT 1
+            """, [profissional_id])
+
+            dados = cursor.fetchone()
+
+            especialidade = dados[0] if dados else ""
+            unidade = dados[1] if dados else ""
+            especialidade_id = dados[2] if dados else None
+
+            # 🔹 Lista convênios
+            cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+            convenios = cursor.fetchall()
+
+    except Exception as e:
+        return HttpResponse(base_html("Erro", f"<pre>{e}</pre>"))
+
+    # 🔹 SALVAR AGENDAMENTO
+    if request.method == "POST":
+        nome = request.POST.get('nome')
+        sobrenome = request.POST.get('sobrenome')
+        telefone = request.POST.get('telefone')
+        convenio_id = request.POST.get('convenio')
+
+        nome_completo = f"{nome} {sobrenome}"
+
+        try:
+            with connection.cursor() as cursor:
+
+                # 🔹 cria paciente
+                cursor.execute("""
+                    INSERT INTO pacientes (nome, telefone, convenio_id)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                """, [nome_completo, telefone, convenio_id if convenio_id else None])
+
+                paciente_id = cursor.fetchone()[0]
+
+                # 🔹 cria agendamento
+                cursor.execute("""
+                    INSERT INTO agendamentos 
+                    (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, [paciente_id, profissional_id, data, hora, 'Agendado'])
+
+            mensagem = "<div class='alert alert-success'>✅ Consulta agendada!</div>"
+
+        except Exception as e:
+            mensagem = f"<div class='alert alert-danger'>❌ Erro: {e}</div>"
+
+    # 🔹 montar opções convênio
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
+
+    conteudo = f"""
+        <h4>Agendamento</h4>
+        {mensagem}
+
+        <div class="mb-3">
+            <b>📅 Data:</b> {data} <br>
+            <b>⏰ Hora:</b> {hora} <br>
+            <b>👨‍⚕️ Médico:</b> {prof_nome} <br>
+            <b>🏥 Unidade:</b> {unidade} <br>
+            <b>🩺 Especialidade:</b> {especialidade}
+        </div>
+
+        <form method="POST" class="row g-3">
+
+            <div class="col-md-6">
+                <label>Nome</label>
+                <input type="text" name="nome" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+                <label>Sobrenome</label>
+                <input type="text" name="sobrenome" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+                <label>Telefone</label>
+                <input type="text" name="telefone" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+                <label>Convênio</label>
+                <select name="convenio" class="form-select">
+                    <option value="">Particular</option>
+                    {opts_conv}
+                </select>
+            </div>
+
+            <div class="col-12">
+                <button class="btn btn-success w-100">Confirmar Agendamento</button>
+            </div>
+
+        </form>
+    """
+
+    return HttpResponse(base_html("Agendar Consulta", conteudo))
+
+
+
+
+
+
+
+
+
 # ---6. ROTAS ----
 urlpatterns = [
     path('', painel_controle),              # Painel Geral
@@ -1127,5 +1259,6 @@ urlpatterns = [
     path('precos-exames/', precos_exames_geral),
     path('agendas-config/', agendas_config_geral),
     path('agenda-diaria/', agenda_diaria),
+    path('agendar/', agendar_consulta),
    
 ]
