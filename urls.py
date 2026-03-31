@@ -173,7 +173,6 @@ def painel_controle(request):
   <div class="col-md-4">
     <div class="p-4 bg-dark text-white rounded shadow-sm text-center border h-100" style="background-color: #605ca8 !important;">
         <i class="bi bi-file-medical fs-1"></i><br><h5 class="mt-2 fw-bold">Prontuário Médico</h5>
-        <p class="small">Histórico e evolução do paciente</p>
         <a href="/recepcao/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Abrir via Recepção</a>
     </div>
  </div>
