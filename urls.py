@@ -54,6 +54,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
                 <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda do Dia</a></li>
                 <li><a href="/agendar/"><i class="bi bi-calendar-plus"></i> Novo Agendamento</a></li>
+                <li><a href="/recepcao/"><i class="bi bi-person-check"></i> Recepção (Hoje)</a></li>
               
                
                 
@@ -161,6 +162,13 @@ def painel_controle(request):
             <a href="/agendar/" class="btn btn-success btn-sm w-100">Abrir Tela 13</a>
         </div>
     </div>
+    <div class="col-md-4">
+    <div class="p-4 bg-warning text-dark rounded shadow-sm text-center border">
+        <i class="bi bi-person-check fs-1"></i><br><h5 class="mt-2 text-dark fw-bold">Recepção / Check-in</h5>
+        <p class="small">Controle de chegada de pacientes</p>
+        <a href="/recepcao/" class="btn btn-sm btn-dark mt-2 fw-bold text-white">Abrir Recepção</a>
+    </div>
+  </div>
 </div>
 
 
