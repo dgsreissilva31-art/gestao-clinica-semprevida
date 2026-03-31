@@ -47,6 +47,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
                 <li><a href="/pacientes/"><i class="bi bi-people"></i> Pacientes</a></li>
                 <li><a href="/acessos/"><i class="bi bi-shield-lock"></i> Acessos</a></li>
+                <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
                
                 
                 
@@ -118,6 +119,12 @@ def painel_controle(request):
     <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
         <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2">Acessos</h5>
         <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
+        <i class="bi bi-currency-dollar fs-1"></i><br><h5 class="mt-2">Tabela de Preços</h5>
+        <a href="/precos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
     </div>
   </div>
 </div>
@@ -623,6 +630,89 @@ def acesso_geral(request):
 
 
 
+# --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
+@csrf_exempt
+def precos_geral(request):
+    mensagem = ""
+    # Exclusão
+    if request.GET.get('delete_preco'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM precos_convenio WHERE id = %s", [request.GET.get('delete_preco')])
+        return HttpResponseRedirect('/precos/')
+
+    # Cadastro
+    if request.method == "POST":
+        conv = request.POST.get('convenio_id')
+        esp = request.POST.get('especialidade_id')
+        valor = request.POST.get('valor')
+        tuss = request.POST.get('tuss')
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, codigo_tuss) VALUES (%s, %s, %s, %s)",
+                    [conv, esp, valor, tuss]
+                )
+            mensagem = '<div class="alert alert-success">✅ Preço configurado com sucesso!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # Busca Dados para o Formulário e Tabela
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+        lista_conv = cursor.fetchall()
+        
+        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
+        lista_esp = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.codigo_tuss 
+            FROM precos_convenio pr
+            JOIN convenios c ON pr.convenio_id = c.id
+            JOIN especialidades e ON pr.especialidade_id = e.id
+            ORDER BY c.nome, e.nome
+        """)
+        tabela_precos = cursor.fetchall()
+
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
+    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in lista_esp])
+    
+    linhas = "".join([f"""
+        <tr>
+            <td><b>{p[1]}</b></td>
+            <td>{p[2]}</td>
+            <td>R$ {p[3]}</td>
+            <td><small>{p[4] if p[4] else '---'}</small></td>
+            <td><a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
+        </tr>""" for p in tabela_precos])
+
+    conteudo = f"""
+        <h4><i class="bi bi-currency-dollar"></i> Preços por Convênio</h4><hr>
+        {mensagem}
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select" required>{opts_conv}</select></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Especialidade</label><select name="especialidade_id" class="form-select" required>{opts_esp}</select></div>
+            <div class="col-md-2"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
+            <div class="col-md-3"><label class="form-label fw-bold">Cód. TUSS (Opcional)</label><input type="text" name="tuss" class="form-control"></div>
+            <div class="col-12"><button type="submit" class="btn btn-primary w-100 fw-bold">SALVAR TABELA DE PREÇO</button></div>
+        </form>
+        <hr>
+        <div class="table-responsive">
+            <table class="table table-hover mt-2">
+                <thead class="table-dark"><tr><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
+                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço configurado.</td></tr>'}</tbody>
+            </table>
+        </div>
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+    return HttpResponse(base_html("Preços Convênio", conteudo))
+
+
+
+
+
+
+
+
 
 # ---6. ROTAS ----
 urlpatterns = [
@@ -636,4 +726,5 @@ urlpatterns = [
     path('odontologia/', odonto_geral),
     path('pacientes/', pacientes_geral),
     path('acessos/', acesso_geral),
+    path('precos/', precos_geral),
 ]
