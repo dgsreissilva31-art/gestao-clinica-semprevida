@@ -979,7 +979,111 @@ def agendas_config_geral(request):
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
 
+# --- 15. TELA 12: AGENDA DO DIA ---
+@csrf_exempt
+def agenda_diaria(request):
+    data_hoje = request.GET.get('data')
 
+    if not data_hoje:
+        data_hoje = datetime.date.today().strftime('%Y-%m-%d')
+
+    dia_semana_map = {
+        0: 'Segunda-feira',
+        1: 'Terça-feira',
+        2: 'Quarta-feira',
+        3: 'Quinta-feira',
+        4: 'Sexta-feira',
+        5: 'Sábado',
+        6: 'Domingo'
+    }
+
+    data_obj = datetime.datetime.strptime(data_hoje, '%Y-%m-%d')
+    dia_semana = dia_semana_map[data_obj.weekday()]
+
+    horarios = []
+
+    try:
+        with connection.cursor() as cursor:
+            # 🔹 Busca grades válidas
+            cursor.execute("""
+                SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
+                FROM agendas_config ac
+                JOIN profissionais p ON ac.profissional_id = p.id
+                WHERE (ac.dia_semana = %s OR ac.data_especifica = %s)
+            """, [dia_semana, data_hoje])
+
+            agendas = cursor.fetchall()
+
+            for ag in agendas:
+                inicio = ag[2]
+                fim = ag[3]
+                intervalo = ag[4] or 20
+
+                hora_atual = datetime.datetime.combine(data_obj, inicio)
+
+                while hora_atual.time() < fim:
+                    horarios.append({
+                        "profissional": ag[1],
+                        "hora": hora_atual.time().strftime('%H:%M')
+                    })
+
+                    hora_atual += datetime.timedelta(minutes=intervalo)
+
+            # 🔹 Busca agendamentos
+            cursor.execute("""
+                SELECT a.horario_selecionado, p.nome
+                FROM agendamentos a
+                JOIN pacientes p ON a.paciente_id = p.id
+                WHERE a.data_agendamento = %s
+            """, [data_hoje])
+
+            agendados = cursor.fetchall()
+
+    except Exception as e:
+        return HttpResponse(base_html("Erro", f"<h4>Erro: {e}</h4>"))
+
+    # 🔹 Organiza ocupados
+    ocupados = {a[0].strftime('%H:%M'): a[1] for a in agendados}
+
+    linhas = ""
+    for h in sorted(horarios, key=lambda x: x['hora']):
+        paciente = ocupados.get(h['hora'], "")
+
+        if paciente:
+            status = f"<span class='badge bg-danger'>Ocupado</span><br><small>{paciente}</small>"
+        else:
+            status = "<span class='badge bg-success'>Livre</span>"
+
+        linhas += f"""
+            <tr>
+                <td><b>{h['hora']}</b></td>
+                <td>{h['profissional']}</td>
+                <td>{status}</td>
+            </tr>
+        """
+
+    conteudo = f"""
+        <h4><i class="bi bi-calendar3"></i> Agenda do Dia</h4>
+        <form method="GET" class="row mb-3">
+            <div class="col-md-4">
+                <input type="date" name="data" value="{data_hoje}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100">Buscar</button>
+            </div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Horário</th>
+                        <th>Profissional</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas if linhas else "<tr><td colspan='3' class='text-center'>Sem horários</td></tr>"}
 
 
 
@@ -1000,5 +1104,6 @@ urlpatterns = [
     path('precos/', precos_geral),
     path('precos-exames/', precos_exames_geral),
     path('agendas-config/', agendas_config_geral),
+    path('agenda-diaria/', agenda_diaria),
    
 ]
