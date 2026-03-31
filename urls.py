@@ -1163,5 +1163,5 @@ urlpatterns = [
     path('precos/', precos_geral),
     path('precos-exames/', precos_exames_geral),
     path('agendas-config/', agendas_config_geral),
-    path('agenda-diaria/', agenda_diaria),
+   
 ]
