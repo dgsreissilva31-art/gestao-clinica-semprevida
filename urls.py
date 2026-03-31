@@ -1585,6 +1585,158 @@ def prontuario_geral(request):
     return HttpResponse(base_html("Prontuário", conteudo))
 
 
+# --_16.TELA ----
+
+
+@csrf_exempt
+def caixa_geral(request):
+    mensagem = ""
+
+    try:
+        # --- REGISTRAR PAGAMENTO ---
+        if request.method == "POST":
+            atendimento_id = request.POST.get('atendimento_id')
+            valor = request.POST.get('valor')
+            forma = request.POST.get('forma_pagamento')
+
+            with connection.cursor() as cursor:
+                # Busca dados do atendimento
+                cursor.execute("""
+                    SELECT p.nome, pr.nome, e.nome
+                    FROM agenda_diaria ag
+                    LEFT JOIN pacientes p ON ag.paciente_id = p.id
+                    LEFT JOIN profissionais pr ON ag.profissional_id = pr.id
+                    LEFT JOIN especialidades e ON ag.especialidade_id = e.id
+                    WHERE ag.id = %s
+                """, [atendimento_id])
+
+                dados = cursor.fetchone()
+
+                if dados:
+                    paciente = dados[0] or "Não informado"
+                    profissional = dados[1] or "Não informado"
+                    especialidade = dados[2] or "Não informado"
+
+                    # Salva no caixa
+                    cursor.execute("""
+                        INSERT INTO caixa 
+                        (atendimento_id, paciente_nome, profissional_nome, especialidade, valor, forma_pagamento, status, data_atendimento)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
+                    """, [
+                        atendimento_id,
+                        paciente,
+                        profissional,
+                        especialidade,
+                        valor,
+                        forma,
+                        'Pago'
+                    ])
+
+                    # Atualiza status da agenda
+                    cursor.execute("""
+                        UPDATE agenda_diaria 
+                        SET status = 'Finalizado'
+                        WHERE id = %s
+                    """, [atendimento_id])
+
+                    mensagem = '<div class="alert alert-success">✅ Pagamento registrado com sucesso!</div>'
+                else:
+                    mensagem = '<div class="alert alert-danger">❌ Atendimento não encontrado!</div>'
+
+        # --- BUSCAR ATENDIMENTOS PARA COBRANÇA ---
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT ag.id, p.nome, pr.nome, e.nome, ag.horario, ag.status
+                FROM agenda_diaria ag
+                LEFT JOIN pacientes p ON ag.paciente_id = p.id
+                LEFT JOIN profissionais pr ON ag.profissional_id = pr.id
+                LEFT JOIN especialidades e ON ag.especialidade_id = e.id
+                WHERE ag.status IN ('Aguardando Atendimento', 'Atendido')
+                ORDER BY ag.horario
+            """)
+            atendimentos = cursor.fetchall()
+
+        # --- BUSCAR MOVIMENTO DO CAIXA ---
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT paciente_nome, profissional_nome, especialidade, valor, forma_pagamento, data_pagamento
+                FROM caixa
+                ORDER BY data_pagamento DESC
+                LIMIT 20
+            """)
+            caixa_lista = cursor.fetchall()
+
+    except Exception as e:
+        return HttpResponse(base_html("Erro Caixa", f"<h4>Erro:</h4><pre>{e}</pre>"))
+
+    # --- TABELA ATENDIMENTOS ---
+    linhas_atend = ""
+    for a in atendimentos:
+        linhas_atend += f"""
+        <tr>
+            <td>{a[1] or '---'}</td>
+            <td>{a[2] or '---'}</td>
+            <td>{a[3] or '---'}</td>
+            <td>{a[4]}</td>
+            <td>
+                <form method="POST" class="d-flex gap-1">
+                    <input type="hidden" name="atendimento_id" value="{a[0]}">
+                    <input type="number" step="0.01" name="valor" class="form-control form-control-sm" placeholder="Valor" required>
+                    <select name="forma_pagamento" class="form-select form-select-sm">
+                        <option>Dinheiro</option>
+                        <option>Cartão</option>
+                        <option>Pix</option>
+                        <option>Convênio</option>
+                    </select>
+                    <button class="btn btn-success btn-sm">Cobrar</button>
+                </form>
+            </td>
+        </tr>
+        """
+
+    # --- TABELA CAIXA ---
+    linhas_caixa = ""
+    for c in caixa_lista:
+        linhas_caixa += f"""
+        <tr>
+            <td>{c[0]}</td>
+            <td>{c[1]}</td>
+            <td>{c[2]}</td>
+            <td>R$ {c[3]}</td>
+            <td>{c[4]}</td>
+            <td>{c[5]}</td>
+        </tr>
+        """
+
+    conteudo = f"""
+        <h4><i class="bi bi-cash-coin"></i> Caixa</h4>
+        {mensagem}
+
+        <h5 class="mt-4">💰 Atendimentos para Cobrança</h5>
+        <table class="table table-hover">
+            <thead class="table-dark">
+                <tr><th>Paciente</th><th>Profissional</th><th>Especialidade</th><th>Horário</th><th>Ação</th></tr>
+            </thead>
+            <tbody>
+                {linhas_atend if linhas_atend else '<tr><td colspan="5" class="text-center">Nenhum atendimento</td></tr>'}
+            </tbody>
+        </table>
+
+        <h5 class="mt-4">📊 Últimos Recebimentos</h5>
+        <table class="table table-striped">
+            <thead class="table-dark">
+                <tr><th>Paciente</th><th>Profissional</th><th>Especialidade</th><th>Valor</th><th>Forma</th><th>Data</th></tr>
+            </thead>
+            <tbody>
+                {linhas_caixa if linhas_caixa else '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
+            </tbody>
+        </table>
+    """
+
+    return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
@@ -1609,6 +1761,7 @@ urlpatterns = [
     path('agendar/', agendar_consulta),
     path('recepcao/', recepcao_geral),
     path('prontuario/', prontuario_geral),
+    path('caixa/', caixa_geral),
    
    
 ]
