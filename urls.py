@@ -177,14 +177,6 @@ def painel_controle(request):
         <a href="/recepcao/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Abrir via Recepção</a>
     </div>
  </div>
- <div class="col-md-4">
-    <div class="p-4 bg-success text-white rounded shadow-sm text-center border h-100">
-        <i class="bi bi-cash-coin fs-1"></i><br>
-        <h5 class="mt-2 fw-bold">Caixa / Financeiro</h5>
-        <p class="small">Fluxo de pagamentos do dia</p>
-        <a href="/caixa/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Abrir Caixa</a>
-    </div>
-  </div>
 </div>
 
 
