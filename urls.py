@@ -53,6 +53,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
                 <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
                 <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda do Dia</a></li>
+                <li><a href="/agendar/"><i class="bi bi-calendar-plus"></i> Novo Agendamento</a></li>
               
                
                 
@@ -150,7 +151,16 @@ def painel_controle(request):
         <i class="bi bi-calendar3 fs-1 text-primary"></i><br><h5 class="mt-2 text-primary">Agenda do Dia</h5>
         <a href="/agenda-diaria/" class="btn btn-sm btn-primary mt-2 fw-bold text-white">Ver Calendário</a>
     </div>
-  </div>
+</div>
+    <div class="col-md-4 mb-3">
+    <div class="card text-center shadow-sm">
+        <div class="card-body">
+            <i class="bi bi-calendar-check-fill text-success fs-1"></i>
+            <h5 class="card-title mt-2">Novo Agendamento</h5>
+            <p class="small text-muted">Marcar consulta manualmente</p>
+            <a href="/agendar/" class="btn btn-success btn-sm w-100">Abrir Tela 13</a>
+        </div>
+    </div>
 </div>
 
 
