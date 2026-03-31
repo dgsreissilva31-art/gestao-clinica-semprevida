@@ -979,32 +979,25 @@ def agendas_config_geral(request):
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
 
-# --- 15. TELA 12: AGENDA DO DIA ---
+
+
+# --- TELA 12 CORRIGIDA ---
 @csrf_exempt
 def agenda_diaria(request):
-    data_hoje = request.GET.get('data')
-
-    if not data_hoje:
-        data_hoje = datetime.date.today().strftime('%Y-%m-%d')
-
-    dia_semana_map = {
-        0: 'Segunda-feira',
-        1: 'Terça-feira',
-        2: 'Quarta-feira',
-        3: 'Quinta-feira',
-        4: 'Sexta-feira',
-        5: 'Sábado',
-        6: 'Domingo'
-    }
-
-    data_obj = datetime.datetime.strptime(data_hoje, '%Y-%m-%d')
-    dia_semana = dia_semana_map[data_obj.weekday()]
-
-    horarios = []
-
     try:
+        data_hoje = request.GET.get('data') or datetime.date.today().strftime('%Y-%m-%d')
+
+        data_obj = datetime.datetime.strptime(data_hoje, '%Y-%m-%d')
+
+        dias = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo']
+        dia_semana = dias[data_obj.weekday()]
+
+        horarios = []
+        agendados = []
+
         with connection.cursor() as cursor:
-            # 🔹 Busca grades válidas
+
+            # 🔹 BUSCA AGENDAS
             cursor.execute("""
                 SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
                 FROM agendas_config ac
@@ -1015,77 +1008,93 @@ def agenda_diaria(request):
             agendas = cursor.fetchall()
 
             for ag in agendas:
+                nome_prof = ag[1]
                 inicio = ag[2]
                 fim = ag[3]
                 intervalo = ag[4] or 20
+
+                # 🔥 CONVERSÃO SEGURA (resolve erro do Supabase)
+                if isinstance(inicio, str):
+                    inicio = datetime.datetime.strptime(inicio, '%H:%M:%S').time()
+                if isinstance(fim, str):
+                    fim = datetime.datetime.strptime(fim, '%H:%M:%S').time()
 
                 hora_atual = datetime.datetime.combine(data_obj, inicio)
 
                 while hora_atual.time() < fim:
                     horarios.append({
-                        "profissional": ag[1],
-                        "hora": hora_atual.time().strftime('%H:%M')
+                        "hora": hora_atual.strftime('%H:%M'),
+                        "profissional": nome_prof
                     })
-
                     hora_atual += datetime.timedelta(minutes=intervalo)
 
-            # 🔹 Busca agendamentos
+            # 🔹 BUSCA AGENDAMENTOS
             cursor.execute("""
-                SELECT a.horario_selecionado, p.nome
-                FROM agendamentos a
-                JOIN pacientes p ON a.paciente_id = p.id
-                WHERE a.data_agendamento = %s
+                SELECT horario_selecionado, paciente_id
+                FROM agendamentos
+                WHERE data_agendamento = %s
             """, [data_hoje])
 
-            agendados = cursor.fetchall()
+            agendados_raw = cursor.fetchall()
 
-    except Exception as e:
-        return HttpResponse(base_html("Erro", f"<h4>Erro: {e}</h4>"))
+            # 🔥 MONTA DICIONÁRIO DE OCUPADOS
+            ocupados = {}
+            for a in agendados_raw:
+                hora = a[0]
 
-    # 🔹 Organiza ocupados
-    ocupados = {a[0].strftime('%H:%M'): a[1] for a in agendados}
+                if isinstance(hora, str):
+                    hora = datetime.datetime.strptime(hora, '%H:%M:%S').strftime('%H:%M')
+                else:
+                    hora = hora.strftime('%H:%M')
 
-    linhas = ""
-    for h in sorted(horarios, key=lambda x: x['hora']):
-        paciente = ocupados.get(h['hora'], "")
+                ocupados[hora] = "Paciente"
 
-        if paciente:
-            status = f"<span class='badge bg-danger'>Ocupado</span><br><small>{paciente}</small>"
-        else:
-            status = "<span class='badge bg-success'>Livre</span>"
+        # 🔹 MONTA TABELA
+        linhas = ""
+        for h in sorted(horarios, key=lambda x: x['hora']):
+            if h['hora'] in ocupados:
+                status = "<span class='badge bg-danger'>Ocupado</span>"
+            else:
+                status = "<span class='badge bg-success'>Livre</span>"
 
-        linhas += f"""
-            <tr>
-                <td><b>{h['hora']}</b></td>
-                <td>{h['profissional']}</td>
-                <td>{status}</td>
-            </tr>
-        """
+            linhas += f"""
+                <tr>
+                    <td><b>{h['hora']}</b></td>
+                    <td>{h['profissional']}</td>
+                    <td>{status}</td>
+                </tr>
+            """
 
-    conteudo = f"""
-        <h4><i class="bi bi-calendar3"></i> Agenda do Dia</h4>
-        <form method="GET" class="row mb-3">
-            <div class="col-md-4">
-                <input type="date" name="data" value="{data_hoje}" class="form-control">
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary w-100">Buscar</button>
-            </div>
-        </form>
+        conteudo = f"""
+            <h4>Agenda do Dia</h4>
 
-        <div class="table-responsive">
+            <form method="GET" class="row mb-3">
+                <div class="col-md-4">
+                    <input type="date" name="data" value="{data_hoje}" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary">Buscar</button>
+                </div>
+            </form>
+
             <table class="table table-hover">
                 <thead class="table-dark">
                     <tr>
-                        <th>Horário</th>
+                        <th>Hora</th>
                         <th>Profissional</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {linhas if linhas else "<tr><td colspan='3' class='text-center'>Sem horários</td></tr>"}
+                    {linhas if linhas else "<tr><td colspan='3'>Sem horários</td></tr>"}
+                </tbody>
+            </table>
+        """
 
+        return HttpResponse(base_html("Agenda do Dia", conteudo))
 
+    except Exception as e:
+        return HttpResponse(base_html("Erro", f"<h4>Erro interno:</h4><pre>{e}</pre>"))
 
 
 
