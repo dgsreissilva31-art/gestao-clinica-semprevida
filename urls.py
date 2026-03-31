@@ -50,6 +50,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
                 <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
                 <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
+                <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda do Dia</a></li>
               
                
                 
@@ -140,6 +141,12 @@ def painel_controle(request):
     <div class="p-4 bg-success text-white rounded shadow-sm text-center">
         <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2">Configurar Agendas</h5>
         <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="p-4 bg-light text-dark rounded shadow-sm text-center border">
+        <i class="bi bi-calendar3 fs-1 text-primary"></i><br><h5 class="mt-2 text-primary">Agenda do Dia</h5>
+        <a href="/agenda-diaria/" class="btn btn-sm btn-primary mt-2 fw-bold text-white">Ver Calendário</a>
     </div>
   </div>
 </div>
