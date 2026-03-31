@@ -1,7 +1,9 @@
+import datetime
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.models import User
 
 # --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
 
