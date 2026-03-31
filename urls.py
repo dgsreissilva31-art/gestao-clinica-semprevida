@@ -45,6 +45,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
+                <li><a href="/pacientes/"><i class="bi bi-people"></i> Pacientes</a></li>
                
                 
                 
@@ -106,6 +107,12 @@ def painel_controle(request):
         <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
       </div>
     </div>
+    <div class="col-md-4">
+    <div class="p-4 bg-danger text-white rounded shadow-sm text-center">
+        <i class="bi bi-people fs-1"></i><br><h5 class="mt-2">Pacientes</h5>
+        <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+    </div>
+  </div>
 </div>
 
 
@@ -435,6 +442,108 @@ def odonto_geral(request):
     return HttpResponse(base_html("Odontologia", conteudo))
 
 
+# --- 10. TELA 7: GESTÃO DE PACIENTES ---
+@csrf_exempt
+def pacientes_geral(request):
+    mensagem = ""
+    # Lógica de Exclusão
+    if request.GET.get('delete_pac'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
+        return HttpResponseRedirect('/pacientes/')
+
+    # Lógica de Cadastro (POST)
+    if request.method == "POST":
+        nome = request.POST.get('nome')
+        cpf = request.POST.get('cpf')
+        sexo = request.POST.get('sexo')
+        nasc = request.POST.get('data_nasc')
+        tel = request.POST.get('telefone')
+        conv = request.POST.get('convenio_id')
+        cep = request.POST.get('cep')
+        end = request.POST.get('endereco')
+        cidade = request.POST.get('cidade')
+        
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO pacientes (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, endereco, cidade) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    [nome, cpf, sexo, nasc if nasc else None, tel, conv if conv else None, cep, end, cidade]
+                )
+            mensagem = '<div class="alert alert-success">✅ Paciente cadastrado com sucesso!</div>'
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+
+    # Busca Convênios para o Select e Lista de Pacientes para a Tabela
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+        convenios = cursor.fetchall()
+        
+        cursor.execute("""
+            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.sexo, p.cidade 
+            FROM pacientes p 
+            LEFT JOIN convenios c ON p.convenio_id = c.id 
+            ORDER BY p.id DESC
+        """)
+        lista_pacientes = cursor.fetchall()
+
+    opcoes_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
+    
+    linhas = "".join([f"""
+        <tr>
+            <td><b>{p[1]}</b><br><small class='text-muted'>{p[5]} | CPF: {p[2]}</small></td>
+            <td>{p[3]}<br><small class='text-secondary'>{p[6] if p[6] else ''}</small></td>
+            <td><span class="badge bg-info text-dark">{p[4] if p[4] else 'Particular'}</span></td>
+            <td>
+                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" 
+                   onclick="return confirm('Tem certeza que deseja excluir este paciente?')">
+                   <i class="bi bi-trash"></i>
+                </a>
+            </td>
+        </tr>""" for p in lista_pacientes])
+
+    conteudo = f"""
+        <h4><i class="bi bi-people"></i> Cadastro de Pacientes</h4><hr>
+        {mensagem}
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-5"><label class="form-label fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control" required></div>
+            <div class="col-md-3"><label class="form-label fw-bold">CPF</label><input type="text" name="cpf" class="form-control" placeholder="000.000.000-00"></div>
+            <div class="col-md-2"><label class="form-label fw-bold">Sexo</label>
+                <select name="sexo" class="form-select">
+                    <option value="Masculino">Masculino</option>
+                    <option value="Feminino">Feminino</option>
+                    <option value="Outro">Outro</option>
+                </select>
+            </div>
+            <div class="col-md-2"><label class="form-label fw-bold">Nascimento</label><input type="date" name="data_nasc" class="form-control"></div>
+            
+            <div class="col-md-4"><label class="form-label fw-bold">Telefone</label><input type="text" name="telefone" class="form-control" placeholder="(00) 00000-0000"></div>
+            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opcoes_conv}</select></div>
+            <div class="col-md-4"><label class="form-label fw-bold">CEP</label><input type="text" name="cep" class="form-control" placeholder="00000-000"></div>
+            
+            <div class="col-md-4"><label class="form-label fw-bold">Cidade</label><input type="text" name="cidade" class="form-control"></div>
+            <div class="col-md-8"><label class="form-label fw-bold">Endereço Completo</label><input type="text" name="endereco" class="form-control" placeholder="Rua, número, bairro..."></div>
+            
+            <div class="col-12 mt-4">
+                <button type="submit" class="btn btn-danger w-100 fw-bold shadow-sm">SALVAR PACIENTE</button>
+            </div>
+        </form>
+        <hr>
+        <h5>Pacientes Cadastrados</h5>
+        <div class="table-responsive">
+            <table class="table table-hover mt-2">
+                <thead class="table-dark">
+                    <tr><th>Paciente / Info</th><th>Contato / Cidade</th><th>Convênio</th><th>Ação</th></tr>
+                </thead>
+                <tbody>{linhas if lista_pacientes else '<tr><td colspan="4" class="text-center text-muted">Nenhum paciente encontrado.</td></tr>'}</tbody>
+            </table>
+        </div>
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+    return HttpResponse(base_html("Pacientes", conteudo))
+
+
 
 
 # ---6. ROTAS ----
@@ -447,4 +556,5 @@ urlpatterns = [
     path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
     path('exames/', exames_geral),
     path('odontologia/', odonto_geral),
+    path('pacientes/', pacientes_geral),
 ]
