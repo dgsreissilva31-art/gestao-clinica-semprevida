@@ -1246,7 +1246,148 @@ def agendar_consulta(request):
     return HttpResponse(base_html("Agendar Consulta", conteudo))
 
 
+# --- TELA 14: RECEPÇÃO ---
+@csrf_exempt
+def recepcao_geral(request):
 
+    data_hoje = datetime.date.today().strftime('%Y-%m-%d')
+    unidade_filtro = request.GET.get('unidade')
+
+    mensagem = ""
+
+    try:
+        with connection.cursor() as cursor:
+
+            # 🔹 Lista de unidades (filtro)
+            cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+            unidades = cursor.fetchall()
+
+            # 🔹 BUSCA AGENDAMENTOS DO DIA
+            query = """
+                SELECT 
+                    ag.id,
+                    p.nome,
+                    pr.nome,
+                    u.nome,
+                    ag.horario_selecionado,
+                    ag.status
+                FROM agendamentos ag
+                JOIN pacientes p ON ag.paciente_id = p.id
+                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                JOIN profissionais pr ON ac.profissional_id = pr.id
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ag.data_agendamento = %s
+            """
+
+            params = [data_hoje]
+
+            if unidade_filtro:
+                query += " AND u.id = %s"
+                params.append(unidade_filtro)
+
+            query += " ORDER BY ag.horario_selecionado"
+
+            cursor.execute(query, params)
+            agenda = cursor.fetchall()
+
+    except Exception as e:
+        return HttpResponse(base_html("Erro", f"<pre>{e}</pre>"))
+
+    # 🔹 ALTERAR STATUS
+    if request.GET.get('acao'):
+        ag_id = request.GET.get('id')
+        acao = request.GET.get('acao')
+
+        novo_status = "Aguardando"
+
+        if acao == "chegada":
+            novo_status = "Aguardando"
+        elif acao == "atendimento":
+            novo_status = "Em Atendimento"
+        elif acao == "finalizar":
+            novo_status = "Finalizado"
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE agendamentos
+                SET status = %s
+                WHERE id = %s
+            """, [novo_status, ag_id])
+
+        return HttpResponseRedirect('/recepcao/')
+
+    # 🔹 Montar tabela
+    linhas = ""
+
+    for a in agenda:
+
+        hora = a[4]
+        if isinstance(hora, str):
+            hora = datetime.datetime.strptime(hora, '%H:%M:%S').strftime('%H:%M')
+        else:
+            hora = hora.strftime('%H:%M')
+
+        status = a[5] or "Aguardando"
+
+        cor = {
+            "Aguardando": "warning",
+            "Em Atendimento": "primary",
+            "Finalizado": "success"
+        }.get(status, "secondary")
+
+        linhas += f"""
+            <tr>
+                <td><b>{hora}</b></td>
+                <td>{a[1]}</td>
+                <td>{a[2]}</td>
+                <td>{a[3]}</td>
+                <td><span class="badge bg-{cor}">{status}</span></td>
+                <td>
+                    <a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>
+                    <a href="/recepcao/?acao=atendimento&id={a[0]}" class="btn btn-sm btn-primary">Atender</a>
+                    <a href="/recepcao/?acao=finalizar&id={a[0]}" class="btn btn-sm btn-success">Finalizar</a>
+                </td>
+            </tr>
+        """
+
+    # 🔹 Select unidades
+    opts_unidades = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
+
+    conteudo = f"""
+        <h4><i class="bi bi-person-check"></i> Recepção de Pacientes</h4>
+
+        <form method="GET" class="row mb-3">
+            <div class="col-md-4">
+                <select name="unidade" class="form-select">
+                    <option value="">Todas Unidades</option>
+                    {opts_unidades}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary">Filtrar</button>
+            </div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Hora</th>
+                        <th>Paciente</th>
+                        <th>Profissional</th>
+                        <th>Unidade</th>
+                        <th>Status</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas if linhas else "<tr><td colspan='6'>Sem pacientes hoje</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+    """
+
+    return HttpResponse(base_html("Recepção", conteudo))
 
 
 
@@ -1270,5 +1411,6 @@ urlpatterns = [
     path('agendas-config/', agendas_config_geral),
     path('agenda-diaria/', agenda_diaria),
     path('agendar/', agendar_consulta),
+    path('recepcao/', recepcao_geral),
    
 ]
