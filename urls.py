@@ -50,6 +50,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
                 <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
                 <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
+                <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda do Dia</a></li>
                
                 
                 
@@ -139,6 +140,12 @@ def painel_controle(request):
     <div class="p-4 bg-success text-white rounded shadow-sm text-center">
         <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2">Configurar Agendas</h5>
         <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="p-4 bg-light text-dark rounded shadow-sm text-center border">
+        <i class="bi bi-calendar3 fs-1 text-primary"></i><br><h5 class="mt-2 text-primary">Agenda do Dia</h5>
+        <a href="/agenda-diaria/" class="btn btn-sm btn-primary mt-2 fw-bold text-white">Ver Calendário</a>
     </div>
   </div>
 </div>
@@ -971,6 +978,137 @@ def agendas_config_geral(request):
 
 
 
+# --- 15. TELA 12: AGENDAMENTO PÚBLICO (TELA DE ABERTURA) ---
+@csrf_exempt
+def marcar_consulta_publico(request):
+    mensagem = ""
+    unidade_id = request.GET.get('unidade')
+    especialidade_id = request.GET.get('especialidade')
+    data_selecionada = request.GET.get('data')
+
+    # Lógica de Gravação do Agendamento
+    if request.method == "POST":
+        paciente_nome = request.POST.get('paciente_nome')
+        paciente_tel = request.POST.get('paciente_tel')
+        agenda_id = request.POST.get('agenda_id')
+        hora = request.POST.get('horario')
+        data_f = request.POST.get('data_f')
+        
+        try:
+            with connection.cursor() as cursor:
+                # Aqui simplificamos: se o paciente não existe, poderíamos criar, 
+                # mas vamos focar na reserva da agenda por agora.
+                cursor.execute(
+                    "INSERT INTO agendamentos (agenda_config_id, data_agendamento, horario_selecionado) VALUES (%s, %s, %s)",
+                    [agenda_id, data_f, hora]
+                )
+            return HttpResponse("<html><script>alert('✅ Consulta marcada com sucesso!'); window.location.href='/';</script></html>")
+        except Exception as e:
+            mensagem = f"<div class='alert alert-danger'>Erro: {e}</div>"
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
+        especialidades = cursor.fetchall()
+
+        # Busca horários disponíveis se filtros estiverem ativos
+        grade = []
+        if unidade_id and especialidade_id and data_selecionada:
+            # Descobrir dia da semana da data selecionada
+            dt = datetime.datetime.strptime(data_selecionada, '%Y-%m-%d')
+            dias_map = {0:'Segunda-feira', 1:'Terça-feira', 2:'Quarta-feira', 3:'Quinta-feira', 4:'Sexta-feira', 5:'Sábado'}
+            dia_nome = dias_map.get(dt.weekday())
+
+            cursor.execute("""
+                SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
+                FROM agendas_config ac
+                JOIN profissionais p ON ac.profissional_id = p.id
+                WHERE ac.unidade_id = %s AND ac.especialidade_id = %s
+                AND (ac.dia_semana = %s OR ac.data_especifica = %s)
+            """, [unidade_id, especialidade_id, dia_nome, data_selecionada])
+            grade = cursor.fetchall()
+
+    return HttpResponse(f"""
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        <title>Sempre Vida - Agendamento</title>
+        <style>
+            body {{ background: linear-gradient(135deg, #3c8dbc 0%, #1e282c 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }}
+            .booking-card {{ background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 100%; max-width: 500px; padding: 30px; }}
+            .btn-book {{ background: #3c8dbc; color: white; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div class="booking-card">
+            <div class="text-center mb-4">
+                <h2 class="fw-bold text-primary"><i class="bi bi-heart-pulse"></i> Sempre Vida</h2>
+                <p class="text-muted">Marque sua consulta em segundos</p>
+            </div>
+            
+            {mensagem}
+
+            <form method="GET" class="row g-3">
+                <div class="col-12"><label class="form-label fw-bold small">1. Onde você quer ser atendido?</label>
+                    <select name="unidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Selecione a Unidade</option>
+                        {"".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unidade_id else ""}>{u[1]}</option>' for u in unidades])}
+                    </select>
+                </div>
+                <div class="col-12"><label class="form-label fw-bold small">2. Qual a especialidade?</label>
+                    <select name="especialidade" class="form-select" onchange="this.form.submit()">
+                        <option value="">Selecione a Especialidade</option>
+                        {"".join([f'<option value="{e[0]}" {"selected" if str(e[0])==especialidade_id else ""}>{e[1]}</option>' for e in especialidades])}
+                    </select>
+                </div>
+                <div class="col-12"><label class="form-label fw-bold small">3. Quando?</label>
+                    <input type="date" name="data" class="form-control" value="{data_selecionada or ''}" onchange="this.form.submit()">
+                </div>
+            </form>
+
+            <hr>
+
+            <form method="POST" class="mt-3">
+                <label class="form-label fw-bold small text-success">4. Escolha o Profissional e Horário:</label>
+                <select name="horario_full" class="form-select mb-3" required>
+                    <option value="">Horários Disponíveis...</option>
+                    {"".join([f'<option value="{g[0]}|{g[2]}">{g[1]} - Início: {g[2]}</option>' for g in grade])}
+                </select>
+                
+                <input type="hidden" name="agenda_id" id="agenda_id">
+                <input type="hidden" name="horario" id="horario_val">
+                <input type="hidden" name="data_f" value="{data_selecionada}">
+
+                <div class="bg-light p-3 rounded mb-3">
+                    <label class="form-label fw-bold small">Seus Dados:</label>
+                    <input type="text" name="paciente_nome" class="form-control mb-2" placeholder="Seu Nome Completo" required>
+                    <input type="text" name="paciente_tel" class="form-control" placeholder="Seu Telefone (WhatsApp)" required>
+                </div>
+
+                <button type="submit" class="btn btn-book w-100 py-3 rounded-pill" onclick="prepararDados()">CONFIRMAR AGENDAMENTO</button>
+            </form>
+        </div>
+
+        <script>
+            function prepararDados() {{
+                var sel = document.querySelector('select[name="horario_full"]').value;
+                if(sel) {{
+                    var partes = sel.split('|');
+                    document.getElementById('agenda_id').value = partes[0];
+                    document.getElementById('horario_val').value = partes[1];
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """)
+
+
 
 
 
@@ -992,4 +1130,5 @@ urlpatterns = [
     path('precos/', precos_geral),
     path('precos-exames/', precos_exames_geral),
     path('agendas-config/', agendas_config_geral),
+    path('agenda-diaria/', agenda_diaria),
 ]
