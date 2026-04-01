@@ -1261,80 +1261,160 @@ def acesso_geral(request):
 
 
 # --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
+# --- 12. TELA 9: PREÇOS E GRUPOS DE PAGAMENTO ---
 @csrf_exempt
 def precos_geral(request):
     mensagem = ""
-    # Exclusão
+    
+    # 1. AÇÃO: EXCLUSÃO
     if request.GET.get('delete_preco'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM precos_convenio WHERE id = %s", [request.GET.get('delete_preco')])
         return HttpResponseRedirect('/precos/')
 
-    # Cadastro
+    # 2. CARREGAR DADOS PARA EDIÇÃO (ALTERAR)
+    edit_id = request.GET.get('edit_preco')
+    # Ordem: conv_id, esp_id, valor, tuss, tipo, grupo
+    p_pre = ["", "", 0.00, "", "Faturado", ""]
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT convenio_id, especialidade_id, valor_pagamento, codigo_tuss, tipo_cobranca, grupo_nome 
+                FROM precos_convenio WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res: p_pre = res
+
+    # 3. SALVAR OU ATUALIZAR (POST)
     if request.method == "POST":
-        conv = request.POST.get('convenio_id')
-        esp = request.POST.get('especialidade_id')
+        id_post = request.POST.get('id_preco')
+        conv = request.POST.get('convenio_id') or None
+        esp = request.POST.get('especialidade_id') or None
         valor = request.POST.get('valor')
         tuss = request.POST.get('tuss')
+        tipo = request.POST.get('tipo_cobranca')
+        grupo = request.POST.get('grupo_nome')
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, codigo_tuss) VALUES (%s, %s, %s, %s)",
-                    [conv, esp, valor, tuss]
-                )
-            mensagem = '<div class="alert alert-success">✅ Preço configurado com sucesso!</div>'
+                if id_post: # UPDATE
+                    cursor.execute("""
+                        UPDATE precos_convenio SET 
+                        convenio_id=%s, especialidade_id=%s, valor_pagamento=%s, codigo_tuss=%s, tipo_cobranca=%s, grupo_nome=%s
+                        WHERE id=%s
+                    """, [conv, esp, valor, tuss, tipo, grupo, id_post])
+                else: # INSERT
+                    cursor.execute("""
+                        INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, codigo_tuss, tipo_cobranca, grupo_nome) 
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, [conv, esp, valor, tuss, tipo, grupo])
+            return HttpResponseRedirect('/precos/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # Busca Dados para o Formulário e Tabela
+    # 4. BUSCA DE DADOS PARA TABELAS E SELECTS
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         lista_conv = cursor.fetchall()
-        
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         lista_esp = cursor.fetchall()
-
         cursor.execute("""
-            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.codigo_tuss 
+            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.codigo_tuss, pr.tipo_cobranca, pr.grupo_nome
             FROM precos_convenio pr
-            JOIN convenios c ON pr.convenio_id = c.id
-            JOIN especialidades e ON pr.especialidade_id = e.id
-            ORDER BY c.nome, e.nome
+            LEFT JOIN convenios c ON pr.convenio_id = c.id
+            LEFT JOIN especialidades e ON pr.especialidade_id = e.id
+            ORDER BY pr.tipo_cobranca, pr.grupo_nome, c.nome
         """)
         tabela_precos = cursor.fetchall()
 
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
-    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in lista_esp])
+    opts_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_pre[0]) else ""}>{c[1]}</option>' for c in lista_conv])
+    opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==str(p_pre[1]) else ""}>{e[1]}</option>' for e in lista_esp])
     
-    linhas = "".join([f"""
+    # 5. MONTAGEM DAS LINHAS DA TABELA
+    linhas = ""
+    for p in tabela_precos:
+        badge = "success" if p[5] == "A Vista" else "primary"
+        especialidade_txt = p[2] if p[2] else '<b class="text-danger">GERAL (Consulta)</b>'
+        linhas += f"""
         <tr>
-            <td><b>{p[1]}</b></td>
-            <td>{p[2]}</td>
-            <td>R$ {p[3]}</td>
+            <td><span class="badge bg-{badge}">{p[5]}</span><br><small>{p[6] if p[6] else '---'}</small></td>
+            <td><b>{p[1] if p[1] else '---'}</b></td>
+            <td>{especialidade_txt}</td>
+            <td class="fw-bold text-dark">R$ {p[3]}</td>
             <td><small>{p[4] if p[4] else '---'}</small></td>
-            <td><a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in tabela_precos])
+            <td>
+                <div class="btn-group">
+                    <a href="/precos/?edit_preco={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
+                    <a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                </div>
+            </td>
+        </tr>"""
 
     conteudo = f"""
-        <h4><i class="bi bi-currency-dollar"></i> Preços por Convênio</h4><hr>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-currency-dollar text-success"></i> Tabela de Preços</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Voltar ao Painel</a>
+        </div>
         {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select" required>{opts_conv}</select></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Especialidade</label><select name="especialidade_id" class="form-select" required>{opts_esp}</select></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Cód. TUSS (Opcional)</label><input type="text" name="tuss" class="form-control"></div>
-            <div class="col-12"><button type="submit" class="btn btn-primary w-100 fw-bold">SALVAR TABELA DE PREÇO</button></div>
+
+        <div class="alert alert-warning small py-2"><i class="bi bi-info-circle"></i> <b>Exceção:</b> Selecione o Grupo e a Especialidade. <b>Geral:</b> Selecione o Grupo e deixe Especialidade vazia.</div>
+
+        <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
+            <input type="hidden" name="id_preco" value="{edit_id or ''}">
+            
+            <div class="col-md-3">
+                <label class="small fw-bold">Tipo</label>
+                <select name="tipo_cobranca" class="form-select">
+                    <option value="Faturado" {"selected" if p_pre[4]=="Faturado" else ""}>Faturado</option>
+                    <option value="A Vista" {"selected" if p_pre[4]=="A Vista" else ""}>A Vista</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="small fw-bold">Grupo (Ex: A VISTA 1)</label>
+                <input type="text" name="grupo_nome" class="form-control" value="{p_pre[5]}" placeholder="Opcional">
+            </div>
+
+            <div class="col-md-3"><label class="small fw-bold">Convênio</label>
+                <select name="convenio_id" class="form-select"><option value="">-- Todos do Grupo --</option>{opts_conv}</select>
+            </div>
+
+            <div class="col-md-3"><label class="small fw-bold">Especialidade</label>
+                <select name="especialidade_id" class="form-select"><option value="">-- Valor Geral (Exceção se preenchido) --</option>{opts_esp}</select>
+            </div>
+
+            <div class="col-md-2 mt-2">
+                <label class="small fw-bold">Valor (R$)</label>
+                <input type="number" step="0.01" name="valor" class="form-control fw-bold" value="{p_pre[2]}" required>
+            </div>
+
+            <div class="col-md-2 mt-2">
+                <label class="small fw-bold">Cód. TUSS</label>
+                <input type="text" name="tuss" class="form-control" value="{p_pre[3]}">
+            </div>
+
+            <div class="col-md-8 mt-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-success w-100 fw-bold shadow">
+                    {'<i class="bi bi-check-lg"></i> ATUALIZAR PREÇO' if edit_id else '<i class="bi bi-plus-lg"></i> SALVAR NA TABELA'}
+                </button>
+            </div>
+            { f'<div class="col-12 text-center mt-1"><a href="/precos/" class="text-danger small">Cancelar Edição</a></div>' if edit_id else '' }
         </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço configurado.</td></tr>'}</tbody>
+
+        <div class="table-responsive bg-white p-2 rounded shadow-sm border">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark"><tr><th>Tipo/Grupo</th><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
+                <tbody>{linhas if tabela_precos else '<tr><td colspan="6" class="text-center">Nenhum preço configurado.</td></tr>'}</tbody>
             </table>
         </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
     return HttpResponse(base_html("Preços Convênio", conteudo))
+
+
+
+
+
 
 # --- 13. TELA 10: PREÇOS DE EXAMES POR CONVÊNIO ---
 @csrf_exempt
