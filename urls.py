@@ -211,45 +211,121 @@ def painel_controle(request):
     return HttpResponse(base_html("Dashboard", conteudo))
 
 
+
+    
+
 # --- 3. TELA 1: UNIDADES ---
+# --- 3. TELA 1: UNIDADES (COM EDIÇÃO) ---
 @csrf_exempt
 def cadastro_unidade(request):
     mensagem = ""
+    # Se vier um ID via GET, estamos em modo EDIÇÃO
+    edit_id = request.GET.get('edit')
+    unidade_data = [None, "", "", ""] # ID, Nome, Endereco, Telefone
+
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
+            unidade_data = cursor.fetchone() or unidade_data
+
     if request.method == "POST":
-        nome, end, tel = request.POST.get('nome'), request.POST.get('endereco'), request.POST.get('telefone')
+        id_post = request.POST.get('id_unidade')
+        nome = request.POST.get('nome')
+        end = request.POST.get('endereco')
+        tel = request.POST.get('telefone')
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", [nome, end, tel])
-            mensagem = '<div class="alert alert-success">✅ Unidade Salva!</div>'
+                if id_post: # UPDATE
+                    cursor.execute("""
+                        UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s
+                    """, [nome, end, tel, id_post])
+                    mensagem = '<div class="alert alert-success">✅ Unidade Atualizada!</div>'
+                else: # INSERT
+                    cursor.execute("""
+                        INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)
+                    """, [nome, end, tel])
+                    mensagem = '<div class="alert alert-success">✅ Unidade Salva!</div>'
+            return HttpResponseRedirect('/unidades/lista/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
     
     conteudo = f"""
-        <h4><i class="bi bi-plus-circle"></i> Nova Unidade</h4><hr>
+        <h4><i class="bi bi-pencil-square"></i> {"Editar" if edit_id else "Nova"} Unidade</h4><hr>
         {mensagem}
         <form method="POST" class="row g-3">
-            <div class="col-md-6"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-6"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control"></div>
-            <div class="col-12"><label class="form-label">Endereço</label><input type="text" name="endereco" class="form-control"></div>
+            <input type="hidden" name="id_unidade" value="{unidade_data[0] or ''}">
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Nome</label>
+                <input type="text" name="nome" class="form-control" value="{unidade_data[1]}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Telefone</label>
+                <input type="text" name="telefone" class="form-control" value="{unidade_data[3]}">
+            </div>
             <div class="col-12">
-                <button type="submit" class="btn btn-primary">Salvar</button>
-                <a href="/unidades/lista/" class="btn btn-outline-dark">Listar Unidades</a>
+                <label class="form-label fw-bold">Endereço</label>
+                <input type="text" name="endereco" class="form-control" value="{unidade_data[2]}">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">{"Atualizar" if edit_id else "Salvar"}</button>
+                <a href="/unidades/lista/" class="btn btn-outline-dark">Cancelar / Listar</a>
             </div>
         </form>
     """
-    return HttpResponse(base_html("Nova Unidade", conteudo))
+    return HttpResponse(base_html("Unidades", conteudo))
 
 def lista_unidades(request):
     if request.GET.get('delete'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM unidades WHERE id = %s", [request.GET.get('delete')])
         return HttpResponseRedirect('/unidades/lista/')
+
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, endereco FROM unidades ORDER BY nome")
+        cursor.execute("SELECT id, nome, endereco, telefone FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-    linhas = "".join([f'<tr><td>{u[1]}</td><td>{u[2]}</td><td><a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-danger" onclick="return confirm(\'Deseja excluir?\')"><i class="bi bi-trash"></i></a></td></tr>' for u in unidades])
-    conteudo = f"<h4>Unidades Ativas</h4><hr><table class='table table-hover'><thead class='table-light'><tr><th>Nome</th><th>Endereço</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table><a href='/unidades/' class='btn btn-primary'>Voltar</a>"
+
+    # MONTAGEM DAS LINHAS COM O BOTÃO DE ALTERAR (AZUL)
+    linhas = ""
+    for u in unidades:
+        linhas += f"""
+        <tr>
+            <td>{u[1]}</td>
+            <td>{u[2]}</td>
+            <td>{u[3] or '---'}</td>
+            <td>
+                <div class="btn-group">
+                    <a href="/unidades/?edit={u[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-danger" 
+                       onclick="return confirm('Deseja excluir?')" title="Excluir">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>"""
+
+    conteudo = f"""
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4>Unidades Ativas</h4>
+            <a href='/unidades/' class='btn btn-primary'><i class="bi bi-plus-lg"></i> Nova Unidade</a>
+        </div>
+        <hr>
+        <table class='table table-hover'>
+            <thead class='table-light'>
+                <tr><th>Nome</th><th>Endereço</th><th>Telefone</th><th>Ação</th></tr>
+            </thead>
+            <tbody>{linhas if unidades else "<tr><td colspan='4' class='text-center'>Nenhuma unidade.</td></tr>"}</tbody>
+        </table>
+        <a href='/admin-painel/' class='btn btn-outline-secondary'>Voltar ao Dashboard</a>
+    """
     return HttpResponse(base_html("Lista Unidades", conteudo))
+
+
+
+
+
 
 # --- 4. TELA 2: ESPECIALIDADES ---
 @csrf_exempt
