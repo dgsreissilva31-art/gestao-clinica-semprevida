@@ -1873,132 +1873,134 @@ def agenda_diaria(request):
 
 
 # --- TELA 13: AGENDAMENTO ---
-# --- TELA 13: AGENDAMENTO (VERSÃO COM DIAGNÓSTICO DE ERRO) ---
+# --- TELA 13: AGENDAMENTO (CORREÇÃO DE LINK DE SUCESSO) ---
 @csrf_exempt
 def agendar_consulta(request):
-    import datetime # Import local para garantir que está disponível
     mensagem = ""
     hoje = datetime.date.today()
 
+    # 1. VERIFICA SE ACABOU DE CADASTRAR COM SUCESSO
     if request.GET.get('sucesso'):
-        return HttpResponse(base_html("Sucesso", '<div class="container py-5 text-center"><div class="alert alert-success">✅ <b>Agendamento Realizado!</b></div><a href="/agendar-consulta/" class="btn btn-primary">Novo Agendamento</a></div>'))
+        conteudo_sucesso = f"""
+            <div class="container py-5 text-center">
+                <div class="card shadow-lg p-4 border-0">
+                    <div class="display-1 text-success mb-3"><i class="bi bi-check-circle-fill"></i></div>
+                    <h2 class="fw-bold">Agendamento Realizado!</h2>
+                    <p class="text-muted">O paciente foi cadastrado e o horário reservado com sucesso.</p>
+                    <hr>
+                    <a href="{request.path}" class="btn btn-primary btn-lg fw-bold shadow">
+                        <i class="bi bi-plus-lg"></i> NOVO AGENDAMENTO
+                    </a>
+                    <br><br>
+                    <a href="/admin-painel/" class="text-secondary small text-decoration-none">Voltar ao Painel Administrativo</a>
+                </div>
+            </div>
+        """
+        return HttpResponse(base_html("Sucesso", conteudo_sucesso))
 
+    # --- Captura de filtros ---
     unid_id = request.GET.get('unidade_id')
     esp_id = request.GET.get('especialidade_id')
     prof_id = request.GET.get('profissional_id')
     data_sel = request.GET.get('data_sel') 
     hora_sel = request.GET.get('hora_sel')
 
-    try:
-        with connection.cursor() as cursor:
-            # 1. BUSCA DE FILTROS
-            cursor.execute("SELECT DISTINCT u.id, u.nome FROM unidades u JOIN agendas_config ac ON u.id = ac.unidade_id ORDER BY u.nome")
-            unidades = cursor.fetchall()
+    with connection.cursor() as cursor:
+        # Busca Unidades (Apenas com grade)
+        cursor.execute("SELECT DISTINCT u.id, u.nome FROM unidades u JOIN agendas_config ac ON u.id = ac.unidade_id ORDER BY u.nome")
+        unidades = cursor.fetchall()
 
-            especialidades = []
-            if unid_id:
-                cursor.execute("SELECT DISTINCT e.id, e.nome FROM especialidades e JOIN profissionais p ON e.id = p.especialidade_id JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s", [unid_id])
-                especialidades = cursor.fetchall()
+        # Busca Especialidades
+        especialidades = []
+        if unid_id:
+            cursor.execute("SELECT DISTINCT e.id, e.nome FROM especialidades e JOIN profissionais p ON e.id = p.especialidade_id JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s ORDER BY e.nome", [unid_id])
+            especialidades = cursor.fetchall()
 
-            profs_filtrados = []
-            if unid_id and esp_id:
-                cursor.execute("SELECT DISTINCT p.id, p.nome FROM profissionais p JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s AND p.especialidade_id = %s", [unid_id, esp_id])
-                profs_filtrados = cursor.fetchall()
+        # Busca Médicos
+        profs_filtrados = []
+        if unid_id and esp_id:
+            cursor.execute("SELECT DISTINCT p.id, p.nome FROM profissionais p JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s AND p.especialidade_id = %s", [unid_id, esp_id])
+            profs_filtrados = cursor.fetchall()
 
-            datas_disponiveis = []
-            if prof_id and unid_id:
-                cursor.execute("SELECT DISTINCT data_especifica FROM agendas_config WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s", [prof_id, unid_id, hoje])
-                datas_disponiveis = cursor.fetchall()
+        # Busca Datas
+        datas_disponiveis = []
+        if prof_id and unid_id:
+            cursor.execute("SELECT DISTINCT data_especifica FROM agendas_config WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s ORDER BY data_especifica", [prof_id, unid_id, hoje])
+            datas_disponiveis = cursor.fetchall()
 
-            # 2. HORÁRIOS
-            horarios_list = []
-            agenda_id_db = None
-            if prof_id and data_sel:
-                cursor.execute("SELECT horario_inicio, horario_fim, intervalo_minutos, id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s LIMIT 1", [prof_id, data_sel])
-                grade = cursor.fetchone()
-                if grade:
-                    agenda_id_db = grade[3]
-                    inicio = datetime.datetime.combine(hoje, grade[0])
-                    fim = datetime.datetime.combine(hoje, grade[1])
-                    delta = datetime.timedelta(minutes=grade[2])
-                    
-                    cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s", [agenda_id_db, data_sel])
-                    ocupados = [str(r[0])[:5] for r in cursor.fetchall()]
-                    
-                    atual = inicio
-                    while atual < fim:
-                        h_str = atual.strftime('%H:%M')
-                        if h_str not in ocupados: horarios_list.append(h_str)
-                        atual += delta
+        # Geração de Horários
+        horarios_list = []
+        agenda_config_id = None
+        if prof_id and data_sel and unid_id:
+            cursor.execute("SELECT horario_inicio, horario_fim, intervalo_minutos, id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s", [prof_id, data_sel, unid_id])
+            grade = cursor.fetchone()
+            if grade:
+                agenda_config_id = grade[3]
+                inicio = datetime.datetime.combine(hoje, grade[0])
+                fim = datetime.datetime.combine(hoje, grade[1])
+                intervalo = datetime.timedelta(minutes=grade[2])
+                cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [agenda_config_id, data_sel])
+                ocupados = [r[0].strftime('%H:%M') if not isinstance(r[0], str) else r[0][:5] for r in cursor.fetchall()]
+                atual = inicio
+                while atual < fim:
+                    h_str = atual.strftime('%H:%M')
+                    if h_str not in ocupados: horarios_list.append(h_str)
+                    atual += intervalo
 
-            cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-            convenios = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+        lista_convenios = cursor.fetchall()
 
-    except Exception as e:
-        return HttpResponse(f"Erro na busca de dados: {e}")
-
-    # 3. SALVAMENTO (POST) - AQUI ONDE DAVA O ERRO 500
+    # 2. SALVAMENTO (POST)
     if request.method == "POST":
+        nome_pac = request.POST.get('nome')
+        sobrenome_pac = request.POST.get('sobrenome')
+        whatsapp = request.POST.get('whatsapp')
+        conv_id = request.POST.get('convenio_id') or None
+        
         try:
-            p_nome = f"{request.POST.get('nome')} {request.POST.get('sobrenome')}"
-            p_zap = request.POST.get('whatsapp')
-            p_conv = request.POST.get('convenio_id') or None
-            
-            # Pegamos o ID da agenda novamente para garantir
             with connection.cursor() as cursor:
-                cursor.execute("SELECT id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s LIMIT 1", [prof_id, data_sel])
-                res_ag = cursor.fetchone()
-                if not res_ag: raise Exception("Grade não encontrada para esta data.")
-                id_config = res_ag[0]
-
-                # Salva Paciente
-                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [p_nome, p_zap, p_conv])
-                id_paciente = cursor.fetchone()[0]
-
-                # Salva Agendamento
-                cursor.execute("""
-                    INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status)
-                    VALUES (%s, %s, %s, %s, 'Agendado')
-                """, [id_paciente, id_config, data_sel, hora_sel])
-
-            return HttpResponseRedirect(request.path + "?sucesso=1")
+                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [f"{nome_pac} {sobrenome_pac}", whatsapp, conv_id])
+                paciente_id = cursor.fetchone()[0]
+                cursor.execute("INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')", [paciente_id, agenda_config_id, data_sel, hora_sel])
+            
+            # REDIRECIONA PARA A PRÓPRIA PÁGINA COM O SINAL DE SUCESSO
+            return HttpResponseRedirect(f"{request.path}?sucesso=1")
         except Exception as e:
-            # Se der erro no POST, ele mostra o erro exato na tela
-            return HttpResponse(f"<h4>Erro ao salvar no Banco:</h4><p>{e}</p><a href='{request.path}'>Voltar</a>")
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- MONTAGEM DO HTML ---
+    # --- MONTAGEM HTML ---
     opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid_id else ""}>{u[1]}</option>' for u in unidades])
     opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==esp_id else ""}>{e[1]}</option>' for e in especialidades])
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
     opts_datas = "".join([f'<option value="{d[0]}" {"selected" if str(d[0])==data_sel else ""}>{d[0].strftime("%d/%m/%Y")}</option>' for d in datas_disponiveis])
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
-    btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_convenios])
+    btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
 
     conteudo = f"""
         <div class="container py-3">
-            <h4 class="text-center mb-4">Agendamento</h4>
+            <h4 class="text-center mb-4"><i class="bi bi-calendar2-check text-primary"></i> Novo Agendamento</h4>
+            {mensagem}
             <div class="card p-3 shadow-sm border-0 bg-light mb-4">
                 <form method="GET" class="row g-2">
-                    <div class="col-md-3"><label class="small fw-bold">Unidade</label><select name="unidade_id" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_unid}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold">Especialidade</label><select name="especialidade_id" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_esp}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold">Médico</label><select name="profissional_id" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_prof}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold text-danger">Data</label><select name="data_sel" class="form-select" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_datas}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold">Unidade</label><select name="unidade_id" class="form-select border-primary" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_unid}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold">Especialidade</label><select name="especialidade_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not unid_id else ""}><option value="">Selecione...</option>{opts_esp}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold">Médico</label><select name="profissional_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not esp_id else ""}><option value="">Selecione...</option>{opts_prof}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold text-danger">Data</label><select name="data_sel" class="form-select border-danger" onchange="this.form.submit()" {"disabled" if not prof_id else ""}><option value="">Selecione...</option>{opts_datas}</select></div>
                 </form>
             </div>
-            {f'<div class="text-center mb-4"><h6>Horários Disponíveis</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas}</div></div>' if data_sel else ""}
-            {f'''<div class="card p-4 shadow border-success">
+            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6 class="fw-bold mb-3 text-secondary">Horários Disponíveis</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if btns_horas else "Selecione a data"}</div></div>' if data_sel else ""}
+            {f'''<div class="card p-4 shadow border-success"><h6 class="fw-bold text-success border-bottom pb-2 mb-3">Dados do Paciente ({hora_sel})</h6>
                 <form method="POST" class="row g-3">
                     <div class="col-md-6"><label class="small fw-bold">Nome</label><input type="text" name="nome" class="form-control" required></div>
                     <div class="col-md-6"><label class="small fw-bold">Sobrenome</label><input type="text" name="sobrenome" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" placeholder="(00) 00000-0000" required></div>
                     <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opts_conv}</select></div>
-                    <div class="col-12 mt-3"><button type="submit" class="btn btn-success w-100 fw-bold">CONFIRMAR PARA {hora_sel}</button></div>
+                    <div class="col-12 mt-4"><button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow">CONFIRMAR AGENDAMENTO</button></div>
                 </form>
             </div>''' if hora_sel else ""}
         </div>
     """
     return HttpResponse(base_html("Agendar", conteudo))
-
 
 
 
