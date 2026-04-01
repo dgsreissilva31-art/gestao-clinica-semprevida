@@ -737,65 +737,143 @@ def convenios_geral(request):
 
 
 # --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM GRUPO) ---
+# --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM ALTERAR) ---
 @csrf_exempt
 def exames_geral(request):
     mensagem = ""
-    # Exclusão
+    
+    # 1. Lógica de Exclusão
     if request.GET.get('delete_exame'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM exames WHERE id = %s", [request.GET.get('delete_exame')])
         return HttpResponseRedirect('/exames/')
 
-    # Cadastro
+    # 2. Lógica para Carregar Dados de Edição (Modo Alterar)
+    edit_id = request.GET.get('edit_exame')
+    e_dados = ["", "", "", 0.00] # nome, grupo, preparo, valor
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT nome, grupo, preparo, valor_particular 
+                FROM exames WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                e_dados = res
+
+    # 3. Lógica de Salvar (Novo ou Alteração)
     if request.method == "POST":
+        id_post = request.POST.get('id_exame')
         nome = request.POST.get('nome')
         grupo = request.POST.get('grupo')
         preparo = request.POST.get('preparo')
         valor = request.POST.get('valor')
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO exames (nome, grupo, preparo, valor_particular) VALUES (%s, %s, %s, %s)",
-                    [nome, grupo, preparo, valor if valor else 0]
-                )
-            mensagem = '<div class="alert alert-success">✅ Exame cadastrado com sucesso!</div>'
+                if id_post: # UPDATE
+                    cursor.execute("""
+                        UPDATE exames 
+                        SET nome=%s, grupo=%s, preparo=%s, valor_particular=%s
+                        WHERE id=%s
+                    """, [nome, grupo, preparo, valor if valor else 0, id_post])
+                    mensagem = '<div class="alert alert-success">✅ Exame atualizado com sucesso!</div>'
+                else: # INSERT
+                    cursor.execute("""
+                        INSERT INTO exames (nome, grupo, preparo, valor_particular) 
+                        VALUES (%s, %s, %s, %s)
+                    """, [nome, grupo, preparo, valor if valor else 0])
+                    mensagem = '<div class="alert alert-success">✅ Exame cadastrado com sucesso!</div>'
+            return HttpResponseRedirect('/exames/')
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # Busca Lista
+    # 4. Busca Lista de Exames
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome, preparo, valor_particular, grupo FROM exames ORDER BY grupo, nome")
         exames_lista = cursor.fetchall()
 
-    linhas = "".join([f"""
+    # 5. Montagem das Linhas com Botão Alterar
+    linhas = ""
+    for ex in exames_lista:
+        linhas += f"""
         <tr>
             <td><b>{ex[1]}</b><br><span class="badge bg-light text-dark border">{ex[4] if ex[4] else 'Geral'}</span></td>
             <td><small>{ex[2] if ex[2] else 'Sem preparo específico.'}</small></td>
             <td>R$ {ex[3]}</td>
-            <td><a href="/exames/?delete_exame={ex[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir este exame?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for ex in exames_lista])
+            <td>
+                <div class="btn-group">
+                    <a href="/exames/?edit_exame={ex[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/exames/?delete_exame={ex[0]}" class="btn btn-sm btn-danger" 
+                       onclick="return confirm('Excluir este exame?')" title="Excluir">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>"""
 
+    # 6. HTML da Página
     conteudo = f"""
-        <h4><i class="bi bi-microscope"></i> Cadastro de Exames</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome do Exame</label><input type="text" name="nome" class="form-control" placeholder="Ex: Hemograma" required></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Grupo / Categoria</label><input type="text" name="grupo" class="form-control" placeholder="Ex: Sangue, Imagem..."></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" placeholder="0.00"></div>
-            <div class="col-12"><label class="form-label fw-bold">Instruções de Preparo</label><textarea name="preparo" class="form-control" rows="2" placeholder="Ex: Jejum de 8 horas..."></textarea></div>
-            <div class="col-12"><button type="submit" class="btn btn-secondary w-100 fw-bold shadow-sm">Salvar Exame</button></div>
-        </form>
+        <div class="d-flex justify-content-between align-items-center">
+            <h4><i class="bi bi-microscope"></i> Cadastro de Exames</h4>
+            <a href="/admin-painel/" class="btn btn-sm btn-outline-secondary">Voltar ao Dashboard</a>
+        </div>
         <hr>
-        <h5>Lista de Exames</h5>
+        
+        {mensagem}
+        
+        <form method="POST" class="row g-3 mb-4 bg-light p-3 rounded border shadow-sm">
+            <input type="hidden" name="id_exame" value="{edit_id or ''}">
+            
+            <div class="col-md-5">
+                <label class="form-label fw-bold small">Nome do Exame</label>
+                <input type="text" name="nome" class="form-control" value="{e_dados[0]}" placeholder="Ex: Hemograma" required>
+            </div>
+            
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">Grupo / Categoria</label>
+                <input type="text" name="grupo" class="form-control" value="{e_dados[1]}" placeholder="Ex: Sangue, Imagem...">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">Valor Particular (R$)</label>
+                <input type="number" step="0.01" name="valor" class="form-control" value="{e_dados[3]}" placeholder="0.00">
+            </div>
+
+            <div class="col-12">
+                <label class="form-label fw-bold small">Instruções de Preparo</label>
+                <textarea name="preparo" class="form-control" rows="2" placeholder="Ex: Jejum de 8 horas...">{e_dados[2]}</textarea>
+            </div>
+
+            <div class="col-12">
+                <button type="submit" class="btn btn-secondary w-100 fw-bold shadow-sm">
+                    { '<i class="bi bi-check-lg"></i> ATUALIZAR EXAME' if edit_id else '<i class="bi bi-plus-lg"></i> SALVAR EXAME' }
+                </button>
+            </div>
+            { f'<div class="col-12 text-center mt-2"><a href="/exames/" class="text-danger small text-decoration-none">Cancelar Edição</a></div>' if edit_id else '' }
+        </form>
+
+        <hr>
+        <h5>Lista de Exames Cadastrados</h5>
         <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Exame / Grupo</th><th>Preparo</th><th>Valor</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if exames_lista else '<tr><td colspan="4" class="text-center text-muted">Nenhum exame cadastrado.</td></tr>'}</tbody>
+            <table class="table table-hover align-middle mt-2">
+                <thead class="table-dark">
+                    <tr><th>Exame / Grupo</th><th>Preparo</th><th>Valor</th><th>Ações</th></tr>
+                </thead>
+                <tbody>{linhas if exames_lista else '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum exame cadastrado.</td></tr>'}</tbody>
             </table>
         </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
     return HttpResponse(base_html("Exames", conteudo))
+
+
+
+
+
+
 
 
 # --- 9. TELA 6: GESTÃO DE ODONTOLOGIA ---
