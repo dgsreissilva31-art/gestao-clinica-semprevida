@@ -2009,51 +2009,43 @@ def agendar_consulta(request):
 
 
 # --- TELA 14 FINAL: RECEPÇÃO INTEGRADA ---
-# --- TELA 14: RECEPÇÃO INTEGRADA (VERSÃO FINAL) ---
+# --- TELA 14: RECEPÇÃO INTEGRADA (VERSÃO COM WHATSAPP E FILTROS) ---
 @csrf_exempt
 def recepcao_geral(request):
+    import datetime, urllib.parse
     data_hoje = datetime.date.today()
     unidade_filtro = request.GET.get('unidade')
-    mensagem = ""
+    
+    # Lógica para marcar como "Mensagem Enviada" (Usa uma tabela ou campo extra se existir, 
+    # aqui simularemos via parâmetro para o front-end)
+    msg_enviada_id = request.GET.get('marcar_msg')
 
     with connection.cursor() as cursor:
         # 1. BUSCA UNIDADES PARA O FILTRO
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        # 2. LÓGICA DE AÇÕES (CHEGADA / FINALIZAR)
+        # 2. AÇÕES DE STATUS
         if request.GET.get('acao'):
             ag_id = request.GET.get('id')
-            novo_status = {"chegada": "Aguardando", "finalizar": "Finalizado"}.get(request.GET.get('acao'), "Aguardando")
-            cursor.execute("UPDATE agendamentos SET status = %s WHERE id = %s", [novo_status, ag_id])
-            return HttpResponseRedirect(f'/recepcao/?unidade={unidade_filtro or ""}')
+            novo_status = {"chegada": "Aguardando", "finalizar": "Finalizado"}.get(request.GET.get('acao'))
+            if novo_status:
+                cursor.execute("UPDATE agendamentos SET status = %s WHERE id = %s", [novo_status, ag_id])
+            return HttpResponseRedirect(f'{request.path}?unidade={unidade_filtro or ""}')
 
-        # 3. BUSCA GRADES ABERTAS HOJE (PARA VER DISPONIBILIDADE)
-        sql_grades = """
-            SELECT u.nome, e.nome, p.nome, ac.horario_inicio, ac.horario_fim, ac.id
-            FROM agendas_config ac
-            JOIN unidades u ON ac.unidade_id = u.id
-            JOIN profissionais p ON ac.profissional_id = p.id
-            LEFT JOIN especialidades e ON p.especialidade_id = e.id
-            WHERE ac.data_especifica = %s
-        """
-        params_g = [data_hoje]
-        if unidade_filtro:
-            sql_grades += " AND u.id = %s"
-            params_g.append(unidade_filtro)
-        
-        cursor.execute(sql_grades + " ORDER BY u.nome, p.nome", params_g)
-        grades_hoje = cursor.fetchall()
-
-        # 4. BUSCAR AGENDAMENTOS DO DIA
+        # 3. BUSCAR AGENDAMENTOS DETALHADOS (Com Convênio e Telefone)
+        # Adicionei os campos pac.telefone e conv.nome
         sql_ag = """
-            SELECT ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, ag.status, esp.nome
+            SELECT 
+                ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
+                ag.status, esp.nome, conv.nome, pac.telefone, u.endereco
             FROM agendamentos ag
             JOIN pacientes pac ON ag.paciente_id = pac.id
             JOIN agendas_config ac ON ag.agenda_config_id = ac.id
             JOIN profissionais prof ON ac.profissional_id = prof.id
             JOIN unidades u ON ac.unidade_id = u.id
             LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+            LEFT JOIN convenios conv ON pac.convenio_id = conv.id
             WHERE ag.data_agendamento = %s
         """
         params_ag = [data_hoje]
@@ -2061,41 +2053,52 @@ def recepcao_geral(request):
             sql_ag += " AND u.id = %s"
             params_ag.append(unidade_filtro)
             
-        cursor.execute(sql_ag + " ORDER BY ag.horario_selecionado", params_ag)
+        cursor.execute(sql_ag + " ORDER BY ag.horario_selecionado ASC", params_ag)
         agenda = cursor.fetchall()
 
-    # MONTAGEM DO HTML - GRADES DISPONÍVEIS (CARDS)
-    cards_disponibilidade = ""
-    for g in grades_hoje:
-        cards_disponibilidade += f"""
-        <div class="col-md-4 mb-3">
-            <div class="card border-left-primary shadow h-100 py-2 bg-light">
-                <div class="card-body p-2">
-                    <div class="small fw-bold text-primary text-uppercase mb-1">{g[1]} (Especialidade)</div>
-                    <div class="h6 mb-0 fw-bold text-gray-800">{g[2]} (Médico)</div>
-                    <div class="text-xs text-muted">Grade: {g[3]} às {g[4]} | Unid: {g[0]}</div>
-                </div>
-            </div>
-        </div>"""
-
-    # MONTAGEM DA TABELA DE PACIENTES
+    # MONTAGEM DA TABELA
     linhas_pacientes = ""
     for a in agenda:
-        hora = a[4].strftime('%H:%M') if not isinstance(a[4], str) else a[4][:5]
-        status = a[5] or "Agendado"
-        cor = {"Aguardando": "warning", "Em Atendimento": "primary", "Finalizado": "success", "Agendado": "info"}.get(status, "secondary")
+        ag_id, pac_nome, prof_nome, uni_nome, hora_raw, status, esp_nome, conv_nome, pac_tel, uni_end = a
         
+        hora = hora_raw.strftime('%H:%M') if not isinstance(hora_raw, str) else hora_raw[:5]
+        status = status or "Agendado"
+        cor = {"Aguardando": "warning", "Em Atendimento": "primary", "Finalizado": "success", "Agendado": "info"}.get(status, "secondary")
+        conv_label = conv_nome if conv_nome else "Particular"
+        
+        # Limpeza do telefone para o link do WhatsApp
+        tel_limpo = "".join(filter(str.isdigit, str(pac_tel))) if pac_tel else ""
+        
+        # MENSAGEM DO WHATSAPP PERSONALIZADA
+        msg_texto = f"Olá, {pac_nome}. Gentileza confirmar sua consulta com o Dr(a). {prof_nome} ({esp_nome}) para hoje às {hora} na unidade {uni_nome} ({uni_end})."
+        msg_encoded = urllib.parse.quote(msg_texto)
+        link_zap = f"https://wa.me/55{tel_limpo}?text={msg_encoded}"
+
         linhas_pacientes += f"""
-            <tr>
-                <td><b class="text-dark">{hora}</b></td>
-                <td>{a[1]}<br><small class="text-muted">{a[6]}</small></td>
-                <td>{a[2]}</td>
-                <td><span class="badge bg-{cor}">{status}</span></td>
+            <tr class="{'table-light' if status == 'Finalizado' else ''}">
+                <td class="fw-bold text-primary">{hora}</td>
                 <td>
+                    <div class="fw-bold">{pac_nome}</div>
+                    <small class="badge bg-light text-dark border">{conv_label}</small>
+                </td>
+                <td>
+                    <div class="small fw-bold">{prof_nome}</div>
+                    <div class="text-muted small">{esp_nome}</div>
+                </td>
+                <td><span class="badge bg-{cor}">{status}</span></td>
+                <td><small>{pac_tel or '---'}</small></td>
+                <td class="text-center">
                     <div class="btn-group">
-                        <a href="/recepcao/?acao=chegada&id={a[0]}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-warning" title="Chegada"><i class="bi bi-person-down"></i></a>
-                        <a href="/prontuario/?id={a[0]}" class="btn btn-sm btn-primary" title="Atender"><i class="bi bi-Stethoscope"></i></a>
-                        <a href="/recepcao/?acao=finalizar&id={a[0]}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-success" title="Finalizar"><i class="bi bi-check-all"></i></a>
+                        <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success shadow-sm" title="Confirmar Consulta">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                        
+                        <a href="?acao=chegada&id={ag_id}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-warning" title="Marcar Chegada">
+                            <i class="bi bi-person-check"></i>
+                        </a>
+                        <a href="?acao=finalizar&id={ag_id}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-outline-secondary" title="Finalizar Atendimento">
+                            <i class="bi bi-flag"></i>
+                        </a>
                     </div>
                 </td>
             </tr>"""
@@ -2103,36 +2106,57 @@ def recepcao_geral(request):
     opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_filtro) else ""}>{u[1]}</option>' for u in unidades])
 
     conteudo = f"""
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-display text-primary"></i> Painel da Recepção - {data_hoje.strftime('%d/%m/%Y')}</h4>
-            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Dashboard</a>
-        </div>
-
-        <div class="card mb-4 shadow-sm border-0 bg-dark text-white">
-            <div class="card-body p-2">
-                <form method="GET" class="row g-2 align-items-center">
-                    <div class="col-md-4"><select name="unidade" class="form-select form-select-sm">{f'<option value="">Todas as Unidades</option>'}{opts_unidades}</select></div>
-                    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100 fw-bold">FILTRAR PAINEL</button></div>
-                </form>
+        <div class="container-fluid py-3">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="fw-bold text-dark"><i class="bi bi-door-open text-primary"></i> Recepção Diária</h3>
+                <span class="badge bg-primary fs-6">{data_hoje.strftime('%d/%m/%Y')}</span>
             </div>
-        </div>
 
-        <h6 class="fw-bold mb-3"><i class="bi bi-calendar-check"></i> Médicos com Grade Aberta Hoje</h6>
-        <div class="row mb-4">{cards_disponibilidade if grades_hoje else '<div class="col-12 text-muted small">Nenhuma grade aberta para hoje nesta unidade.</div>'}</div>
+            <div class="card mb-4 shadow-sm border-0 border-top border-primary border-4">
+                <div class="card-body bg-light">
+                    <form method="GET" class="row g-2 align-items-end">
+                        <div class="col-md-5">
+                            <label class="small fw-bold text-muted">Filtrar por Unidade de Atendimento</label>
+                            <select name="unidade" class="form-select border-primary shadow-sm">
+                                <option value="">--- Todas as Unidades ---</option>
+                                {opts_unidades}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary w-100 fw-bold shadow-sm"><i class="bi bi-funnel"></i> FILTRAR</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
-        <h6 class="fw-bold mb-3"><i class="bi bi-people"></i> Lista de Atendimentos</h6>
-        <div class="table-responsive bg-white rounded shadow-sm border">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr><th>Horário</th><th>Paciente / Especialidade</th><th>Médico</th><th>Status</th><th>Ações</th></tr>
-                </thead>
-                <tbody>{linhas_pacientes if agenda else '<tr><td colspan="5" class="text-center py-4 text-muted">Nenhum paciente agendado para hoje.</td></tr>'}</tbody>
-            </table>
+            <div class="card shadow-sm border-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-primary text-white">
+                            <tr>
+                                <th>Hora</th>
+                                <th>Paciente / Convênio</th>
+                                <th>Profissional</th>
+                                <th>Status</th>
+                                <th>Telefone</th>
+                                <th class="text-center">Ações de Confirmação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {linhas_pacientes if agenda else '<tr><td colspan="6" class="text-center py-5 text-muted">Não há pacientes agendados para esta seleção.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-4 text-center">
+                <a href="/agendar-consulta/" class="btn btn-outline-primary fw-bold shadow-sm">
+                    <i class="bi bi-plus-circle"></i> NOVO AGENDAMENTO RÁPIDO
+                </a>
+            </div>
         </div>
     """
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
