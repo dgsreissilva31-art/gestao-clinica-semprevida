@@ -592,65 +592,146 @@ def profissionais_geral(request):
 
 
 # --- 7. TELA 4: GESTÃO DE CONVÊNIOS ---
+# --- 6. TELA 4: GESTÃO DE CONVÊNIOS (ATUALIZADA COM RESPONSÁVEL E ALTERAR) ---
 @csrf_exempt
 def convenios_geral(request):
     mensagem = ""
-    # Lógica de Exclusão com Confirmação
+    
+    # 1. Lógica de Exclusão
     if request.GET.get('delete_conv'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM convenios WHERE id = %s", [request.GET.get('delete_conv')])
         return HttpResponseRedirect('/convenios/')
 
-    # Lógica de Cadastro
+    # 2. Lógica para Carregar Dados de Edição (Modo Alterar)
+    edit_id = request.GET.get('edit_conv')
+    c_dados = ["", "", "", "", ""] # nome, ans, tel, end, responsavel
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT nome, registro_ans, telefone_contato, endereco_completo, responsavel 
+                FROM convenios WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                c_dados = res
+
+    # 3. Lógica de Salvar (Novo ou Alteração)
     if request.method == "POST":
+        id_post = request.POST.get('id_conv')
         nome = request.POST.get('nome')
         ans = request.POST.get('ans')
         tel = request.POST.get('telefone')
         end = request.POST.get('endereco')
+        resp = request.POST.get('responsavel')
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO convenios (nome, registro_ans, telefone_contato, endereco_completo) VALUES (%s, %s, %s, %s)",
-                    [nome, ans, tel, end]
-                )
-            mensagem = '<div class="alert alert-success">✅ Convênio cadastrado com sucesso!</div>'
+                if id_post: # UPDATE
+                    cursor.execute("""
+                        UPDATE convenios 
+                        SET nome=%s, registro_ans=%s, telefone_contato=%s, endereco_completo=%s, responsavel=%s
+                        WHERE id=%s
+                    """, [nome, ans, tel, end, resp, id_post])
+                    mensagem = '<div class="alert alert-success">✅ Convênio atualizado com sucesso!</div>'
+                else: # INSERT
+                    cursor.execute("""
+                        INSERT INTO convenios (nome, registro_ans, telefone_contato, endereco_completo, responsavel) 
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, [nome, ans, tel, end, resp])
+                    mensagem = '<div class="alert alert-success">✅ Convênio cadastrado com sucesso!</div>'
+            return HttpResponseRedirect('/convenios/')
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # Busca Lista
+    # 4. Busca Lista de Convênios
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome, registro_ans, telefone_contato, endereco_completo FROM convenios ORDER BY nome")
+        cursor.execute("SELECT id, nome, registro_ans, telefone_contato, endereco_completo, responsavel FROM convenios ORDER BY nome")
         conves = cursor.fetchall()
 
-    linhas = "".join([f"""
+    # 5. Montagem das Linhas com Botão Alterar
+    linhas = ""
+    for c in conves:
+        linhas += f"""
         <tr>
             <td><b>{c[1]}</b><br><small class='text-muted'>📍 {c[4] if c[4] else '---'}</small></td>
             <td>{c[2] if c[2] else '---'}</td>
-            <td>{c[3] if c[3] else '---'}</td>
-            <td><a href="/convenios/?delete_conv={c[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Deseja excluir este convênio?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for c in conves])
+            <td><b>Resp:</b> {c[5] if c[5] else '---'}<br><small>{c[3] if c[3] else '---'}</small></td>
+            <td>
+                <div class="btn-group">
+                    <a href="/convenios/?edit_conv={c[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/convenios/?delete_conv={c[0]}" class="btn btn-sm btn-danger" 
+                       onclick="return confirm('Deseja excluir este convênio?')" title="Excluir">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>"""
 
+    # 6. HTML da Página
     conteudo = f"""
-        <h4><i class="bi bi-card-checklist"></i> Cadastro de Convênios</h4><hr>
+        <div class="d-flex justify-content-between align-items-center">
+            <h4><i class="bi bi-card-checklist"></i> Cadastro de Convênios</h4>
+            <a href="/admin-painel/" class="btn btn-sm btn-outline-secondary">Voltar ao Dashboard</a>
+        </div>
+        <hr>
+        
         {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome do Convênio</label><input type="text" name="nome" class="form-control" placeholder="Ex: Unimed, Bradesco..." required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">Registro ANS</label><input type="text" name="ans" class="form-control" placeholder="Cód. ANS"></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Telefone Suporte</label><input type="text" name="telefone" class="form-control" placeholder="(00) 0000-0000"></div>
-            <div class="col-12"><label class="form-label fw-bold">Endereço da Operadora</label><input type="text" name="endereco" class="form-control" placeholder="Rua, número, cidade..."></div>
-            <div class="col-12"><button type="submit" class="btn btn-info w-100 fw-bold text-white shadow-sm">Salvar Convênio</button></div>
+        
+        <form method="POST" class="row g-3 mb-4 bg-light p-3 rounded border shadow-sm">
+            <input type="hidden" name="id_conv" value="{edit_id or ''}">
+            
+            <div class="col-md-5">
+                <label class="form-label fw-bold small">Nome do Convênio</label>
+                <input type="text" name="nome" class="form-control" value="{c_dados[0]}" placeholder="Ex: Unimed, Bradesco..." required>
+            </div>
+            
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">Registro ANS</label>
+                <input type="text" name="ans" class="form-control" value="{c_dados[1]}" placeholder="Cód. ANS">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">Responsável na Operadora</label>
+                <input type="text" name="responsavel" class="form-control" value="{c_dados[4]}" placeholder="Nome do consultor">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">Telefone Suporte</label>
+                <input type="text" name="telefone" class="form-control" value="{c_dados[2]}" placeholder="(00) 0000-0000">
+            </div>
+
+            <div class="col-md-8">
+                <label class="form-label fw-bold small">Endereço da Operadora</label>
+                <input type="text" name="endereco" class="form-control" value="{c_dados[3]}" placeholder="Rua, número, cidade...">
+            </div>
+
+            <div class="col-12">
+                <button type="submit" class="btn btn-info w-100 fw-bold text-white shadow-sm">
+                    { '<i class="bi bi-check-lg"></i> ATUALIZAR CONVÊNIO' if edit_id else '<i class="bi bi-plus-lg"></i> SALVAR CONVÊNIO' }
+                </button>
+            </div>
+            { f'<div class="col-12 text-center mt-2"><a href="/convenios/" class="text-danger small text-decoration-none">Cancelar Edição</a></div>' if edit_id else '' }
         </form>
+
         <hr>
         <h5>Convênios Ativos</h5>
         <div class="table-responsive">
-            <table class="table table-hover mt-2">
-                <thead class="table-dark"><tr><th>Nome / Endereço</th><th>ANS</th><th>Contato</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if conves else '<tr><td colspan="4" class="text-center text-muted">Nenhum convênio cadastrado.</td></tr>'}</tbody>
+            <table class="table table-hover align-middle mt-2">
+                <thead class="table-dark">
+                    <tr><th>Nome / Endereço</th><th>ANS</th><th>Contato / Resp.</th><th>Ação</th></tr>
+                </thead>
+                <tbody>{linhas if conves else '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum convênio cadastrado.</td></tr>'}</tbody>
             </table>
         </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
     return HttpResponse(base_html("Convênios", conteudo))
+
+
+
 
 
 
