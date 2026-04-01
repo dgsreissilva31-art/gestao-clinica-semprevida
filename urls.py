@@ -1531,174 +1531,182 @@ def precos_exames_geral(request):
 
 
 # --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
+# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO FINAL) ---
 @csrf_exempt
 def agendas_config_geral(request):
     mensagem = ""
+    hoje = datetime.date.today()
     
-    # Lógica de Exclusão
+    # 1. AÇÕES: EXCLUSÃO
     if request.GET.get('delete_agenda'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM agendas_config WHERE id = %s", [request.GET.get('delete_agenda')])
         return HttpResponseRedirect('/agendas-config/')
 
-    # Lógica de Cadastro (POST)
+    # 2. CARREGAR DADOS PARA EDIÇÃO (ALTERAR)
+    edit_id = request.GET.get('edit_agenda')
+    # Ordem: prof_id, unid_id, esp_id, data, inicio, fim, intervalo
+    a_dados = ["", "", "", "", "", "", 20] 
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT profissional_id, unidade_id, especialidade_id, data_especifica, 
+                       horario_inicio, horario_fim, intervalo_minutos 
+                FROM agendas_config WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                a_dados = list(res)
+                if a_dados[3]: a_dados[3] = a_dados[3].strftime('%Y-%m-%d')
+
+    # 3. SALVAR OU ATUALIZAR (POST)
     if request.method == "POST":
+        id_post = request.POST.get('id_agenda')
         prof = request.POST.get('profissional_id')
         unid = request.POST.get('unidade_id')
         esp = request.POST.get('especialidade_id')
-        tipo = request.POST.get('tipo_agenda')
-        dia_semana = request.POST.get('dia_semana') if tipo == 'fixa' else None
-        data_esp = request.POST.get('data_especifica') if tipo == 'especifica' else None
+        data_ag = request.POST.get('data_ag') or None
         inicio = request.POST.get('inicio')
         fim = request.POST.get('fim')
-        intervalo = request.POST.get('intervalo', 20)
+        inter = request.POST.get('intervalo') or 20
 
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO agendas_config 
-                       (profissional_id, unidade_id, especialidade_id, dia_semana, data_especifica, horario_inicio, horario_fim, intervalo_minutos) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [prof, unid, esp, dia_semana, data_esp if data_esp else None, inicio, fim, intervalo]
-                )
-            mensagem = '<div class="alert alert-success">✅ Grade salva com sucesso!</div>'
+                if id_post: # UPDATE
+                    cursor.execute("""
+                        UPDATE agendas_config SET 
+                        profissional_id=%s, unidade_id=%s, especialidade_id=%s, 
+                        data_especifica=%s, horario_inicio=%s, horario_fim=%s, intervalo_minutos=%s
+                        WHERE id=%s
+                    """, [prof, unid, esp, data_ag, inicio, fim, inter, id_post])
+                else: # INSERT
+                    cursor.execute("""
+                        INSERT INTO agendas_config 
+                        (profissional_id, unidade_id, especialidade_id, data_especifica, horario_inicio, horario_fim, intervalo_minutos) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, [prof, unid, esp, data_ag, inicio, fim, inter])
+            return HttpResponseRedirect('/agendas-config/')
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro no banco: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar grade: {e}</div>'
 
-    # Busca de dados para os campos de seleção (Selects)
+    # 4. BUSCA DE DADOS PARA OS SELECTS
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+        # Profissionais com Especialidade no Nome
+        cursor.execute("""
+            SELECT p.id, p.nome, e.nome 
+            FROM profissionais p 
+            LEFT JOIN especialidades e ON p.especialidade_id = e.id 
+            ORDER BY p.nome
+        """)
         profs = cursor.fetchall()
+        
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unids = cursor.fetchall()
+        
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         esps = cursor.fetchall()
         
-        # Lista das Agendas já criadas
+        # LISTAGEM ORDENADA: UNIDADE -> DATA -> HORÁRIO
         cursor.execute("""
-            SELECT ac.id, p.nome, u.nome, ac.dia_semana, ac.data_especifica, 
-                   ac.horario_inicio, ac.horario_fim, e.nome
+            SELECT ac.id, p.nome, u.nome, ac.data_especifica, 
+                   ac.horario_inicio, ac.horario_fim, e.nome, ac.interval_minutos
             FROM agendas_config ac
             JOIN profissionais p ON ac.profissional_id = p.id
             JOIN unidades u ON ac.unidade_id = u.id
             JOIN especialidades e ON ac.especialidade_id = e.id
-            ORDER BY ac.data_especifica DESC, ac.dia_semana ASC
+            ORDER BY u.nome ASC, ac.data_especifica ASC, ac.horario_inicio ASC
         """)
         lista_agendas = cursor.fetchall()
 
-    opts_prof = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in profs])
-    opts_unid = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unids])
-    opts_esp = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in esps])
+    # 5. MONTAGEM DO HTML
+    opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==str(a_dados[0]) else ""}>{p[1]} ({p[2]})</option>' for p in profs])
+    opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(a_dados[1]) else ""}>{u[1]}</option>' for u in unids])
+    opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==str(a_dados[2]) else ""}>{e[1]}</option>' for e in esps])
     
-    # Montagem das linhas da tabela com tratamento para evitar NameError
     linhas = ""
     for a in lista_agendas:
-        if a[3]: # Se tiver dia da semana
-            quando = f"Toda {a[3]}"
-        elif a[4]: # Se tiver data específica
-            # Converte a data do banco para o formato brasileiro
-            data_db = a[4]
-            if isinstance(data_db, str):
-                quando = datetime.datetime.strptime(data_db, '%Y-%m-%d').strftime('%d/%m/%Y')
-            else:
-                quando = data_db.strftime('%d/%m/%Y')
-        else:
-            quando = "Não definido"
-
+        data_f = a[3].strftime('%d/%m/%Y') if a[3] else "Fixa"
         linhas += f"""
             <tr>
-                <td><b>{a[1]}</b><br><small>{a[7]}</small></td>
-                <td>{a[2]}</td>
-                <td><span class="badge bg-secondary">{quando}</span></td>
-                <td>{a[5]} - {a[6]}</td>
-                <td><a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></a></td>
+                <td><span class="badge bg-primary">{a[2]}</span></td>
+                <td>{data_f} <br> <small class="fw-bold">{a[4]} às {a[5]}</small></td>
+                <td><b>{a[1]}</b><br><small class="text-muted">{a[6]}</small></td>
+                <td>{a[7]} min</td>
+                <td>
+                    <div class="btn-group shadow-sm">
+                        <a href="/agendas-config/?edit_agenda={a[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
+                        <a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir esta grade?')"><i class="bi bi-trash"></i></a>
+                    </div>
+                </td>
             </tr>"""
 
     conteudo = f"""
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-calendar-plus"></i> Configuração de Grades</h4>
-            <a href="/" class="btn btn-sm btn-outline-secondary">Voltar</a>
+            <h4><i class="bi bi-calendar-check text-success"></i> Gerar Grade de Atendimento</h4>
+            <a href="/admin-painel/" class="btn btn-sm btn-outline-secondary">Voltar ao Painel</a>
         </div>
         
         {mensagem}
 
-        <form method="POST" class="card p-3 shadow-sm bg-light mb-4">
+        <form method="POST" class="card p-3 shadow-sm bg-light border-success mb-4">
+            <input type="hidden" name="id_agenda" value="{edit_id or ''}">
             <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="fw-bold small">Profissional</label>
-                    <select name="profissional_id" class="form-select" required>{opts_prof}</select>
+                <div class="col-md-5">
+                    <label class="fw-bold small">Profissional (Especialidade)</label>
+                    <select name="profissional_id" class="form-select border-success" required>
+                        <option value="">-- Selecione o Médico --</option>
+                        {opts_prof}
+                    </select>
                 </div>
                 <div class="col-md-4">
                     <label class="fw-bold small">Unidade</label>
                     <select name="unidade_id" class="form-select" required>{opts_unid}</select>
                 </div>
-                <div class="col-md-4">
-                    <label class="fw-bold small">Especialidade</label>
+                <div class="col-md-3">
+                    <label class="fw-bold small">Especialidade da Agenda</label>
                     <select name="especialidade_id" class="form-select" required>{opts_esp}</select>
                 </div>
 
                 <div class="col-md-3">
-                    <label class="fw-bold small">Tipo de Grade</label>
-                    <select name="tipo_agenda" id="tipo_agenda" class="form-select" onchange="alternarCampos()">
-                        <option value="fixa">Repetir Semanalmente</option>
-                        <option value="especifica">Data Única (Calendário)</option>
-                    </select>
+                    <label class="fw-bold small text-danger">Data da Agenda</label>
+                    <input type="date" name="data_ag" class="form-control" value="{a_dados[3]}" required>
                 </div>
 
-                <div class="col-md-3" id="campo_semana">
-                    <label class="fw-bold small">Dia da Semana</label>
-                    <select name="dia_semana" class="form-select">
-                        <option value="Segunda-feira">Segunda-feira</option>
-                        <option value="Terça-feira">Terça-feira</option>
-                        <option value="Quarta-feira">Quarta-feira</option>
-                        <option value="Quinta-feira">Quinta-feira</option>
-                        <option value="Sexta-feira">Sexta-feira</option>
-                        <option value="Sábado">Sábado</option>
-                    </select>
+                <div class="col-md-3">
+                    <label class="fw-bold small">Hora de Início</label>
+                    <input type="time" name="inicio" class="form-control" value="{a_dados[4]}" required>
                 </div>
-
-                <div class="col-md-3" id="campo_data" style="display:none;">
-                    <label class="fw-bold small">Selecione a Data</label>
-                    <input type="date" name="data_especifica" class="form-control">
+                <div class="col-md-3">
+                    <label class="fw-bold small">Hora Final</label>
+                    <input type="time" name="fim" class="form-control" value="{a_dados[5]}" required>
                 </div>
-
-                <div class="col-md-2">
-                    <label class="fw-bold small">Início</label>
-                    <input type="time" name="inicio" class="form-control" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="fw-bold small">Fim</label>
-                    <input type="time" name="fim" class="form-control" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="fw-bold small">Intervalo (min)</label>
-                    <input type="number" name="intervalo" class="form-control" value="20">
+                <div class="col-md-3">
+                    <label class="fw-bold small">Intervalo (Minutos)</label>
+                    <input type="number" name="intervalo" class="form-control" value="{a_dados[6]}" required>
                 </div>
 
                 <div class="col-12 mt-3">
-                    <button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">SALVAR GRADE DE HORÁRIOS</button>
+                    <button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow-sm">
+                        { '<i class="bi bi-arrow-repeat"></i> ATUALIZAR GRADE' if edit_id else '<i class="bi bi-calendar-plus"></i> GERAR GRADE' }
+                    </button>
                 </div>
+                { f'<div class="col-12 text-center mt-2"><a href="/agendas-config/" class="text-danger small">Cancelar Edição</a></div>' if edit_id else '' }
             </div>
         </form>
 
-        <script>
-            function alternarCampos() {{
-                var tipo = document.getElementById('tipo_agenda').value;
-                document.getElementById('campo_semana').style.display = (tipo === 'fixa') ? 'block' : 'none';
-                document.getElementById('campo_data').style.display = (tipo === 'especifica') ? 'block' : 'none';
-            }}
-        </script>
-
-        <div class="table-responsive bg-white rounded shadow-sm">
-            <table class="table table-hover mb-0">
+        <h5 class="fw-bold"><i class="bi bi-list-ul"></i> Grades Configuradas</h5>
+        <div class="table-responsive bg-white rounded shadow-sm border">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-dark">
-                    <tr><th>Profissional</th><th>Unidade</th><th>Frequência</th><th>Horário</th><th>Ação</th></tr>
+                    <tr><th>Unidade</th><th>Data / Horário</th><th>Médico (Especialidade)</th><th>Intervalo</th><th>Ações</th></tr>
                 </thead>
-                <tbody>{linhas if linhas else '<tr><td colspan="5" class="text-center text-muted">Nenhuma grade configurada.</td></tr>'}</tbody>
+                <tbody>{linhas if linhas else '<tr><td colspan="5" class="text-center text-muted py-4">Nenhuma grade configurada.</td></tr>'}</tbody>
             </table>
         </div>
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
+
 
 
 
