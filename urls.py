@@ -318,7 +318,7 @@ def lista_unidades(request):
             </thead>
             <tbody>{linhas if unidades else "<tr><td colspan='4' class='text-center'>Nenhuma unidade.</td></tr>"}</tbody>
         </table>
-        <a href='/admin-painel/' class='btn btn-outline-secondary'>Voltar ao Dashboard</a>
+        <a href='/unidades/' class='btn btn-outline-secondary'>Voltar</a>
     """
     return HttpResponse(base_html("Lista Unidades", conteudo))
 
