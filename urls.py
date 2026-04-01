@@ -1016,12 +1016,13 @@ def odonto_geral(request):
 
 
 # --- 10. TELA 7: GESTÃO DE PACIENTES ---
-# --- 10. TELA 7: GESTÃO DE PACIENTES (COM BUSCA) ---
+# --- 10. TELA 7: GESTÃO DE PACIENTES (ATUALIZADA) ---
 @csrf_exempt
 def pacientes_geral(request):
     mensagem = ""
+    hoje = datetime.date.today()
     
-    # 1. LÓGICAS DE AÇÃO (BLOQUEIO E EXCLUSÃO)
+    # 1. AÇÕES (BLOQUEIO E EXCLUSÃO)
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
@@ -1032,15 +1033,16 @@ def pacientes_geral(request):
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. CARREGAR DADOS PARA EDIÇÃO
+    # 2. CARREGAR DADOS EDIÇÃO
     edit_id = request.GET.get('edit_pac')
-    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""] 
+    # Ordem: nome, cpf, sexo, nasc, tel, conv, cep, rua, num, bairro, cidade, uf, obs, unidade_id
+    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", "", ""] 
     
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, 
-                       rua, numero, bairro, cidade, estado, observacoes 
+                       rua, numero, bairro, cidade, estado, observacoes, unidade_id 
                 FROM pacientes WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
@@ -1048,7 +1050,7 @@ def pacientes_geral(request):
                 p_dados = list(res)
                 if p_dados[3]: p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 3. SALVAR OU ATUALIZAR (POST)
+    # 3. SALVAR / ATUALIZAR
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
         campos = [
@@ -1056,7 +1058,8 @@ def pacientes_geral(request):
             request.POST.get('data_nasc') or None, request.POST.get('telefone'), 
             request.POST.get('convenio_id') or None, request.POST.get('cep'), 
             request.POST.get('rua'), request.POST.get('numero'), request.POST.get('bairro'), 
-            request.POST.get('cidade'), request.POST.get('estado'), request.POST.get('observacoes')
+            request.POST.get('cidade'), request.POST.get('estado'), request.POST.get('observacoes'),
+            request.POST.get('unidade_id') or None
         ]
         
         try:
@@ -1066,53 +1069,78 @@ def pacientes_geral(request):
                         UPDATE pacientes SET 
                             nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
                             convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                            cidade=%s, estado=%s, observacoes=%s WHERE id=%s
+                            cidade=%s, estado=%s, observacoes=%s, unidade_id=%s WHERE id=%s
                     """, campos + [id_post])
                 else:
                     cursor.execute("""
                         INSERT INTO pacientes 
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes, unidade_id) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
             return HttpResponseRedirect('/pacientes/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 4. LÓGICA DE PESQUISA
+    # 4. LÓGICA DE PESQUISA (SUPORTE PARA DD/MM/AAAA)
     termo_busca = request.GET.get('busca', '')
-    
+    termo_sql = termo_busca
+
+    # Se o usuário digitou data no formato brasileiro, converte para SQL
+    if "/" in termo_busca:
+        try:
+            partes = termo_busca.split('/')
+            if len(partes) == 3:
+                termo_sql = f"{partes[2]}-{partes[1]}-{partes[0]}"
+        except: pass
+
     with connection.cursor() as cursor:
+        # Busca Auxiliar: Convênios e Unidades
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
         
-        # Query base
-        sql_busca = """
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
+        # Lista de Pacientes (com Filtro)
+        sql_p = """
+            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.data_nascimento, u.nome
             FROM pacientes p 
             LEFT JOIN convenios c ON p.convenio_id = c.id 
+            LEFT JOIN unidades u ON p.unidade_id = u.id
         """
-        
         params = []
         if termo_busca:
-            # Filtra por CPF ou por Data de Nascimento (formato YYYY-MM-DD)
-            sql_busca += " WHERE p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s "
-            params = [f'%{termo_busca}%', f'%{termo_busca}%']
+            sql_p += " WHERE p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s OR p.nome ILIKE %s "
+            params = [f'%{termo_sql}%', f'%{termo_sql}%', f'%{termo_busca}%']
         
-        sql_busca += " ORDER BY p.id DESC"
-        cursor.execute(sql_busca, params)
+        cursor.execute(sql_p + " ORDER BY p.id DESC LIMIT 50", params)
         lista_pacientes = cursor.fetchall()
 
-    # 5. MONTAGEM DO HTML
+        # 5. PACIENTES AGENDADOS HOJE (Sua nova solicitação)
+        cursor.execute("""
+            SELECT p.nome, ag.horario_selecionado, pr.nome, ag.status
+            FROM agendamentos ag
+            JOIN pacientes p ON ag.paciente_id = p.id
+            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            JOIN profissionais pr ON ac.profissional_id = pr.id
+            WHERE ag.data_agendamento = %s
+            ORDER BY ag.horario_selecionado
+        """, [hoje])
+        agendados_hoje = cursor.fetchall()
+
+    # 6. MONTAGEM HTML
     opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
+    opcoes_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(p_dados[13]) else ""}>{u[1]}</option>' for u in unidades])
     
-    linhas = ""
+    # Linhas da Tabela Principal
+    linhas_p = ""
     for p in lista_pacientes:
-        cor_st = "success" if p[5] == "Ativo" else "danger"
-        linhas += f"""
+        cor = "success" if p[5] == "Ativo" else "danger"
+        nasc_f = p[6].strftime('%d/%m/%Y') if p[6] else '--'
+        linhas_p += f"""
         <tr>
-            <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {p[7] if p[7] else '--'}</small></td>
-            <td>{p[3]}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
-            <td>{p[4] if p[4] else 'Particular'}</td>
+            <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {nasc_f}</small></td>
+            <td>{p[3]}<br><span class="badge bg-{cor}">{p[5]}</span></td>
+            <td>{p[4] if p[4] else 'Particular'}<br><small class="text-primary">{p[7] if p[7] else '---'}</small></td>
             <td>
                 <div class="btn-group">
                     <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
@@ -1122,60 +1150,72 @@ def pacientes_geral(request):
             </td>
         </tr>"""
 
+    # Linhas Agendados Hoje
+    linhas_hoje = "".join([f"<tr><td>{h[1]}</td><td>{h[0]}</td><td>{h[2]}</td><td><span class='badge bg-secondary'>{h[3]}</span></td></tr>" for h in agendados_hoje])
+
     conteudo = f"""
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
-            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel</a>
+            <h4><i class="bi bi-people-fill text-danger"></i> Gestão de Pacientes</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel Principal</a>
         </div>
-        
         {mensagem}
 
         <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
             <input type="hidden" name="id_pac" value="{edit_id or ''}">
             <div class="col-md-5"><label class="small fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
             <div class="col-md-3"><label class="small fw-bold">CPF</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}"></div>
-            <div class="col-md-2"><label class="small fw-bold">Sexo</label><select name="sexo" class="form-select"><option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option><option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option></select></div>
             <div class="col-md-2"><label class="small fw-bold text-danger">Nascimento*</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
-            <div class="col-md-4"><label class="small fw-bold text-danger">Telefone*</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+            <div class="col-md-2"><label class="small fw-bold text-danger">Telefone*</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+            
             <div class="col-md-4"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opcoes_conv}</select></div>
+            <div class="col-md-4"><label class="small fw-bold text-primary">Unidade de Cadastro</label><select name="unidade_id" class="form-select"><option value="">Selecione...</option>{opcoes_unid}</select></div>
             <div class="col-md-4"><label class="small fw-bold">CEP</label><input type="text" name="cep" class="form-control" value="{p_dados[6]}"></div>
+            
             <div class="col-md-5"><label class="small fw-bold">Rua</label><input type="text" name="rua" class="form-control" value="{p_dados[7]}"></div>
             <div class="col-md-2"><label class="small fw-bold">Nº</label><input type="text" name="numero" class="form-control" value="{p_dados[8]}"></div>
             <div class="col-md-5"><label class="small fw-bold">Bairro</label><input type="text" name="bairro" class="form-control" value="{p_dados[9]}"></div>
+            <div class="col-md-2"><label class="small fw-bold">Sexo</label><select name="sexo" class="form-select"><option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option><option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option></select></div>
             <div class="col-md-4"><label class="small fw-bold">Cidade</label><input type="text" name="cidade" class="form-control" value="{p_dados[10]}"></div>
-            <div class="col-md-2"><label class="small fw-bold">UF</label><input type="text" name="estado" class="form-control" value="{p_dados[11]}" maxlength="2"></div>
-            <div class="col-md-6"><label class="small fw-bold">Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
+            <div class="col-md-1"><label class="small fw-bold">UF</label><input type="text" name="estado" class="form-control" value="{p_dados[11]}" maxlength="2"></div>
+            <div class="col-md-5"><label class="small fw-bold">Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
+
             <div class="col-12 mt-3">
-                <button type="submit" class="btn btn-danger w-100 fw-bold shadow">
-                    {'ATUALIZAR' if edit_id else 'SALVAR PACIENTE'}
-                </button>
+                <button type="submit" class="btn btn-danger w-100 fw-bold shadow">{'ATUALIZAR' if edit_id else 'SALVAR PACIENTE'}</button>
             </div>
-            { f'<div class="col-12 text-center mt-2"><a href="/pacientes/" class="text-secondary small">Cancelar Edição</a></div>' if edit_id else '' }
         </form>
 
-        <div class="card mb-3 border-primary shadow-sm">
+        <div class="card mb-4 border-primary shadow-sm">
             <div class="card-body bg-white p-2">
                 <form method="GET" class="row g-2">
                     <div class="col-md-10">
-                        <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Pesquisar por CPF ou Data de Nascimento (Ex: 1990-05-20)...">
+                        <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Busque por CPF ou Data (Ex: 10/03/1952 ou 1952-03-10)">
                     </div>
                     <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Buscar</button>
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
                     </div>
                 </form>
             </div>
         </div>
 
-        <div class="table-responsive bg-white p-2 rounded shadow-sm border">
+        <div class="table-responsive bg-white p-2 rounded shadow-sm border mb-5">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-dark">
-                    <tr><th>Paciente / Documento</th><th>Contato / Status</th><th>Convênio</th><th>Ações</th></tr>
-                </thead>
-                <tbody>{linhas if lista_pacientes else f'<tr><td colspan="4" class="text-center py-4 text-muted">Nenhum resultado para "{termo_busca}"</td></tr>'}</tbody>
+                <thead class="table-dark"><tr><th>Paciente</th><th>Contato</th><th>Convênio / Unid.</th><th>Ações</th></tr></thead>
+                <tbody>{linhas_p if lista_pacientes else '<tr><td colspan="4">Sem resultados</td></tr>'}</tbody>
+            </table>
+        </div>
+
+        <h5 class="fw-bold text-primary mt-4"><i class="bi bi-calendar-check"></i> Agendados para Hoje ({hoje.strftime('%d/%m/%Y')})</h5>
+        <div class="table-responsive bg-white p-2 rounded shadow-sm border">
+            <table class="table table-sm table-striped">
+                <thead class="table-info"><tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Status</th></tr></thead>
+                <tbody>{linhas_hoje if agendados_hoje else '<tr><td colspan="4" class="text-center">Nenhum agendamento para hoje.</td></tr>'}</tbody>
             </table>
         </div>
     """
     return HttpResponse(base_html("Pacientes", conteudo))
+
+
+
 
 
 # --- 11. TELA 8: GESTÃO DE ACESSOS E FUNCIONÁRIOS ---
