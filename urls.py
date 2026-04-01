@@ -1016,109 +1016,169 @@ def odonto_geral(request):
 
 
 # --- 10. TELA 7: GESTÃO DE PACIENTES ---
+# --- 10. TELA 7: GESTÃO DE PACIENTES (VERSÃO FINAL CORRIGIDA) ---
 @csrf_exempt
 def pacientes_geral(request):
     mensagem = ""
-    # Lógica de Exclusão
+    
+    # 1. LÓGICA DE BLOQUEIO (BLOQUEAR AGENDAMENTOS)
+    if request.GET.get('block_pac'):
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
+        return HttpResponseRedirect('/pacientes/')
+
+    # 2. LÓGICA DE EXCLUSÃO
     if request.GET.get('delete_pac'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # Lógica de Cadastro (POST)
+    # 3. CARREGAR DADOS PARA EDIÇÃO (ALTERAR)
+    edit_id = request.GET.get('edit_pac')
+    # Ordem: nome(0), cpf(1), sexo(2), nasc(3), tel(4), conv(5), cep(6), rua(7), num(8), bairro(9), cidade(10), estado(11), obs(12)
+    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""] 
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, 
+                       rua, numero, bairro, cidade, estado, observacoes 
+                FROM pacientes WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                p_dados = list(res)
+                # Formata data para o input HTML (YYYY-MM-DD)
+                if p_dados[3]: p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
+
+    # 4. SALVAR OU ATUALIZAR (POST)
     if request.method == "POST":
-        nome = request.POST.get('nome')
-        cpf = request.POST.get('cpf')
-        sexo = request.POST.get('sexo')
-        nasc = request.POST.get('data_nasc')
-        tel = request.POST.get('telefone')
-        conv = request.POST.get('convenio_id')
-        cep = request.POST.get('cep')
-        end = request.POST.get('endereco')
-        cidade = request.POST.get('cidade')
+        id_post = request.POST.get('id_pac')
+        
+        # Coleta de dados do formulário
+        campos = [
+            request.POST.get('nome'), 
+            request.POST.get('cpf'), 
+            request.POST.get('sexo'),
+            request.POST.get('data_nasc') or None, 
+            request.POST.get('telefone'), 
+            request.POST.get('convenio_id') or None,
+            request.POST.get('cep'), 
+            request.POST.get('rua'), 
+            request.POST.get('numero'),
+            request.POST.get('bairro'), 
+            request.POST.get('cidade'), 
+            request.POST.get('estado'),
+            request.POST.get('observacoes')
+        ]
         
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO pacientes (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, endereco, cidade) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [nome, cpf, sexo, nasc if nasc else None, tel, conv if conv else None, cep, end, cidade]
-                )
-            mensagem = '<div class="alert alert-success">✅ Paciente cadastrado com sucesso!</div>'
+                if id_post: # Modo Edição
+                    cursor.execute("""
+                        UPDATE pacientes SET 
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
+                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
+                            cidade=%s, estado=%s, observacoes=%s
+                        WHERE id=%s
+                    """, campos + [id_post])
+                else: # Modo Novo Cadastro
+                    cursor.execute("""
+                        INSERT INTO pacientes 
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, campos)
+            return HttpResponseRedirect('/pacientes/')
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+            if "unique_cpf" in str(e).lower():
+                mensagem = '<div class="alert alert-danger">⚠️ Erro: Este CPF já está cadastrado para outro paciente!</div>'
+            else:
+                mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # Busca Convênios para o Select e Lista de Pacientes para a Tabela
+    # 5. BUSCA DE DADOS PARA A TELA
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
         
         cursor.execute("""
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.sexo, p.cidade 
+            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
             FROM pacientes p 
             LEFT JOIN convenios c ON p.convenio_id = c.id 
             ORDER BY p.id DESC
         """)
         lista_pacientes = cursor.fetchall()
 
-    opcoes_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
+    # Opções de Convênio
+    opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
     
-    linhas = "".join([f"""
+    # Montagem da Tabela de Pacientes
+    linhas = ""
+    for p in lista_pacientes:
+        cor_status = "success" if p[5] == "Ativo" else "danger"
+        linhas += f"""
         <tr>
-            <td><b>{p[1]}</b><br><small class='text-muted'>{p[5]} | CPF: {p[2]}</small></td>
-            <td>{p[3]}<br><small class='text-secondary'>{p[6] if p[6] else ''}</small></td>
-            <td><span class="badge bg-info text-dark">{p[4] if p[4] else 'Particular'}</span></td>
+            <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {p[7] if p[7] else '--/--/--'}</small></td>
+            <td>{p[3]}<br><span class="badge bg-{cor_status}">{p[5]}</span></td>
+            <td>{p[4] if p[4] else 'Particular'}</td>
             <td>
-                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" 
-                   onclick="return confirm('Tem certeza que deseja excluir este paciente?')">
-                   <i class="bi bi-trash"></i>
-                </a>
+                <div class="btn-group">
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar"><i class="bi bi-pencil"></i></a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" onclick="return confirm('Bloquear este paciente?')" title="Bloquear"><i class="bi bi-slash-circle"></i></a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir permanentemente?')" title="Excluir"><i class="bi bi-trash"></i></a>
+                </div>
             </td>
-        </tr>""" for p in lista_pacientes])
+        </tr>"""
 
+    # 6. HTML FINAL
     conteudo = f"""
-        <h4><i class="bi bi-people"></i> Cadastro de Pacientes</h4><hr>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Voltar ao Painel</a>
+        </div>
+        
         {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-5"><label class="form-label fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-3"><label class="form-label fw-bold">CPF</label><input type="text" name="cpf" class="form-control" placeholder="000.000.000-00"></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Sexo</label>
-                <select name="sexo" class="form-select">
-                    <option value="Masculino">Masculino</option>
-                    <option value="Feminino">Feminino</option>
-                    <option value="Outro">Outro</option>
-                </select>
+
+        <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
+            <input type="hidden" name="id_pac" value="{edit_id or ''}">
+            
+            <div class="col-md-5"><label class="small fw-bold">Nome Completo</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
+            <div class="col-md-3"><label class="small fw-bold">CPF (Único)</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}" placeholder="000.000.000-00"></div>
+            <div class="col-md-2"><label class="small fw-bold">Sexo</label><select name="sexo" class="form-select"><option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option><option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option></select></div>
+            <div class="col-md-2"><label class="small fw-bold text-danger">Nascimento*</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
+            
+            <div class="col-md-4"><label class="small fw-bold text-danger">Telefone*</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" placeholder="(00) 00000-0000" required></div>
+            <div class="col-md-4"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opcoes_conv}</select></div>
+            <div class="col-md-4"><label class="small fw-bold">CEP</label><input type="text" name="cep" class="form-control" value="{p_dados[6]}"></div>
+            
+            <div class="col-md-5"><label class="small fw-bold">Rua</label><input type="text" name="rua" class="form-control" value="{p_dados[7]}"></div>
+            <div class="col-md-2"><label class="small fw-bold">Número</label><input type="text" name="numero" class="form-control" value="{p_dados[8]}"></div>
+            <div class="col-md-5"><label class="small fw-bold">Bairro</label><input type="text" name="bairro" class="form-control" value="{p_dados[9]}"></div>
+            
+            <div class="col-md-4"><label class="small fw-bold">Cidade</label><input type="text" name="cidade" class="form-control" value="{p_dados[10]}"></div>
+            <div class="col-md-2"><label class="small fw-bold">UF</label><input type="text" name="estado" class="form-control" value="{p_dados[11]}" maxlength="2" placeholder="MG"></div>
+            <div class="col-md-6"><label class="small fw-bold">Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
+            
+            <div class="col-12 mt-3">
+                <button type="submit" class="btn btn-danger w-100 fw-bold py-2 shadow">
+                    {'<i class="bi bi-check-circle"></i> ATUALIZAR CADASTRO' if edit_id else '<i class="bi bi-plus-circle"></i> SALVAR PACIENTE'}
+                </button>
             </div>
-            <div class="col-md-2"><label class="form-label fw-bold">Nascimento</label><input type="date" name="data_nasc" class="form-control"></div>
-            
-            <div class="col-md-4"><label class="form-label fw-bold">Telefone</label><input type="text" name="telefone" class="form-control" placeholder="(00) 00000-0000"></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opcoes_conv}</select></div>
-            <div class="col-md-4"><label class="form-label fw-bold">CEP</label><input type="text" name="cep" class="form-control" placeholder="00000-000"></div>
-            
-            <div class="col-md-4"><label class="form-label fw-bold">Cidade</label><input type="text" name="cidade" class="form-control"></div>
-            <div class="col-md-8"><label class="form-label fw-bold">Endereço Completo</label><input type="text" name="endereco" class="form-control" placeholder="Rua, número, bairro..."></div>
-            
-            <div class="col-12 mt-4">
-                <button type="submit" class="btn btn-danger w-100 fw-bold shadow-sm">SALVAR PACIENTE</button>
-            </div>
+            { f'<div class="col-12 text-center mt-2"><a href="/pacientes/" class="text-secondary small">Cancelar Edição</a></div>' if edit_id else '' }
         </form>
-        <hr>
-        <h5>Pacientes Cadastrados</h5>
-        <div class="table-responsive">
-            <table class="table table-hover mt-2">
+
+        <div class="table-responsive bg-white p-2 rounded shadow-sm border">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-dark">
-                    <tr><th>Paciente / Info</th><th>Contato / Cidade</th><th>Convênio</th><th>Ação</th></tr>
+                    <tr><th>Paciente / Documento</th><th>Contato / Status</th><th>Convênio</th><th>Ações</th></tr>
                 </thead>
-                <tbody>{linhas if lista_pacientes else '<tr><td colspan="4" class="text-center text-muted">Nenhum paciente encontrado.</td></tr>'}</tbody>
+                <tbody>{linhas if lista_pacientes else '<tr><td colspan="4" class="text-center py-4">Nenhum paciente cadastrado.</td></tr>'}</tbody>
             </table>
         </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
     return HttpResponse(base_html("Pacientes", conteudo))
 
 
 
-from django.contrib.auth.models import User # Adicione este import no topo!
 
 # --- 11. TELA 8: GESTÃO DE ACESSOS E FUNCIONÁRIOS ---
 @csrf_exempt
