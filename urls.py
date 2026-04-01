@@ -1261,7 +1261,7 @@ def acesso_geral(request):
 
 
 # --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
-# --- 12. TELA 9: PREÇOS E GRUPOS (CADASTRO EM LOTE) ---
+# --- 12. TELA 9: PREÇOS E GRUPOS (CADASTRO EM LOTE COM CONVÊNIO) ---
 @csrf_exempt
 def precos_geral(request):
     mensagem = ""
@@ -1272,99 +1272,106 @@ def precos_geral(request):
             cursor.execute("DELETE FROM precos_convenio WHERE id = %s", [request.GET.get('delete_preco')])
         return HttpResponseRedirect('/precos/')
 
-    # 2. CARREGAR DADOS PARA EDIÇÃO (INDIVIDUAL)
-    edit_id = request.GET.get('edit_pac') # Mantendo compatibilidade com seu link de edit
-    p_pre = ["", "", 0.00, "", "A Vista", ""]
-    
-    if edit_id:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT convenio_id, especialidade_id, valor_pagamento, codigo_tuss, tipo_cobranca, grupo_nome FROM precos_convenio WHERE id = %s", [edit_id])
-            res = cursor.fetchone()
-            if res: p_pre = res
-
-    # 3. SALVAR EM LOTE (POST)
+    # 2. SALVAR EM LOTE (POST)
     if request.method == "POST":
-        conv = request.POST.get('convenio_id') or None
+        conv_id = request.POST.get('convenio_id') or None
         tipo = request.POST.get('tipo_cobranca')
         grupo = request.POST.get('grupo_nome')
-        valor_marcadas = request.POST.get('valor_x') # Valor das Selecionadas
-        valor_outras = request.POST.get('valor_y')   # Valor das NÃO Selecionadas
+        valor_marcadas = request.POST.get('valor_x') # Valor das Selecionadas (Exceção)
+        valor_outras = request.POST.get('valor_y')   # Valor das NÃO Selecionadas (Geral)
         selecionadas = request.POST.getlist('especialidades_check') # Lista de IDs marcados
         
         try:
             with connection.cursor() as cursor:
-                # Buscamos todas as especialidades para processar o lote
+                # Buscamos todas as especialidades cadastradas
                 cursor.execute("SELECT id FROM especialidades")
                 todas_especs = [str(row[0]) for row in cursor.fetchall()]
 
                 for esp_id in todas_especs:
-                    # Define qual valor aplicar
+                    # Define qual valor aplicar com base no checkbox
                     valor_final = valor_marcadas if esp_id in selecionadas else valor_outras
                     
-                    # Evita duplicidade: se já existe esse convênio/grupo para essa especialidade, deleta e insere novo (ou ignora)
-                    cursor.execute("DELETE FROM precos_convenio WHERE grupo_nome=%s AND especialidade_id=%s AND tipo_cobranca=%s", [grupo, esp_id, tipo])
+                    # Limpa registros anteriores para evitar duplicidade no mesmo convênio/grupo/especialidade
+                    cursor.execute("""
+                        DELETE FROM precos_convenio 
+                        WHERE convenio_id=%s AND especialidade_id=%s AND tipo_cobranca=%s
+                    """, [conv_id, esp_id, tipo])
                     
+                    # Insere a nova configuração
                     cursor.execute("""
                         INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, tipo_cobranca, grupo_nome) 
                         VALUES (%s, %s, %s, %s, %s)
-                    """, [conv, esp_id, valor_final, tipo, grupo])
+                    """, [conv_id, esp_id, valor_final, tipo, grupo])
                     
-            return HttpResponseRedirect('/precos/')
+            mensagem = '<div class="alert alert-success">✅ Tabela gerada com sucesso para o convênio selecionado!</div>'
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro no processamento: {e}</div>'
 
-    # 4. BUSCA DE DADOS
+    # 3. BUSCA DE DADOS PARA O FORMULÁRIO
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         lista_conv = cursor.fetchall()
+        
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         lista_esp = cursor.fetchall()
+        
         cursor.execute("""
             SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.tipo_cobranca, pr.grupo_nome
             FROM precos_convenio pr
             LEFT JOIN convenios c ON pr.convenio_id = c.id
             LEFT JOIN especialidades e ON pr.especialidade_id = e.id
-            ORDER BY pr.grupo_nome, e.nome
+            ORDER BY pr.tipo_cobranca, pr.grupo_nome, c.nome, e.nome
         """)
         tabela_precos = cursor.fetchall()
 
-    # Montagem dos Checkboxes de Especialidades
+    # Opções de Convênios
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
+
+    # Montagem dos Checkboxes de Especialidades (Exceções)
     check_html = ""
     for e in lista_esp:
         check_html += f"""
         <div class="col-md-3 mb-2">
-            <div class="form-check form-switch">
+            <div class="form-check form-switch border p-2 rounded bg-white shadow-sm" style="margin-left: 10px;">
                 <input class="form-check-input" type="checkbox" name="especialidades_check" value="{e[0]}" id="esp_{e[0]}">
-                <label class="form-check-label small" for="esp_{e[0]}">{e[1]}</label>
+                <label class="form-check-label small fw-bold" for="esp_{e[0]}">{e[1]}</label>
             </div>
         </div>"""
 
-    # 5. MONTAGEM DA TABELA
+    # 4. MONTAGEM DA LISTAGEM
     linhas = ""
     for p in tabela_precos:
         badge = "success" if p[4] == "A Vista" else "primary"
         linhas += f"""
         <tr>
-            <td><span class="badge bg-{badge}">{p[4]}</span><br><small>{p[5] if p[5] else '---'}</small></td>
-            <td>{p[1] if p[1] else '<i>Grupo</i>'}</td>
+            <td><span class="badge bg-{badge}">{p[4]}</span><br><small class="text-muted">{p[5] if p[5] else '---'}</small></td>
+            <td><b>{p[1] if p[1] else 'Indefinido'}</b></td>
             <td>{p[2]}</td>
-            <td class="fw-bold">R$ {p[3]}</td>
+            <td class="fw-bold text-success">R$ {p[3]}</td>
             <td>
-                <a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                <a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir este preço?')"><i class="bi bi-trash"></i></a>
             </td>
         </tr>"""
 
     conteudo = f"""
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-tags-fill text-success"></i> Tabela de Preços Inteligente</h4>
-            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel</a>
+            <h4><i class="bi bi-tags-fill text-primary"></i> Configuração de Preços em Lote</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Voltar</a>
         </div>
+        
         {mensagem}
 
         <form method="POST" class="bg-light p-4 rounded border shadow-sm mb-4">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="fw-bold small">Tipo / Grupo</label>
+                    <label class="fw-bold small text-primary">1. Selecione o Convênio</label>
+                    <select name="convenio_id" class="form-select border-primary" required>
+                        <option value="">-- Escolha o Convênio --</option>
+                        {opts_conv}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="fw-bold small">2. Tipo de Cobrança / Grupo</label>
                     <div class="input-group">
                         <select name="tipo_cobranca" class="form-select">
                             <option value="A Vista">A Vista</option>
@@ -1373,23 +1380,26 @@ def precos_geral(request):
                         <input type="text" name="grupo_nome" class="form-control" placeholder="Ex: A VISTA 1" required>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <label class="fw-bold small">Valor X (Marcadas)</label>
-                    <input type="number" name="valor_x" class="form-control border-primary" placeholder="R$ 78.00" required>
+                
+                <div class="col-md-2">
+                    <label class="fw-bold small text-danger">Valor X (Marcadas)</label>
+                    <input type="number" step="0.01" name="valor_x" class="form-control fw-bold border-danger" placeholder="Exceção" required>
                 </div>
-                <div class="col-md-4">
-                    <label class="fw-bold small">Valor Y (Não Marcadas)</label>
-                    <input type="number" name="valor_y" class="form-control" placeholder="R$ 88.00" required>
+                <div class="col-md-2">
+                    <label class="fw-bold small text-success">Valor Y (Geral)</label>
+                    <input type="number" step="0.01" name="valor_y" class="form-control fw-bold border-success" placeholder="Padrão" required>
                 </div>
 
                 <div class="col-12 mt-4">
-                    <label class="fw-bold border-bottom w-100 mb-3">Selecione as Especialidades da EXCEÇÃO (Valor X):</label>
+                    <label class="fw-bold border-bottom w-100 mb-3 pb-1">
+                        <i class="bi bi-check2-square"></i> Marque as Especialidades que terão o <b>Valor X (Exceção)</b>:
+                    </label>
                     <div class="row">{check_html}</div>
                 </div>
 
                 <div class="col-12 mt-3">
-                    <button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow">
-                        <i class="bi bi-save"></i> GERAR TABELA DE PREÇOS EM LOTE
+                    <button type="submit" class="btn btn-primary w-100 fw-bold py-2 shadow">
+                        <i class="bi bi-lightning-fill"></i> GERAR TABELA PARA ESTE CONVÊNIO
                     </button>
                 </div>
             </div>
@@ -1397,13 +1407,14 @@ def precos_geral(request):
 
         <div class="table-responsive bg-white p-2 rounded shadow-sm border">
             <table class="table table-hover table-sm align-middle mb-0">
-                <thead class="table-dark"><tr><th>Tipo/Grupo</th><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço configurado.</td></tr>'}</tbody>
+                <thead class="table-dark">
+                    <tr><th>Tipo/Grupo</th><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>Ações</th></tr>
+                </thead>
+                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center py-4">Nenhum preço configurado.</td></tr>'}</tbody>
             </table>
         </div>
     """
     return HttpResponse(base_html("Tabela de Preços", conteudo))
-
 
 
 
