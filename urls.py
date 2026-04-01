@@ -2022,7 +2022,7 @@ def recepcao_geral(request):
     unidade_filtro = request.GET.get('unidade')
 
     # =========================
-    # 🔥 AÇÃO CHEGADA (CORREÇÃO PRINCIPAL)
+    # AÇÃO CHEGADA
     # =========================
     acao = request.GET.get('acao')
     ag_id = request.GET.get('id')
@@ -2035,7 +2035,6 @@ def recepcao_geral(request):
                 WHERE id = %s
             """, [ag_id])
 
-        # REDIRECIONA para evitar cache e travamento
         redirect_url = "/recepcao/"
         if unidade_filtro:
             redirect_url += f"?unidade={unidade_filtro}"
@@ -2043,19 +2042,19 @@ def recepcao_geral(request):
         return HttpResponseRedirect(redirect_url)
 
     # =========================
-    # BUSCAR UNIDADES
+    # UNIDADES
     # =========================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
     # =========================
-    # BUSCAR AGENDA
+    # AGENDA
     # =========================
     sql = """
         SELECT 
             ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
-            ag.status, esp.nome, conv.nome, pac.telefone, u.endereco
+            ag.status, esp.nome, conv.nome, pac.telefone
         FROM agendamentos ag
         JOIN pacientes pac ON ag.paciente_id = pac.id
         JOIN agendas_config ac ON ag.agenda_config_id = ac.id
@@ -2079,7 +2078,7 @@ def recepcao_geral(request):
         agenda = cursor.fetchall()
 
     # =========================
-    # MONTAR TABELA
+    # LINHAS
     # =========================
     linhas = ""
 
@@ -2087,27 +2086,19 @@ def recepcao_geral(request):
         h = a[4].strftime('%H:%M') if not isinstance(a[4], str) else a[4][:5]
 
         tel_limpo = "".join(filter(str.isdigit, str(a[8]))) if a[8] else ""
-        msg = f"Olá, {a[1]}. Confirma consulta com {a[2]} ({a[6]}) às {h} na unidade {a[3]}"
+        msg = f"Olá, {a[1]}. Confirma consulta com {a[2]} às {h}"
         link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
 
         linhas += f"""
         <tr>
-            <td><b>{h}</b></td>
-            <td>{a[1]}<br><small class="badge bg-light text-dark border">{a[7] or 'Particular'}</small></td>
-            <td>{a[2]}<br><small class="text-muted">{a[6]}</small></td>
-            <td><span class="badge bg-info">{a[5] or 'Agendado'}</span></td>
-            <td>{a[8] or '---'}</td>
+            <td>{h}</td>
+            <td>{a[1]}<br><small>{a[7] or 'Particular'}</small></td>
+            <td>{a[2]}<br><small>{a[6]}</small></td>
+            <td>{a[5] or 'Agendado'}</td>
+            <td>{a[8] or '-'}</td>
             <td>
-                <div class="btn-group">
-                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success">
-                        <i class="bi bi-whatsapp"></i>
-                    </a>
-
-                    <a href="/recepcao/?acao=chegada&id={a[0]}" 
-                       class="btn btn-sm btn-warning">
-                        <i class="bi bi-person-check"></i>
-                    </a>
-                </div>
+                <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success">Whats</a>
+                <a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>
             </td>
         </tr>
         """
@@ -2115,18 +2106,22 @@ def recepcao_geral(request):
     # =========================
     # SELECT UNIDADES
     # =========================
-    opts = "".join([
-        f'<option value="{u[0]}" {"selected" if str(u[0]) == str(unidade_filtro) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
+    opts = ""
+    for u in unidades:
+        selected = "selected" if str(u[0]) == str(unidade_filtro) else ""
+        opts += f'<option value="{u[0]}" {selected}>{u[1]}</option>'
 
     # =========================
-    # HTML FINAL
+    # HTML FINAL (CORRIGIDO)
     # =========================
     conteudo = f"""
-        <h4><i class="bi bi-person-check"></i> Recepção</h4>
+    <div class="container-fluid">
 
-        <form method="GET" class="row mb-3 bg-light p-2 rounded">
+        <h4 class="mb-3">
+            <i class="bi bi-person-check"></i> Recepção
+        </h4>
+
+        <form method="GET" class="row g-2 mb-3">
             <div class="col-md-4">
                 <select name="unidade" class="form-select">
                     <option value="">Todas Unidades</option>
@@ -2138,24 +2133,32 @@ def recepcao_geral(request):
             </div>
         </form>
 
-        <table class="table table-hover border shadow-sm bg-white">
-            <thead class="table-dark">
-                <tr>
-                    <th>Hora</th>
-                    <th>Paciente</th>
-                    <th>Médico</th>
-                    <th>Status</th>
-                    <th>Telefone</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                {linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover bg-white">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Hora</th>
+                        <th>Paciente</th>
+                        <th>Médico</th>
+                        <th>Status</th>
+                        <th>Telefone</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
+
+
 
 
 
