@@ -74,126 +74,114 @@ def base_html(titulo, conteudo):
 
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 
+# --- 2. TELA 0: PAINEL DE GESTÃO (VERSÃO PROFISSIONAL CORRIGIDA) ---
 
 def painel_controle(request):
+    # Definimos o conteúdo usando o grid system col-md-4 para 3 colunas perfeitas
     conteudo = """
         <div class="mb-4">
-            <h3 class="fw-bold"><i class="bi bi-speedometer2"></i> Painel de Gestão</h3>
-            <p class="text-muted">Bem-vindo ao sistema Sempre Vida.</p>
+            <h3 class="fw-bold text-dark"><i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão</h3>
+            <p class="text-muted">Bem-vindo, Douglas Silva. Gerencie as operações da clínica Sempre Vida.</p>
         </div>
+        
         <div class="row g-3">
             <div class="col-md-4">
-                <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
-                    <i class="bi bi-building fs-1"></i><br><h5 class="mt-2">Unidades</h5>
-                    <a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+                <div class="p-4 bg-primary text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-building fs-1"></i><br><h5 class="mt-2 fw-bold">Unidades</h5>
+                    <a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-4 bg-success text-white rounded shadow-sm text-center">
-                    <i class="bi bi-hospital fs-1"></i><br><h5 class="mt-2">Especialidades</h5>
-                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+                <div class="p-4 bg-success text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-hospital fs-1"></i><br><h5 class="mt-2 fw-bold">Especialidades</h5>
+                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center border">
-                    <i class="bi bi-person-badge fs-1"></i><br><h5 class="mt-2">Profissionais</h5>
-                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 text-white fw-bold">Acessar</a>
+                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center h-100">
+                    <i class="bi bi-person-badge fs-1"></i><br><h5 class="mt-2 fw-bold">Profissionais</h5>
+                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 fw-bold w-100 text-white">Acessar</a>
                 </div>
             </div>
-            
+
             <div class="col-md-4">
-                <div class="p-4 bg-info text-white rounded shadow-sm text-center">
-                    <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2">Convênios</h5>
-                    <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-secondary text-white rounded shadow-sm text-center">
-                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2">Exames</h5>
-                    <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
+                <div class="p-4 bg-info text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2 fw-bold">Convênios</h5>
+                    <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
-    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
-        <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2">Odontologia</h5>
-        <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-      </div>
-    </div>
-    <div class="col-md-4">
-    <div class="p-4 bg-danger text-white rounded shadow-sm text-center">
-        <i class="bi bi-people fs-1"></i><br><h5 class="mt-2">Pacientes</h5>
-        <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold">Acessar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-dark text-white rounded shadow-sm text-center">
-        <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2">Acessos</h5>
-        <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-primary text-white rounded shadow-sm text-center">
-        <i class="bi bi-currency-dollar fs-1"></i><br><h5 class="mt-2">Tabela de Preços</h5>
-        <a href="/precos/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-info text-white rounded shadow-sm text-center">
-        <i class="bi bi-tags fs-1"></i><br><h5 class="mt-2">Preços Exames</h5>
-        <a href="/precos-exames/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-success text-white rounded shadow-sm text-center">
-        <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2">Configurar Agendas</h5>
-        <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold">Configurar</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-light text-dark rounded shadow-sm text-center border">
-        <i class="bi bi-calendar3 fs-1 text-primary"></i><br><h5 class="mt-2 text-primary">Agenda do Dia</h5>
-        <a href="/agenda-diaria/" class="btn btn-sm btn-primary mt-2 fw-bold text-white">Ver Calendário</a>
-    </div>
-</div>
-    <div class="col-md-4 mb-3">
-    <div class="card text-center shadow-sm">
-        <div class="card-body">
-            <i class="bi bi-calendar-check-fill text-success fs-1"></i>
-            <h5 class="card-title mt-2">Novo Agendamento</h5>
-            <p class="small text-muted">Marcar consulta manualmente</p>
-            <a href="/agendar/" class="btn btn-success btn-sm w-100">Abrir Tela 13</a>
+                <div class="p-4 bg-secondary text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2 fw-bold">Exames</h5>
+                    <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-dark text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2 fw-bold">Odontologia</h5>
+                    <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="p-4 bg-danger text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-people fs-1"></i><br><h5 class="mt-2 fw-bold">Pacientes</h5>
+                    <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-dark text-white rounded shadow-sm text-center h-100 border-secondary border">
+                    <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2 fw-bold">Acessos</h5>
+                    <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-primary text-white rounded shadow-sm text-center h-100 border-light border">
+                    <i class="bi bi-currency-dollar fs-1"></i><br><h5 class="mt-2 fw-bold">Tabela de Preços</h5>
+                    <a href="/precos/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="p-4 bg-info text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-tags fs-1"></i><br><h5 class="mt-2 fw-bold">Preços Exames</h5>
+                    <a href="/precos-exames/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-success text-white rounded shadow-sm text-center h-100">
+                    <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2 fw-bold">Configurar Agendas</h5>
+                    <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-white text-dark rounded shadow-sm text-center h-100 border border-primary">
+                    <i class="bi bi-calendar-plus fs-1 text-primary"></i><br><h5 class="mt-2 fw-bold text-primary">Novo Agendamento</h5>
+                    <a href="/agendar/" class="btn btn-sm btn-primary mt-2 fw-bold w-100 text-white">Iniciar</a>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center h-100 border border-dark">
+                    <i class="bi bi-person-check fs-1"></i><br><h5 class="mt-2 fw-bold">Recepção / Check-in</h5>
+                    <a href="/recepcao/" class="btn btn-sm btn-dark mt-2 fw-bold w-100 text-white">Abrir Painel</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-light text-dark rounded shadow-sm text-center h-100 border">
+                    <i class="bi bi-cash-stack fs-1 text-success"></i><br><h5 class="mt-2 fw-bold">Caixa / Financeiro</h5>
+                    <a href="/caixa/" class="btn btn-sm btn-success mt-2 fw-bold w-100">Abrir Caixa</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-4 bg-white text-dark rounded shadow-sm text-center h-100 border">
+                    <i class="bi bi-file-earmark-medical fs-1 text-purple" style="color: #605ca8;"></i><br><h5 class="mt-2 fw-bold">Prontuário Médico</h5>
+                    <a href="/recepcao/" class="btn btn-sm btn-outline-dark mt-2 fw-bold w-100">Atender</a>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-4">
-    <div class="p-4 bg-warning text-dark rounded shadow-sm text-center border">
-        <i class="bi bi-person-check fs-1"></i><br><h5 class="mt-2 text-dark fw-bold">Recepção / Check-in</h5>
-        <p class="small">Controle de chegada de pacientes</p>
-        <a href="/recepcao/" class="btn btn-sm btn-dark mt-2 fw-bold text-white">Abrir Recepção</a>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="p-4 bg-dark text-white rounded shadow-sm text-center border h-100" style="background-color: #605ca8 !important;">
-        <i class="bi bi-file-medical fs-1"></i><br><h5 class="mt-2 fw-bold">Prontuário Médico</h5>
-        <a href="/recepcao/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Abrir via Recepção</a>
-    </div>
- </div>
- <div class="col-md-4">
-    <div class="p-4 bg-success text-white rounded shadow-sm text-center border h-100">
-        <i class="bi bi-cash-coin fs-1"></i><br>
-        <h5 class="mt-2 fw-bold">Caixa / Financeiro</h5>
-        <p class="small">Fluxo de pagamentos do dia</p>
-        <a href="/caixa/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Abrir Caixa</a>
-    </div>
-  </div>
-</div>
-
-
-
-
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
-
 
 
 # --- 3. TELA 1: UNIDADES ---
