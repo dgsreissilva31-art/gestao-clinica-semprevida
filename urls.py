@@ -1261,134 +1261,193 @@ def acesso_geral(request):
 
 
 # --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
-# --- 12. TELA 9: PREÇOS E GRUPOS (ALTERAÇÃO GLOBAL POR GRUPO) ---
+# --- 12. TELA 9: PREÇOS E GRUPOS (CADASTRO EM LOTE COM BOTÃO ALTERAR) ---
 @csrf_exempt
 def precos_geral(request):
     mensagem = ""
-    grupo_busca = request.GET.get('busca_grupo', '')
+    
+    # 1. AÇÃO: EXCLUSÃO
+    if request.GET.get('delete_preco'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM precos_convenio WHERE id = %s", [request.GET.get('delete_preco')])
+        return HttpResponseRedirect('/precos/')
 
-    # 1. SALVAR / ATUALIZAR GLOBALMENTE O GRUPO (POST)
+    # 2. CARREGAR DADOS PARA EDIÇÃO (ALTERAR)
+    edit_id = request.GET.get('edit_preco')
+    # Ordem: conv_id, esp_id, valor, tipo, grupo
+    p_pre = ["", "", 0.00, "A Vista", ""]
+    
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT convenio_id, especialidade_id, valor_pagamento, tipo_cobranca, grupo_nome 
+                FROM precos_convenio WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                p_pre = res
+
+    # 3. SALVAR EM LOTE OU ATUALIZAR (POST)
     if request.method == "POST":
-        grupo_alvo = request.POST.get('grupo_nome_hidden')
-        v_x = request.POST.get('valor_x') # Valor Exceção (Marcadas)
-        v_y = request.POST.get('valor_y') # Valor Geral (Não Marcadas)
-        selecionadas = request.POST.getlist('especialidades_check')
+        id_post = request.POST.get('id_preco')
+        conv_id = request.POST.get('convenio_id') or None
+        tipo = request.POST.get('tipo_cobranca')
+        grupo = request.POST.get('grupo_nome')
         
-        try:
-            with connection.cursor() as cursor:
-                # Pegamos todas as especialidades para processar a lógica
-                cursor.execute("SELECT id FROM especialidades")
-                todas_especs = [str(row[0]) for row in cursor.fetchall()]
-
-                # Atualiza todos os convênios que pertencem ao grupo buscado
-                for esp_id in todas_especs:
-                    valor_final = v_x if esp_id in selecionadas else v_y
+        # Se for uma atualização pontual (via botão alterar)
+        if id_post:
+            valor_unico = request.POST.get('valor_y') # Usa o campo 'Geral' como valor único na edição
+            esp_id = request.POST.get('especialidade_unica') or None
+            try:
+                with connection.cursor() as cursor:
                     cursor.execute("""
-                        UPDATE precos_convenio 
-                        SET valor_pagamento = %s 
-                        WHERE grupo_nome = %s AND especialidade_id = %s
-                    """, [valor_final, grupo_alvo, esp_id])
-                
-                mensagem = f'<div class="alert alert-success">✅ Grupo <b>{grupo_alvo}</b> atualizado com sucesso!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao atualizar grupo: {e}</div>'
+                        UPDATE precos_convenio SET 
+                        convenio_id=%s, valor_pagamento=%s, tipo_cobranca=%s, grupo_nome=%s
+                        WHERE id=%s
+                    """, [conv_id, valor_unico, tipo, grupo, id_post])
+                return HttpResponseRedirect('/precos/')
+            except Exception as e:
+                mensagem = f'<div class="alert alert-danger">❌ Erro ao atualizar: {e}</div>'
+        
+        # Se for o cadastro em LOTE (Com Checkboxes)
+        else:
+            valor_marcadas = request.POST.get('valor_x') 
+            valor_outras = request.POST.get('valor_y')   
+            selecionadas = request.POST.getlist('especialidades_check')
+            
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT id FROM especialidades")
+                    todas_especs = [str(row[0]) for row in cursor.fetchall()]
 
-    # 2. BUSCA DE DADOS
+                    for esp_id in todas_especs:
+                        valor_final = valor_marcadas if esp_id in selecionadas else valor_outras
+                        cursor.execute("""
+                            DELETE FROM precos_convenio 
+                            WHERE convenio_id=%s AND especialidade_id=%s AND tipo_cobranca=%s
+                        """, [conv_id, esp_id, tipo])
+                        cursor.execute("""
+                            INSERT INTO precos_convenio (convenio_id, especialidade_id, valor_pagamento, tipo_cobranca, grupo_nome) 
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, [conv_id, esp_id, valor_final, tipo, grupo])
+                return HttpResponseRedirect('/precos/')
+            except Exception as e:
+                mensagem = f'<div class="alert alert-danger">❌ Erro no processamento: {e}</div>'
+
+    # 4. BUSCA DE DADOS
     with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+        lista_conv = cursor.fetchall()
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         lista_esp = cursor.fetchall()
-        
-        # Filtra a tabela apenas pelo grupo pesquisado
-        sql = """
-            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.grupo_nome, pr.tipo_cobranca
+        cursor.execute("""
+            SELECT pr.id, c.nome, e.nome, pr.valor_pagamento, pr.tipo_cobranca, pr.grupo_nome, pr.especialidade_id
             FROM precos_convenio pr
             LEFT JOIN convenios c ON pr.convenio_id = c.id
             LEFT JOIN especialidades e ON pr.especialidade_id = e.id
-        """
-        params = []
-        if grupo_busca:
-            sql += " WHERE pr.grupo_nome ILIKE %s "
-            params = [f'%{grupo_busca}%']
-        
-        cursor.execute(sql + " ORDER BY pr.grupo_nome, c.nome, e.nome", params)
+            ORDER BY pr.grupo_nome, c.nome, e.nome
+        """)
         tabela_precos = cursor.fetchall()
 
-    # Checkboxes de Especialidades
-    check_html = "".join([
-        f'<div class="col-md-3 mb-2 small"><div class="form-check form-switch">'
-        f'<input class="form-check-input" type="checkbox" name="especialidades_check" value="{e[0]}" id="esp_{e[0]}">'
-        f'<label class="form-check-label fw-bold" for="esp_{e[0]}">{e[1]}</label></div></div>' 
-        for e in lista_esp
-    ])
+    opts_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_pre[0]) else ""}>{c[1]}</option>' for c in lista_conv])
 
-    linhas = "".join([f"""
+    # Checkboxes (Escondidos em modo edição individual para não confundir)
+    check_html = ""
+    if not edit_id:
+        for e in lista_esp:
+            check_html += f"""
+            <div class="col-md-3 mb-2">
+                <div class="form-check form-switch border p-2 rounded bg-white shadow-sm" style="margin-left: 10px;">
+                    <input class="form-check-input" type="checkbox" name="especialidades_check" value="{e[0]}" id="esp_{e[0]}">
+                    <label class="form-check-label small fw-bold" for="esp_{e[0]}">{e[1]}</label>
+                </div>
+            </div>"""
+
+    # 5. MONTAGEM DA LISTAGEM COM BOTÃO ALTERAR
+    linhas = ""
+    for p in tabela_precos:
+        badge = "success" if p[4] == "A Vista" else "primary"
+        linhas += f"""
         <tr>
-            <td><span class="badge bg-dark">{p[4]}</span></td>
+            <td><span class="badge bg-{badge}">{p[4]}</span><br><small class="text-muted">{p[5] if p[5] else '---'}</small></td>
             <td><b>{p[1] if p[1] else '---'}</b></td>
             <td>{p[2]}</td>
             <td class="fw-bold text-success">R$ {p[3]}</td>
-            <td><a href="/precos/?delete_preco={p[0]}" class="text-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in tabela_precos])
+            <td>
+                <div class="btn-group shadow-sm">
+                    <a href="/precos/?edit_preco={p[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/precos/?delete_preco={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')" title="Apagar">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>"""
 
     conteudo = f"""
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-collection-play-fill text-primary"></i> Gestão de Valores por Grupo</h4>
+            <h4><i class="bi bi-tags-fill text-primary"></i> {"Editar Preço Individual" if edit_id else "Configuração de Preços em Lote"}</h4>
             <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Voltar</a>
         </div>
         
         {mensagem}
 
-        <div class="card border-primary mb-4 shadow-sm">
-            <div class="card-body p-2 bg-light">
-                <form method="GET" class="row g-2">
-                    <div class="col-md-10">
-                        <input type="text" name="busca_grupo" class="form-control" value="{grupo_busca}" placeholder="Pesquisar Grupo (Ex: A VISTA 1)">
+        <form method="POST" class="bg-light p-4 rounded border shadow-sm mb-4">
+            <input type="hidden" name="id_preco" value="{edit_id or ''}">
+            <input type="hidden" name="especialidade_unica" value="{p_pre[1] if edit_id else ''}">
+            
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="fw-bold small">1. Convênio</label>
+                    <select name="convenio_id" class="form-select border-primary" required>
+                        <option value="">-- Escolha o Convênio --</option>
+                        {opts_conv}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="fw-bold small">2. Cobrança / Grupo</label>
+                    <div class="input-group">
+                        <select name="tipo_cobranca" class="form-select">
+                            <option value="A Vista" {"selected" if p_pre[3]=="A Vista" else ""}>A Vista</option>
+                            <option value="Faturado" {"selected" if p_pre[3]=="Faturado" else ""}>Faturado</option>
+                        </select>
+                        <input type="text" name="grupo_nome" class="form-control" value="{p_pre[4]}" placeholder="Ex: A VISTA 1" required>
                     </div>
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100 fw-bold"><i class="bi bi-search"></i> CARREGAR</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+                
+                <div class="col-md-2" {'style="display:none"' if edit_id else ''}>
+                    <label class="fw-bold small text-danger">Valor X (Marcadas)</label>
+                    <input type="number" step="0.01" name="valor_x" class="form-control fw-bold border-danger" placeholder="Exceção">
+                </div>
+                <div class="col-md-2">
+                    <label class="fw-bold small text-success">{"Valor" if edit_id else "Valor Y (Geral)"}</label>
+                    <input type="number" step="0.01" name="valor_y" class="form-control fw-bold border-success" value="{p_pre[2]}" required>
+                </div>
 
-        <div class="card border-danger mb-4 shadow-sm" {'style="display:none"' if not grupo_busca or not tabela_precos else ''}>
-            <div class="card-header bg-danger text-white fw-bold small py-1">⚡ ATUALIZAÇÃO GLOBAL: {grupo_busca.upper()}</div>
-            <div class="card-body">
-                <form method="POST">
-                    <input type="hidden" name="grupo_nome_hidden" value="{grupo_busca}">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="small fw-bold">Valor X (Marcadas)</label>
-                            <input type="number" step="0.01" name="valor_x" class="form-control border-danger fw-bold" placeholder="Ex: 78.00" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="small fw-bold">Valor Y (Geral)</label>
-                            <input type="number" step="0.01" name="valor_y" class="form-control border-secondary fw-bold" placeholder="Ex: 88.00" required>
-                        </div>
-                        <div class="col-md-6 d-flex align-items-end">
-                            <button type="submit" class="btn btn-danger w-100 fw-bold shadow" onclick="return confirm('Isso alterará os valores de TODOS os convênios deste grupo. Confirmar?')">
-                                <i class="bi bi-arrow-repeat"></i> APLICAR MUDANÇA EM TODO O GRUPO
-                            </button>
-                        </div>
-                        <div class="col-12 mt-3">
-                            <label class="small fw-bold border-bottom w-100 mb-2">Marque as especialidades da EXCEÇÃO (Valor X):</label>
-                            <div class="row bg-light p-2 rounded border">{check_html}</div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
+                {f'<div class="col-12 mt-4"><label class="fw-bold border-bottom w-100 mb-3 pb-1"><i class="bi bi-check2-square"></i> Marque as Especialidades (Valor X):</label><div class="row">{check_html}</div></div>' if not edit_id else ''}
 
-        <div class="table-responsive bg-white rounded shadow-sm border">
-            <table class="table table-sm table-hover align-middle mb-0">
+                <div class="col-12 mt-3">
+                    <button type="submit" class="btn btn-primary w-100 fw-bold py-2 shadow">
+                        { '<i class="bi bi-check-lg"></i> ATUALIZAR ESTE REGISTRO' if edit_id else '<i class="bi bi-lightning-fill"></i> GERAR TABELA EM LOTE' }
+                    </button>
+                </div>
+            </div>
+            { f'<div class="col-12 text-center mt-2"><a href="/precos/" class="text-danger small">Cancelar Edição</a></div>' if edit_id else '' }
+        </form>
+
+        <div class="table-responsive bg-white p-2 rounded shadow-sm border">
+            <table class="table table-hover table-sm align-middle mb-0">
                 <thead class="table-dark">
-                    <tr><th>Grupo</th><th>Convênio</th><th>Especialidade</th><th>Valor Atual</th><th>Ação</th></tr>
+                    <tr><th>Tipo/Grupo</th><th>Convênio</th><th>Especialidade</th><th>Valor</th><th>Ações</th></tr>
                 </thead>
-                <tbody>{linhas if tabela_precos else f'<tr><td colspan="5" class="text-center py-4 text-muted">Pesquise um grupo (ex: A VISTA 1) para alterar os valores.</td></tr>'}</tbody>
+                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center py-4">Nenhum preço configurado.</td></tr>'}</tbody>
             </table>
         </div>
     """
-    return HttpResponse(base_html("Preços por Grupo", conteudo))
+    return HttpResponse(base_html("Tabela de Preços", conteudo))
+
+
 
 
 
