@@ -2017,31 +2017,14 @@ def recepcao_geral(request):
     unidade_filtro = request.GET.get('unidade')
 
     with connection.cursor() as cursor:
-        # 1. BUSCA LISTA DE UNIDADES PARA O SELECT
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        # 2. PROCESSAR AÇÕES DE STATUS (CHEGADA / FINALIZAR)
-        if request.GET.get('acao'):
-            ag_id = request.GET.get('id')
-            acao = request.GET.get('acao')
-            novo_status = "Aguardando" if acao == "chegada" else "Finalizado"
-            cursor.execute("UPDATE agendamentos SET status = %s WHERE id = %s", [novo_status, ag_id])
-            return HttpResponseRedirect(f'/recepcao/?unidade={unidade_filtro or ""}')
-
-        # 3. BUSCAR PACIENTES DO DIA COM TODOS OS DETALHES (CONVÊNIO, TEL, ENDEREÇO)
-        sql_ag = """
+        # SQL COMPLETO PARA PEGAR TELEFONE E CONVÊNIO
+        sql = """
             SELECT 
-                ag.id, 
-                pac.nome AS paciente, 
-                prof.nome AS medico, 
-                u.nome AS unidade, 
-                ag.horario_selecionado, 
-                ag.status, 
-                esp.nome AS especialidade, 
-                conv.nome AS convenio, 
-                pac.telefone, 
-                u.endereco
+                ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
+                ag.status, esp.nome, conv.nome, pac.telefone, u.endereco
             FROM agendamentos ag
             JOIN pacientes pac ON ag.paciente_id = pac.id
             JOIN agendas_config ac ON ag.agenda_config_id = ac.id
@@ -2053,94 +2036,53 @@ def recepcao_geral(request):
         """
         params = [data_hoje]
         if unidade_filtro:
-            sql_ag += " AND u.id = %s"
+            sql += " AND u.id = %s"
             params.append(unidade_filtro)
             
-        cursor.execute(sql_ag + " ORDER BY ag.horario_selecionado ASC", params)
+        cursor.execute(sql + " ORDER BY ag.horario_selecionado ASC", params)
         agenda = cursor.fetchall()
 
-    # 4. MONTAGEM DAS LINHAS DA TABELA
     linhas = ""
     for a in agenda:
-        ag_id, pac_nome, med_nome, uni_nome, hora, status, esp_nome, conv_nome, tel, endereco = a
+        # a[0]=id, a[1]=paciente, a[2]=medico, a[3]=unidade, a[4]=hora, a[5]=status, a[6]=esp, a[7]=conv, a[8]=tel, a[9]=end
+        h = a[4].strftime('%H:%M') if not isinstance(a[4], str) else a[4][:5]
         
-        # Formatação de hora e cores
-        h_format = hora.strftime('%H:%M') if not isinstance(hora, str) else hora[:5]
-        status_txt = status or "Agendado"
-        cor = {"Aguardando": "warning", "Finalizado": "success", "Agendado": "info"}.get(status_txt, "secondary")
-        
-        # Lógica do WhatsApp
-        tel_limpo = "".join(filter(str.isdigit, str(tel))) if tel else ""
-        msg = f"Olá, {pac_nome}. Gentileza confirmar consulta com {med_nome} ({esp_nome}) hoje às {h_format} na unidade {uni_nome} ({endereco})."
+        # MENSAGEM WHATSAPP
+        tel_limpo = "".join(filter(str.isdigit, str(a[8]))) if a[8] else ""
+        msg = f"Olá, {a[1]}. Gentileza confirmar consulta com {a[2]} ({a[6]}) hoje às {h} na unidade {a[3]} ({a[9]})"
         link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
 
         linhas += f"""
-            <tr>
-                <td class="fw-bold">{h_format}</td>
-                <td>
-                    <b>{pac_nome}</b><br>
-                    <span class="badge bg-light text-dark border small">{conv_nome or 'Particular'}</span>
-                </td>
-                <td>
-                    <div class="small fw-bold">{med_nome}</div>
-                    <div class="text-muted small">{esp_nome}</div>
-                </td>
-                <td><span class="badge bg-{cor}">{status_txt}</span></td>
-                <td><small>{tel or '---'}</small></td>
-                <td>
-                    <div class="btn-group">
-                        <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success" title="Enviar WhatsApp"><i class="bi bi-whatsapp"></i></a>
-                        <a href="?acao=chegada&id={ag_id}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-warning" title="Chegada"><i class="bi bi-person-check"></i></a>
-                        <a href="?acao=finalizar&id={ag_id}&unidade={unidade_filtro or ''}" class="btn btn-sm btn-outline-secondary" title="Finalizar"><i class="bi bi-check-all"></i></a>
-                    </div>
-                </td>
-            </tr>
-        """
+        <tr>
+            <td><b>{h}</b></td>
+            <td>{a[1]}<br><small class="badge bg-light text-dark border">{a[7] or 'Particular'}</small></td>
+            <td>{a[2]}<br><small class="text-muted">{a[6]}</small></td>
+            <td><span class="badge bg-info">{a[5] or 'Agendado'}</span></td>
+            <td>{a[8] or '---'}</td>
+            <td>
+                <div class="btn-group">
+                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success"><i class="bi bi-whatsapp"></i></a>
+                    <a href="?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning"><i class="bi bi-person-check"></i></a>
+                </div>
+            </td>
+        </tr>"""
 
-    # 5. SELECT DE UNIDADES
-    opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_filtro) else ""}>{u[1]}</option>' for u in unidades])
-
+    opts = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
+    
     conteudo = f"""
-        <div class="container-fluid mt-3">
-            <h4 class="mb-3 fw-bold"><i class="bi bi-clipboard-check text-primary"></i> Painel de Recepção</h4>
-            
-            <div class="card mb-4 bg-light border-0 shadow-sm">
-                <div class="card-body">
-                    <form method="GET" class="row g-2">
-                        <div class="col-md-4">
-                            <select name="unidade" class="form-select border-primary shadow-sm">
-                                <option value="">Todas as Unidades</option>
-                                {opts_unid}
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-primary w-100 fw-bold">FILTRAR</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="card shadow border-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Hora</th>
-                                <th>Paciente / Convénio</th>
-                                <th>Médico / Especialidade</th>
-                                <th>Status</th>
-                                <th>Telefone</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>{linhas if linhas else '<tr><td colspan="6" class="text-center py-4">Nenhum agendamento encontrado.</td></tr>'}</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+        <h4><i class="bi bi-person-check"></i> Recepção</h4>
+        <form method="GET" class="row mb-3 bg-light p-2 rounded">
+            <div class="col-md-4"><select name="unidade" class="form-select"><option value="">Todas Unidades</option>{opts}</select></div>
+            <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
+        </form>
+        <table class="table table-hover border shadow-sm bg-white">
+            <thead class="table-dark">
+                <tr><th>Hora</th><th>Paciente/Convênio</th><th>Médico</th><th>Status</th><th>Telefone</th><th>Ações</th></tr>
+            </thead>
+            <tbody>{linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}</tbody>
+        </table>
     """
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 # --- TELA 15: PRONTUÁRIO ---
 @csrf_exempt
