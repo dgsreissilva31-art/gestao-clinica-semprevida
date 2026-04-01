@@ -2024,8 +2024,10 @@ def recepcao_geral(request):
     acao = request.GET.get('acao')
     agendamento_id = request.GET.get('id')
 
+    mensagem = ""
+
     # ===============================
-    # AÇÃO: CHEGADA DO PACIENTE
+    # AÇÃO: CHEGADA
     # ===============================
     if acao == "chegada" and agendamento_id:
         with connection.cursor() as cursor:
@@ -2034,6 +2036,8 @@ def recepcao_geral(request):
                 SET status = %s
                 WHERE id = %s
             """, ["Chegada", agendamento_id])
+
+        mensagem = "Paciente marcado como CHEGADA ✅"
 
     # ===============================
     # BUSCA DADOS
@@ -2083,24 +2087,33 @@ def recepcao_geral(request):
 
     for a in agenda:
         h = a[4].strftime('%H:%M') if a[4] else '--:--'
+        status = a[5]
 
         tel_limpo = "".join(filter(str.isdigit, str(a[8]))) if a[8] else ""
 
-        # WHATSAPP COM ENDEREÇO
+        # WHATSAPP
         msg = f"Olá, {a[1]}. Confirmar consulta com {a[2]} ({a[6]}) hoje às {h} na unidade {a[3]} - {a[9]}"
         link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
+
+        # BOTÃO CHEGADA INTELIGENTE
+        if status == "Chegada":
+            botao_chegada = '<button class="btn btn-sm btn-secondary" disabled>Chegado</button>'
+            badge = '<span class="badge bg-success">Chegada</span>'
+        else:
+            botao_chegada = f'<a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>'
+            badge = f'<span class="badge bg-info">{status}</span>'
 
         linhas += f"""
         <tr>
             <td><b>{h}</b></td>
             <td>{a[1]}<br><small class="badge bg-light text-dark border">{a[7]}</small></td>
             <td>{a[2]}<br><small>{a[6]}</small></td>
-            <td><span class="badge bg-info">{a[5]}</span></td>
+            <td>{badge}</td>
             <td>{a[8] or '-'}</td>
             <td>
                 <div class="btn-group">
                     <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success">Whats</a>
-                    <a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>
+                    {botao_chegada}
                 </div>
             </td>
         </tr>
@@ -2113,6 +2126,8 @@ def recepcao_geral(request):
 
     conteudo = f"""
         <h4><i class="bi bi-person-check"></i> Recepção</h4>
+
+        {"<div class='alert alert-success'>" + mensagem + "</div>" if mensagem else ""}
 
         <form method="GET" class="row mb-3 bg-light p-2 rounded">
             <div class="col-md-4">
@@ -2144,8 +2159,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
