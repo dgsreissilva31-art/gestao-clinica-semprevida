@@ -5,7 +5,7 @@ from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 
-# --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
+
 # --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
 
 def base_html(titulo, conteudo):
@@ -17,7 +17,7 @@ def base_html(titulo, conteudo):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-        <title>{titulo} - Sempre Vida</title>
+        <title>{titulo} - Grupo Sempre Vida</title>
         <style>
             :root {{ --sidebar-width: 260px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
             body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; overflow-x: hidden; }}
