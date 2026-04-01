@@ -1,10 +1,13 @@
-import datetime
+import datetime, urllib.parse
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
+
+
+
 
 
 # --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
@@ -2010,12 +2013,6 @@ def agendar_consulta(request):
 
 # --- TELA 14 FINAL: RECEPÇÃO INTEGRADA ---
 # --- TELA 14: RECEPÇÃO INTEGRADA (VERSÃO ATUALIZADA) ---
-from django.http import HttpResponse, HttpResponseRedirect
-from django.views.decorators.csrf import csrf_exempt
-from django.db import connection
-import datetime, urllib.parse
-
-
 @csrf_exempt
 def recepcao_geral(request):
     data_hoje = datetime.date.today()
