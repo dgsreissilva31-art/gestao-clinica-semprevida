@@ -1452,80 +1452,122 @@ def precos_geral(request):
 
 
 # --- 13. TELA 10: PREÇOS DE EXAMES POR CONVÊNIO ---
+# --- TELA 13: AGENDAMENTO (CORREÇÃO DE REDIRECIONAMENTO) ---
 @csrf_exempt
-def precos_exames_geral(request):
+def agendar_consulta(request):
     mensagem = ""
-    # Exclusão
-    if request.GET.get('delete_prexe'):
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM precos_exames WHERE id = %s", [request.GET.get('delete_prexe')])
-        return HttpResponseRedirect('/precos-exames/')
+    hoje = datetime.date.today()
 
-    # Cadastro
+    # Se houver parâmetro de sucesso na URL, exibe a mensagem
+    if request.GET.get('sucesso'):
+        mensagem = '<div class="alert alert-success text-center"><h5>✅ Agendamento Realizado!</h5>O paciente foi cadastrado e a vaga reservada.</div>'
+
+    unid_id = request.GET.get('unidade_id')
+    esp_id = request.GET.get('especialidade_id')
+    prof_id = request.GET.get('profissional_id')
+    data_sel = request.GET.get('data_sel') 
+    hora_sel = request.GET.get('hora_sel')
+
+    with connection.cursor() as cursor:
+        # 1. FILTROS (Unidades, Especialidades, Médicos e Datas) - Mesma lógica anterior
+        cursor.execute("SELECT DISTINCT u.id, u.nome FROM unidades u JOIN agendas_config ac ON u.id = ac.unidade_id ORDER BY u.nome")
+        unidades = cursor.fetchall()
+
+        especialidades = []
+        if unid_id:
+            cursor.execute("SELECT DISTINCT e.id, e.nome FROM especialidades e JOIN profissionais p ON e.id = p.especialidade_id JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s ORDER BY e.nome", [unid_id])
+            especialidades = cursor.fetchall()
+
+        profs_filtrados = []
+        if unid_id and esp_id:
+            cursor.execute("SELECT DISTINCT p.id, p.nome FROM profissionais p JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s AND p.especialidade_id = %s", [unid_id, esp_id])
+            profs_filtrados = cursor.fetchall()
+
+        datas_disponiveis = []
+        if prof_id and unid_id:
+            cursor.execute("SELECT DISTINCT data_especifica FROM agendas_config WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s ORDER BY data_especifica", [prof_id, unid_id, hoje])
+            datas_disponiveis = cursor.fetchall()
+
+        # 2. GERAÇÃO DE HORÁRIOS
+        horarios_list = []
+        agenda_config_id = None
+        if prof_id and data_sel and unid_id:
+            cursor.execute("SELECT horario_inicio, horario_fim, intervalo_minutos, id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s", [prof_id, data_sel, unid_id])
+            grade = cursor.fetchone()
+            if grade:
+                agenda_config_id = grade[3]
+                inicio = datetime.datetime.combine(hoje, grade[0])
+                fim = datetime.datetime.combine(hoje, grade[1])
+                intervalo = datetime.timedelta(minutes=grade[2])
+                cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [agenda_config_id, data_sel])
+                ocupados = [r[0].strftime('%H:%M') if not isinstance(r[0], str) else r[0][:5] for r in cursor.fetchall()]
+                atual = inicio
+                while atual < fim:
+                    h_str = atual.strftime('%H:%M')
+                    if h_str not in ocupados: horarios_list.append(h_str)
+                    atual += intervalo
+
+        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+        lista_convenios = cursor.fetchall()
+
+    # 3. LÓGICA DE SALVAMENTO (POST)
     if request.method == "POST":
-        conv = request.POST.get('convenio_id')
-        exame = request.POST.get('exame_id')
-        valor = request.POST.get('valor')
-        tuss = request.POST.get('tuss')
+        nome_pac = request.POST.get('nome')
+        sobrenome_pac = request.POST.get('sobrenome')
+        whatsapp = request.POST.get('whatsapp')
+        conv_id = request.POST.get('convenio_id') or None
+        
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO precos_exames (convenio_id, exame_id, valor_convenio, codigo_tuss) VALUES (%s, %s, %s, %s)",
-                    [conv, exame, valor, tuss]
-                )
-            mensagem = '<div class="alert alert-success">✅ Preço do exame salvo com sucesso!</div>'
+                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", 
+                               [f"{nome_pac} {sobrenome_pac}", whatsapp, conv_id])
+                paciente_id = cursor.fetchone()[0]
+
+                cursor.execute("INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')", 
+                               [paciente_id, agenda_config_id, data_sel, hora_sel])
+            
+            # REDIRECIONAMENTO SEGURO: Volta para a mesma página com sinal de sucesso
+            return HttpResponseRedirect(request.path + "?sucesso=1")
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao agendar: {e}</div>'
 
-    # Busca Dados
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        lista_conv = cursor.fetchall()
-        
-        cursor.execute("SELECT id, nome, grupo FROM exames ORDER BY grupo, nome")
-        lista_exames = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT px.id, c.nome, e.nome, px.valor_convenio, px.codigo_tuss, e.grupo 
-            FROM precos_exames px
-            JOIN convenios c ON px.convenio_id = c.id
-            JOIN exames e ON px.exame_id = e.id
-            ORDER BY c.nome, e.nome
-        """)
-        tabela_precos = cursor.fetchall()
-
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_conv])
-    opts_ex = "".join([f'<option value="{e[0]}">[{e[2]}] {e[1]}</option>' for e in lista_exames])
-    
-    linhas = "".join([f"""
-        <tr>
-            <td><b>{p[1]}</b></td>
-            <td>{p[2]} <br><small class='badge bg-light text-dark border'>{p[5]}</small></td>
-            <td>R$ {p[3]}</td>
-            <td>{p[4] if p[4] else '---'}</td>
-            <td><a href="/precos-exames/?delete_prexe={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a></td>
-        </tr>""" for p in tabela_precos])
+    # --- MONTAGEM HTML (MESMA ESTRUTURA) ---
+    opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid_id else ""}>{u[1]}</option>' for u in unidades])
+    opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==esp_id else ""}>{e[1]}</option>' for e in especialidades])
+    opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
+    opts_datas = "".join([f'<option value="{d[0]}" {"selected" if str(d[0])==data_sel else ""}>{d[0].strftime("%d/%m/%Y")}</option>' for d in datas_disponiveis])
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_convenios])
+    btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
 
     conteudo = f"""
-        <h4><i class="bi bi-tags"></i> Tabela de Preços: Exames</h4><hr>
-        {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-4"><label class="form-label fw-bold">Convênio</label><select name="convenio_id" class="form-select" required>{opts_conv}</select></div>
-            <div class="col-md-4"><label class="form-label fw-bold">Exame</label><select name="exame_id" class="form-select" required>{opts_ex}</select></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Valor (R$)</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
-            <div class="col-md-2"><label class="form-label fw-bold">Cód. TUSS</label><input type="text" name="tuss" class="form-control"></div>
-            <div class="col-12"><button type="submit" class="btn btn-info w-100 fw-bold text-white shadow-sm">SALVAR TABELA DE EXAMES</button></div>
-        </form>
-        <hr>
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-dark"><tr><th>Convênio</th><th>Exame / Grupo</th><th>Valor</th><th>TUSS</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if tabela_precos else '<tr><td colspan="5" class="text-center">Nenhum preço de exame configurado.</td></tr>'}</tbody>
-            </table>
+        <div class="container py-3">
+            <h4 class="text-center mb-4"><i class="bi bi-calendar2-check text-primary"></i> Agendamento</h4>
+            {mensagem}
+            <div class="card p-3 shadow-sm border-0 bg-light mb-4" {"style='display:none'" if request.GET.get('sucesso') else ""}>
+                <form method="GET" class="row g-2">
+                    <div class="col-md-3"><label class="small fw-bold">Unidade</label><select name="unidade_id" class="form-select border-primary" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_unid}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold">Especialidade</label><select name="especialidade_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not unid_id else ""}><option value="">Selecione...</option>{opts_esp}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold">Médico</label><select name="profissional_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not esp_id else ""}><option value="">Selecione...</option>{opts_prof}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold text-danger">Data</label><select name="data_sel" class="form-select border-danger" onchange="this.form.submit()" {"disabled" if not prof_id else ""}><option value="">Selecione...</option>{opts_datas}</select></div>
+                </form>
+            </div>
+            {f'<div class="text-center mb-4"><h6 class="fw-bold mb-3">Horários Disponíveis</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas}</div></div>' if data_sel and not request.GET.get('sucesso') else ""}
+            {f'''<div class="card p-4 shadow border-success"><h6 class="fw-bold text-success border-bottom pb-2 mb-3">Confirmar para {hora_sel}</h6>
+                <form method="POST" class="row g-3">
+                    <div class="col-md-6"><label class="small fw-bold">Nome</label><input type="text" name="nome" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">Sobrenome</label><input type="text" name="sobrenome" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" placeholder="(00) 00000-0000" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opts_conv}</select></div>
+                    <div class="col-12 mt-4"><button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow">FINALIZAR AGENDAMENTO</button></div>
+                </form>
+            </div>''' if hora_sel and not request.GET.get('sucesso') else ""}
+            {f'<div class="text-center mt-3"><a href="{request.path}" class="btn btn-primary">Fazer Novo Agendamento</a></div>' if request.GET.get('sucesso') else ""}
         </div>
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
     """
-    return HttpResponse(base_html("Preços Exames", conteudo))
+    return HttpResponse(base_html("Agendar", conteudo))
+
+
+
 
 
 
