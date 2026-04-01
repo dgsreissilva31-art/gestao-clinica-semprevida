@@ -1531,7 +1531,7 @@ def precos_exames_geral(request):
 
 
 # --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO FINAL) ---
+# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA - SEM ERROS) ---
 @csrf_exempt
 def agendas_config_geral(request):
     mensagem = ""
@@ -1590,9 +1590,8 @@ def agendas_config_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar grade: {e}</div>'
 
-    # 4. BUSCA DE DADOS PARA OS SELECTS
+    # 4. BUSCA DE DADOS PARA OS SELECTS E LISTAGEM
     with connection.cursor() as cursor:
-        # Profissionais com Especialidade no Nome
         cursor.execute("""
             SELECT p.id, p.nome, e.nome 
             FROM profissionais p 
@@ -1607,10 +1606,10 @@ def agendas_config_geral(request):
         cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
         esps = cursor.fetchall()
         
-        # LISTAGEM ORDENADA: UNIDADE -> DATA -> HORÁRIO
+        # BUSCA CORRIGIDA: intervalo_minutos (COM O 'O')
         cursor.execute("""
             SELECT ac.id, p.nome, u.nome, ac.data_especifica, 
-                   ac.horario_inicio, ac.horario_fim, e.nome, ac.interval_minutos
+                   ac.horario_inicio, ac.horario_fim, e.nome, ac.intervalo_minutos
             FROM agendas_config ac
             JOIN profissionais p ON ac.profissional_id = p.id
             JOIN unidades u ON ac.unidade_id = u.id
@@ -1706,6 +1705,8 @@ def agendas_config_geral(request):
         </div>
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
+
+
 
 
 
