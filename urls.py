@@ -2197,166 +2197,129 @@ def recepcao_geral(request):
 
 
 # --- TELA 15: PRONTUÁRIO ---
+# --- TELA 15: PRONTUÁRIO (VERSÃO FINAL) ---
 @csrf_exempt
 def prontuario_geral(request):
-
     agendamento_id = request.GET.get('id')
     mensagem = ""
 
-    try:
-        with connection.cursor() as cursor:
+    with connection.cursor() as cursor:
+        # 1. BUSCA DADOS DO PACIENTE E MÉDICO
+        cursor.execute("""
+            SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
+            FROM agendamentos ag
+            JOIN pacientes p ON ag.paciente_id = p.id
+            LEFT JOIN convenios c ON p.convenio_id = c.id
+            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            JOIN profissionais pr ON ac.profissional_id = pr.id
+            WHERE ag.id = %s
+        """, [agendamento_id])
+        dados = cursor.fetchone()
 
-            # 🔹 Buscar dados do agendamento
-            cursor.execute("""
-                SELECT 
-                    p.id,
-                    p.nome,
-                    p.telefone,
-                    c.nome,
-                    pr.id,
-                    pr.nome,
-                    ag.data_agendamento,
-                    ag.horario_selecionado
-                FROM agendamentos ag
-                JOIN pacientes p ON ag.paciente_id = p.id
-                LEFT JOIN convenios c ON p.convenio_id = c.id
-                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-                JOIN profissionais pr ON ac.profissional_id = pr.id
-                WHERE ag.id = %s
-            """, [agendamento_id])
+        if not dados:
+            return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
-            dados = cursor.fetchone()
+        pac_id, pac_nome, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
 
-            if not dados:
-                return HttpResponse(base_html("Erro", "Agendamento não encontrado"))
-
-            paciente_id = dados[0]
-            paciente_nome = dados[1]
-            telefone = dados[2]
-            convenio = dados[3] or "Particular"
-            profissional_id = dados[4]
-            profissional_nome = dados[5]
-            data = dados[6]
-            hora = dados[7]
-
-            # 🔹 Histórico do paciente
-            cursor.execute("""
-                SELECT data_atendimento, diagnostico, procedimentos
-                FROM prontuarios
-                WHERE paciente_id = %s
-                ORDER BY data_atendimento DESC
-            """, [paciente_id])
-
-            historico = cursor.fetchall()
-
-    except Exception as e:
-        return HttpResponse(base_html("Erro", f"<pre>{e}</pre>"))
-
-    # 🔹 SALVAR PRONTUÁRIO
+    # 2. SALVAR ATENDIMENTO (POST)
     if request.method == "POST":
-
         queixa = request.POST.get('queixa')
         anamnese = request.POST.get('anamnese')
-        diagnostico = request.POST.get('diagnostico')
-        procedimentos = request.POST.get('procedimentos')
+        diag = request.POST.get('diagnostico')
+        proc = request.POST.get('procedimentos')
         obs = request.POST.get('observacoes')
 
         try:
             with connection.cursor() as cursor:
-
+                # Insere no Prontuário
                 cursor.execute("""
-                    INSERT INTO prontuarios 
-                    (paciente_id, profissional_id, data_atendimento, hora,
-                     queixa, anamnese, diagnostico, procedimentos, observacoes)
+                    INSERT INTO prontuarios (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, [
-                    paciente_id,
-                    profissional_id,
-                    data,
-                    hora,
-                    queixa,
-                    anamnese,
-                    diagnostico,
-                    procedimentos,
-                    obs
-                ])
+                """, [pac_id, prof_id, data, hora, queixa, anamnese, diag, proc, obs])
 
-                # 🔹 finalizar atendimento automaticamente
-                cursor.execute("""
-                    UPDATE agendamentos
-                    SET status = 'Finalizado'
-                    WHERE id = %s
-                """, [agendamento_id])
-
-            mensagem = "<div class='alert alert-success'>✅ Prontuário salvo!</div>"
-
+                # Finaliza o Agendamento
+                cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
+            
+            mensagem = '<div class="alert alert-success">✅ Atendimento finalizado e salvo com sucesso!</div>'
+            return HttpResponseRedirect('/recepcao/') # Volta para a recepção após salvar
         except Exception as e:
-            mensagem = f"<div class='alert alert-danger'>❌ Erro: {e}</div>"
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 🔹 montar histórico
-    linhas_hist = ""
+    # 3. BUSCA HISTÓRICO
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT data_atendimento, diagnostico, procedimentos, queixa FROM prontuarios WHERE paciente_id = %s ORDER BY data_atendimento DESC", [pac_id])
+        historico = cursor.fetchall()
+
+    lista_hist = ""
     for h in historico:
-        linhas_hist += f"""
-            <tr>
-                <td>{h[0]}</td>
-                <td>{h[1]}</td>
-                <td>{h[2]}</td>
-            </tr>
-        """
+        lista_hist += f"""
+            <div class="card mb-2 border-start border-primary border-4 shadow-sm">
+                <div class="card-body py-2">
+                    <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
+                    <b>Queixa:</b> {h[3]}<br>
+                    <b>Diagnóstico:</b> {h[1]}
+                </div>
+            </div>"""
 
     conteudo = f"""
-        <h4><i class="bi bi-file-medical"></i> Prontuário</h4>
-        {mensagem}
+        <div class="container py-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Médico</h4>
+                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+            </div>
+            
+            {mensagem}
 
-        <div class="mb-3">
-            <b>Paciente:</b> {paciente_nome} <br>
-            <b>Telefone:</b> {telefone} <br>
-            <b>Convênio:</b> {convenio} <br><br>
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card shadow-sm p-3 mb-4">
+                        <div class="row mb-3 bg-light p-2 rounded">
+                            <div class="col-md-6"><b>Paciente:</b> {pac_nome}</div>
+                            <div class="col-md-6 text-end"><b>Convênio:</b> {conv_nome or 'Particular'}</div>
+                        </div>
 
-            <b>Profissional:</b> {profissional_nome} <br>
-            <b>Data:</b> {data} <br>
-            <b>Hora:</b> {hora}
+                        <form method="POST">
+                            <label class="fw-bold small">Queixa Principal</label>
+                            <textarea name="queixa" class="form-control mb-2" rows="2" required></textarea>
+
+                            <label class="fw-bold small">Anamnese / Evolução</label>
+                            <textarea name="anamnese" class="form-control mb-2" rows="4"></textarea>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="fw-bold small">Diagnóstico (Hipótese)</label>
+                                    <textarea name="diagnostico" class="form-control mb-2" rows="2"></textarea>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="fw-bold small">Procedimentos / Conduta</label>
+                                    <textarea name="procedimentos" class="form-control mb-2" rows="2"></textarea>
+                                </div>
+                            </div>
+
+                            <label class="fw-bold small">Observações Internas</label>
+                            <textarea name="observacoes" class="form-control mb-3" rows="1"></textarea>
+
+                            <button type="submit" class="btn btn-primary w-100 fw-bold py-2 shadow">
+                                <i class="bi bi-check-circle"></i> SALVAR E FINALIZAR ATENDIMENTO
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <h6 class="fw-bold"><i class="bi bi-clock-history"></i> Histórico do Paciente</h6>
+                    <hr>
+                    <div style="max-height: 500px; overflow-y: auto;">
+                        {lista_hist if historico else '<p class="text-muted small">Nenhum atendimento anterior.</p>'}
+                    </div>
+                </div>
+            </div>
         </div>
-
-        <form method="POST">
-
-            <label>Queixa Principal</label>
-            <textarea name="queixa" class="form-control mb-2"></textarea>
-
-            <label>Anamnese</label>
-            <textarea name="anamnese" class="form-control mb-2"></textarea>
-
-            <label>Diagnóstico</label>
-            <textarea name="diagnostico" class="form-control mb-2"></textarea>
-
-            <label>Procedimentos</label>
-            <textarea name="procedimentos" class="form-control mb-2"></textarea>
-
-            <label>Observações</label>
-            <textarea name="observacoes" class="form-control mb-3"></textarea>
-
-            <button class="btn btn-success w-100">Salvar Prontuário</button>
-        </form>
-
-        <hr>
-
-        <h5>Histórico do Paciente</h5>
-
-        <table class="table table-sm">
-            <thead class="table-dark">
-                <tr>
-                    <th>Data</th>
-                    <th>Diagnóstico</th>
-                    <th>Procedimentos</th>
-                </tr>
-            </thead>
-            <tbody>
-                {linhas_hist if linhas_hist else "<tr><td colspan='3'>Sem histórico</td></tr>"}
-            </tbody>
-        </table>
     """
-
     return HttpResponse(base_html("Prontuário", conteudo))
+
+
+
 
 
 # --_16.TELA ----
