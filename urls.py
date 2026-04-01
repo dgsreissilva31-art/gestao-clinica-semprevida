@@ -328,8 +328,6 @@ def lista_unidades(request):
 
 
 # --- 4. TELA 2: ESPECIALIDADES ---
-
-# --- 4. TELA 2: ESPECIALIDADES (ATUALIZADA COM ALTERAR) ---
 @csrf_exempt
 def especialidades_geral(request):
     mensagem = ""
@@ -433,7 +431,7 @@ def especialidades_geral(request):
 
 
 
-# --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM TELEFONE E ENDEREÇO) ---
+# --- 5. TELA 3: PROFISSIONAIS ---
 
 # --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM ALTERAR E CRM/CRO OBRIGATÓRIO) ---
 @csrf_exempt
