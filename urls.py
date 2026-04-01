@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 
 # --- 1. TEMPLATE BASE (O "MOLDE" DO SISTEMA) ---
+# --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
 
 def base_html(titulo, conteudo):
     return f"""
@@ -18,59 +19,85 @@ def base_html(titulo, conteudo):
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
         <title>{titulo} - Sempre Vida</title>
         <style>
-            :root {{ --sidebar-width: 250px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
-            body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; }}
-            .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; }}
-            .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; }}
+            :root {{ --sidebar-width: 260px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
+            body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; overflow-x: hidden; }}
+            
+            /* Topo */
+            .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            
+            /* Sidebar */
+            .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; overflow-y: auto; transition: all 0.3s; }}
             .sidebar-menu {{ list-style: none; padding: 0; margin: 0; }}
-            .sidebar-menu li a {{ padding: 12px 15px; display: block; color: #b8c7ce; text-decoration: none; border-left: 3px solid transparent; }}
+            .sidebar-menu li a {{ padding: 10px 15px; display: flex; align-items: center; color: #b8c7ce; text-decoration: none; border-left: 3px solid transparent; font-size: 14px; }}
+            .sidebar-menu li a i {{ margin-right: 10px; width: 20px; text-align: center; }}
             .sidebar-menu li a:hover {{ background: #1e282c; color: white; border-left-color: #3c8dbc; }}
-            .menu-label {{ padding: 10px 15px; font-size: 12px; color: #4b646f; background: #1a2226; text-transform: uppercase; }}
-            .main-content {{ margin-left: var(--sidebar-width); padding: 70px 20px 20px; }}
-            .card-panel {{ background: white; border-top: 3px solid #d2d6de; border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); padding: 20px; }}
-            @media (max-width: 768px) {{ .sidebar {{ left: -250px; }} .main-content {{ margin-left: 0; }} .sidebar.active {{ left: 0; }} }}
+            
+            /* Rótulos de Seção */
+            .menu-label {{ padding: 12px 15px 5px; font-size: 11px; color: #4b646f; background: #1a2226; text-transform: uppercase; font-weight: bold; }}
+            
+            /* Conteúdo Principal */
+            .main-content {{ margin-left: var(--sidebar-width); padding: 70px 20px 20px; min-height: 100vh; }}
+            .card-panel {{ background: white; border-top: 3px solid #3c8dbc; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; }}
+            
+            /* Responsividade */
+            @media (max-width: 768px) {{ 
+                .sidebar {{ left: -260px; }} 
+                .main-content {{ margin-left: 0; }} 
+                .sidebar.active {{ left: 0; }} 
+            }}
         </style>
     </head>
     <body>
         <div class="navbar-top d-flex justify-content-between">
-            <div><i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> <span class="ms-2 fw-bold text-uppercase">milestone</span></div>
-            <div><i class="bi bi-person-circle"></i> Douglas Silva</div>
+            <div>
+                <i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> 
+                <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA</span>
+            </div>
+            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva</div>
         </div>
-        <div class="sidebar">
+
+        <div class="sidebar shadow">
             <ul class="sidebar-menu">
-                <div class="menu-label">Navegação</div>
-                <li><a href="/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
-                <div class="menu-label">Administrativo</div>
+                <div class="menu-label">Principal</div>
+                <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                
+                <div class="menu-label">Operacional Hoje</div>
+                <li><a href="/recepcao/"><i class="bi bi-person-check-fill"></i> Recepção / Check-in</a></li>
+                <li><a href="/agendar/"><i class="bi bi-calendar-plus-fill"></i> Novo Agendamento</a></li>
+                <li><a href="/caixa/"><i class="bi bi-cash-stack"></i> Caixa do Dia</a></li>
+                <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda Geral</a></li>
+
+                <div class="menu-label">Cadastros</div>
+                <li><a href="/pacientes/"><i class="bi bi-people-fill"></i> Pacientes</a></li>
+                <li><a href="/profissionais/"><i class="bi bi-person-md"></i> Profissionais</a></li>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
-                <li><a href="/profissionais/"><i class="bi bi-person-badge"></i> Profissionais</a></li>
+                
+                <div class="menu-label">Serviços e Preços</div>
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
-                <li><a href="/pacientes/"><i class="bi bi-people"></i> Pacientes</a></li>
-                <li><a href="/acessos/"><i class="bi bi-shield-lock"></i> Acessos</a></li>
-                <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Convênio</a></li>
-                <li><a href="/precos-exames/"><i class="bi bi-tags"></i> Preços Exames</a></li>
-                <li><a href="/agendas-config/"><i class="bi bi-calendar-check"></i> Configurar Agendas</a></li>
-                <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda do Dia</a></li>
-                <li><a href="/agendar/"><i class="bi bi-calendar-plus"></i> Novo Agendamento</a></li>
-                <li><a href="/recepcao/"><i class="bi bi-person-check"></i> Recepção (Hoje)</a></li>
-                <li><a href="/recepcao/" class="nav-link text-white"><i class="bi bi-file-earmark-medical me-2"></i> Prontuários</a></li>
-                <li><a href="/caixa/" class="nav-link text-white"><i class="bi bi-cash-stack me-2"></i> Caixa do Dia</a></li>
-              
-               
-                
-                
-                
-                </ul>
+                <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Consultas</a></li>
+                <li><a href="/precos-exames/"><i class="bi bi-tags-fill"></i> Preços Exames</a></li>
+
+                <div class="menu-label">Configurações</div>
+                <li><a href="/agendas-config/"><i class="bi bi-gear-fill"></i> Configurar Grades</a></li>
+                <li><a href="/acessos/"><i class="bi bi-shield-lock-fill"></i> Acessos / Usuários</a></li>
+                <hr style="border-color: #4b646f; margin: 10px 0;">
+                <li><a href="/" class="text-info"><i class="bi bi-globe"></i> Visualizar Site</a></li>
+            </ul>
         </div>
+
         <div class="main-content">
-            <div class="card-panel">{conteudo}</div>
+            <div class="card-panel">
+                {conteudo}
+            </div>
         </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     </body>
     </html>
     """
-
 
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 
