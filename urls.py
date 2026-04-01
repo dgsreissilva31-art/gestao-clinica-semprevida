@@ -2013,14 +2013,25 @@ def agendar_consulta(request):
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
+
     data_hoje = datetime.date.today()
     unidade_filtro = request.GET.get('unidade')
+
+    # 🔹 AÇÃO: CHEGADA DO PACIENTE
+    if request.GET.get('acao') == 'chegada':
+        ag_id = request.GET.get('id')
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE agendamentos 
+                SET status = 'Aguardando Atendimento'
+                WHERE id = %s
+            """, [ag_id])
+        return HttpResponseRedirect('/recepcao/')
 
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        # SQL COMPLETO PARA PEGAR TELEFONE E CONVÊNIO
         sql = """
             SELECT 
                 ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
@@ -2030,58 +2041,93 @@ def recepcao_geral(request):
             JOIN agendas_config ac ON ag.agenda_config_id = ac.id
             JOIN profissionais prof ON ac.profissional_id = prof.id
             JOIN unidades u ON ac.unidade_id = u.id
-            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+            LEFT JOIN especialidades esp ON ac.especialidade_id = esp.id
             LEFT JOIN convenios conv ON pac.convenio_id = conv.id
             WHERE ag.data_agendamento = %s
         """
+
         params = [data_hoje]
+
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
-            
+
         cursor.execute(sql + " ORDER BY ag.horario_selecionado ASC", params)
         agenda = cursor.fetchall()
 
     linhas = ""
+
     for a in agenda:
-        # a[0]=id, a[1]=paciente, a[2]=medico, a[3]=unidade, a[4]=hora, a[5]=status, a[6]=esp, a[7]=conv, a[8]=tel, a[9]=end
-        h = a[4].strftime('%H:%M') if not isinstance(a[4], str) else a[4][:5]
-        
-        # MENSAGEM WHATSAPP
-        tel_limpo = "".join(filter(str.isdigit, str(a[8]))) if a[8] else ""
-        msg = f"Olá, {a[1]}. Gentileza confirmar consulta com {a[2]} ({a[6]}) hoje às {h} na unidade {a[3]} ({a[9]})"
-        link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
+        h = a[4].strftime('%H:%M') if hasattr(a[4], 'strftime') else str(a[4])[:5]
+
+        paciente = a[1] or "Paciente"
+        medico = a[2] or "Profissional"
+        especialidade = a[6] or "Consulta"
+        unidade = a[3] or ""
+        endereco = a[9] or ""
+        telefone = a[8] or ""
+
+        # 🔹 TELEFONE LIMPO
+        tel_limpo = "".join(filter(str.isdigit, telefone))
+
+        # 🔹 MENSAGEM WHATSAPP SEGURA
+        msg = f"Olá, {paciente}. Confirmar consulta com {medico} ({especialidade}) hoje às {h} na unidade {unidade} ({endereco})"
+        link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}" if tel_limpo else "#"
 
         linhas += f"""
         <tr>
             <td><b>{h}</b></td>
-            <td>{a[1]}<br><small class="badge bg-light text-dark border">{a[7] or 'Particular'}</small></td>
-            <td>{a[2]}<br><small class="text-muted">{a[6]}</small></td>
+            <td>{paciente}<br><small class="badge bg-light text-dark border">{a[7] or 'Particular'}</small></td>
+            <td>{medico}<br><small class="text-muted">{especialidade}</small></td>
             <td><span class="badge bg-info">{a[5] or 'Agendado'}</span></td>
-            <td>{a[8] or '---'}</td>
+            <td>{telefone if telefone else '---'}</td>
             <td>
                 <div class="btn-group">
-                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success"><i class="bi bi-whatsapp"></i></a>
-                    <a href="?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning"><i class="bi bi-person-check"></i></a>
+                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success {'disabled' if not tel_limpo else ''}">
+                        <i class="bi bi-whatsapp"></i>
+                    </a>
+                    <a href="?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">
+                        <i class="bi bi-person-check"></i>
+                    </a>
                 </div>
             </td>
-        </tr>"""
+        </tr>
+        """
 
-    opts = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
-    
+    opts = "".join([f'<option value="{u[0]}" {"selected" if str(u[0]) == str(unidade_filtro) else ""}>{u[1]}</option>' for u in unidades])
+
     conteudo = f"""
         <h4><i class="bi bi-person-check"></i> Recepção</h4>
+
         <form method="GET" class="row mb-3 bg-light p-2 rounded">
-            <div class="col-md-4"><select name="unidade" class="form-select"><option value="">Todas Unidades</option>{opts}</select></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
+            <div class="col-md-4">
+                <select name="unidade" class="form-select">
+                    <option value="">Todas Unidades</option>
+                    {opts}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100">Filtrar</button>
+            </div>
         </form>
+
         <table class="table table-hover border shadow-sm bg-white">
             <thead class="table-dark">
-                <tr><th>Hora</th><th>Paciente/Convênio</th><th>Médico</th><th>Status</th><th>Telefone</th><th>Ações</th></tr>
+                <tr>
+                    <th>Hora</th>
+                    <th>Paciente/Convênio</th>
+                    <th>Médico</th>
+                    <th>Status</th>
+                    <th>Telefone</th>
+                    <th>Ações</th>
+                </tr>
             </thead>
-            <tbody>{linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}</tbody>
+            <tbody>
+                {linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}
+            </tbody>
         </table>
     """
+
     return HttpResponse(base_html("Recepção", conteudo))
 
 # --- TELA 15: PRONTUÁRIO ---
