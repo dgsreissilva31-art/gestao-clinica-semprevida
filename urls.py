@@ -1853,6 +1853,7 @@ urlpatterns = [
     path('recepcao/', recepcao_geral),
     path('prontuario/', prontuario_geral),
     path('caixa/', caixa_geral),
+    path('admin-painel/', painel_controle, name='painel'),
    
    
 ]
