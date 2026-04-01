@@ -2012,7 +2012,7 @@ def agendar_consulta(request):
 
 
 # --- TELA 14 FINAL: RECEPÇÃO INTEGRADA ---
-# --- 15. TELA 14: RECEPÇÃO INTEGRADA (CORREÇÃO DO BOTÃO NOVO AGENDAMENTO) ---
+# --- 15. TELA 14: RECEPÇÃO INTEGRADA (CORRIGIDA COM ROTA /AGENDAR/) ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
@@ -2061,13 +2061,20 @@ def recepcao_geral(request):
     # 3. MONTAGEM DAS LINHAS
     linhas = ""
     for a in agenda:
-        h = a[4].strftime('%H:%M') if a[4] and not isinstance(a[4], str) else str(a[4])[:5]
+        # Formatação segura da hora
+        try:
+            h = a[4].strftime('%H:%M') if a[4] and not isinstance(a[4], str) else str(a[4])[:5]
+        except:
+            h = "--:--"
+            
         status = a[5]
         tel_limpo = "".join(filter(str.isdigit, str(a[8] or "")))
         
+        # Mensagem WhatsApp Personalizada
         msg = f"Olá, {a[1]}. Gentileza confirmar consulta com {a[2]} ({a[6]}) hoje às {h} na unidade {a[3]} - {a[9]}"
         link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
 
+        # Lógica de Botões (Chegada / Atender / Concluído)
         if status == "Chegada":
             badge = '<span class="badge bg-success shadow-sm">Aguardando Médico</span>'
             botao_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-sm btn-primary fw-bold shadow-sm">ATENDER</a>'
@@ -2087,7 +2094,7 @@ def recepcao_geral(request):
             <td><small>{a[8] or '---'}</small></td>
             <td>
                 <div class="btn-group">
-                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success"><i class="bi bi-whatsapp"></i></a>
+                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success" title="Confirmar via WhatsApp"><i class="bi bi-whatsapp"></i></a>
                     {botao_acao}
                 </div>
             </td>
@@ -2095,9 +2102,9 @@ def recepcao_geral(request):
 
     opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
 
-    # 4. CONTEÚDO FINAL
-    # CORREÇÃO AQUI: Se /agendar-consulta/ dá erro, usamos o link que funcionou na Tela 13
-    link_novo_agendamento = "/agendar-consulta/" 
+    # 4. CONTEÚDO FINAL (COM ROTA CORRIGIDA)
+    # Aqui mudamos de /agendar-consulta/ para /agendar/ conforme seu urls.py
+    link_novo_agendamento = "/agendar/" 
 
     conteudo = f"""
         <div class="container-fluid py-3">
@@ -2106,10 +2113,10 @@ def recepcao_geral(request):
             <div class="card mb-4 border-0 shadow-sm bg-light p-3">
                 <form method="GET" class="row g-2 align-items-end">
                     <div class="col-md-4">
-                        <label class="small fw-bold text-muted">Unidade</label>
-                        <select name="unidade" class="form-select border-primary">{f'<option value="">Todas</option>'}{opts_unidades}</select>
+                        <label class="small fw-bold text-muted">Filtrar Unidade</label>
+                        <select name="unidade" class="form-select border-primary shadow-sm">{f'<option value="">Todas</option>'}{opts_unidades}</select>
                     </div>
-                    <div class="col-md-2"><button class="btn btn-primary w-100 fw-bold">FILTRAR</button></div>
+                    <div class="col-md-2"><button class="btn btn-primary w-100 fw-bold shadow-sm">FILTRAR</button></div>
                 </form>
             </div>
             <div class="card shadow border-0 overflow-hidden">
@@ -2118,18 +2125,20 @@ def recepcao_geral(request):
                         <thead class="table-dark">
                             <tr><th>Hora</th><th>Paciente/Convênio</th><th>Médico</th><th>Status</th><th>Telefone</th><th>Ações</th></tr>
                         </thead>
-                        <tbody>{linhas if linhas else '<tr><td colspan="6" class="text-center py-4">Sem agendamentos.</td></tr>'}</tbody>
+                        <tbody>{linhas if linhas else '<tr><td colspan="6" class="text-center py-4">Nenhum agendamento para hoje.</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
             <div class="text-center mt-4">
-                <a href="{link_novo_agendamento}" class="btn btn-success btn-lg fw-bold shadow">
+                <a href="{link_novo_agendamento}" class="btn btn-success btn-lg fw-bold shadow-sm">
                     <i class="bi bi-plus-circle"></i> + NOVO AGENDAMENTO AVULSO
                 </a>
             </div>
         </div>
     """
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
