@@ -328,23 +328,109 @@ def lista_unidades(request):
 
 
 # --- 4. TELA 2: ESPECIALIDADES ---
+
+# --- 4. TELA 2: ESPECIALIDADES (ATUALIZADA COM ALTERAR) ---
 @csrf_exempt
 def especialidades_geral(request):
+    mensagem = ""
+    # 1. Lógica de Exclusão
     if request.GET.get('delete_esp'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM especialidades WHERE id = %s", [request.GET.get('delete_esp')])
         return HttpResponseRedirect('/especialidades/')
-    if request.method == "POST":
-        nome, tipo = request.POST.get('nome'), request.POST.get('tipo')
+
+    # 2. Lógica para Carregar Dados de Edição
+    edit_id = request.GET.get('edit_esp')
+    esp_nome = ""
+    esp_tipo = "Médica"
+    
+    if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
+            cursor.execute("SELECT nome, tipo FROM especialidades WHERE id = %s", [edit_id])
+            res = cursor.fetchone()
+            if res:
+                esp_nome, esp_tipo = res
+
+    # 3. Lógica de Salvar (Novo ou Alteração)
+    if request.method == "POST":
+        id_post = request.POST.get('id_esp')
+        nome = request.POST.get('nome')
+        tipo = request.POST.get('tipo')
+        
+        with connection.cursor() as cursor:
+            if id_post: # Se tem ID, atualiza
+                cursor.execute("UPDATE especialidades SET nome=%s, tipo=%s WHERE id=%s", [nome, tipo, id_post])
+            else: # Se não tem, insere novo
+                cursor.execute("INSERT INTO especialidades (nome, tipo) VALUES (%s, %s)", [nome, tipo])
         return HttpResponseRedirect('/especialidades/')
+
+    # 4. Busca Lista para a Tabela
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome, tipo FROM especialidades ORDER BY tipo, nome")
         dados = cursor.fetchall()
-    itens = "".join([f'<tr><td>{d[1]}</td><td>{d[2]}</td><td><a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-danger" onclick="return confirm(\'Deseja excluir?\')"><i class="bi bi-trash"></i></a></td></tr>' for d in dados])
-    conteudo = f"<h4>Especialidades</h4><hr><form method='POST' class='row g-2 mb-4'><div class='col-md-6'><input type='text' name='nome' class='form-control' placeholder='Especialidade' required></div><div class='col-md-4'><select name='tipo' class='form-select'><option value='Médica'>Médica</option><option value='Odontológica'>Odontológica</option></select></div><div class='col-md-2'><button type='submit' class='btn btn-primary w-100'>Salvar</button></div></form><table class='table table-sm table-hover'><thead><tr><th>Nome</th><th>Tipo</th><th>Ação</th></tr></thead><tbody>{itens}</tbody></table>"
+
+    # 5. Montagem das Linhas com o Botão de Alterar (Lápis)
+    itens = ""
+    for d in dados:
+        itens += f"""
+        <tr>
+            <td>{d[1]}</td>
+            <td>{d[2]}</td>
+            <td>
+                <div class="btn-group">
+                    <a href="/especialidades/?edit_esp={d[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/especialidades/?delete_esp={d[0]}" class="btn btn-sm btn-danger" 
+                       onclick="return confirm('Deseja excluir?')" title="Excluir">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+            </td>
+        </tr>"""
+
+    # 6. HTML da Página
+    conteudo = f"""
+        <div class="d-flex justify-content-between align-items-center">
+            <h4><i class="bi bi-hospital"></i> Especialidades</h4>
+            <a href="/admin-painel/" class="btn btn-sm btn-outline-secondary">Voltar ao Dashboard</a>
+        </div>
+        <hr>
+        
+        <form method='POST' class='row g-2 mb-4 bg-light p-3 rounded border'>
+            <input type="hidden" name="id_esp" value="{edit_id or ''}">
+            <div class='col-md-6'>
+                <label class="small fw-bold">Nome da Especialidade</label>
+                <input type='text' name='nome' class='form-control' value="{esp_nome}" placeholder='Ex: Cardiologia' required>
+            </div>
+            <div class='col-md-4'>
+                <label class="small fw-bold">Tipo</label>
+                <select name='tipo' class='form-select'>
+                    <option value='Médica' {"selected" if esp_tipo == "Médica" else ""}>Médica</option>
+                    <option value='Odontológica' {"selected" if esp_tipo == "Odontológica" else ""}>Odontológica</option>
+                </select>
+            </div>
+            <div class='col-md-2 d-flex align-items-end'>
+                <button type='submit' class='btn btn-primary w-100 fw-bold'>
+                    { '<i class="bi bi-check-lg"></i> Atualizar' if edit_id else '<i class="bi bi-plus-lg"></i> Salvar' }
+                </button>
+            </div>
+            { f'<div class="col-12 mt-2"><a href="/especialidades/" class="small text-danger text-decoration-none">Cancelar Edição</a></div>' if edit_id else '' }
+        </form>
+
+        <div class="table-responsive">
+            <table class='table table-sm table-hover'>
+                <thead class='table-dark'>
+                    <tr><th>Nome</th><th>Tipo</th><th>Ações</th></tr>
+                </thead>
+                <tbody>{itens if dados else '<tr><td colspan="3" class="text-center">Nenhuma cadastrada.</td></tr>'}</tbody>
+            </table>
+        </div>
+    """
     return HttpResponse(base_html("Especialidades", conteudo))
+
+
+
 
 
 # --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM TELEFONE E ENDEREÇO) ---
