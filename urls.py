@@ -2015,120 +2015,109 @@ def agendar_consulta(request):
 # --- TELA 14: RECEPÇÃO INTEGRADA (VERSÃO ATUALIZADA) ---
 @csrf_exempt
 def recepcao_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse
+    import datetime, urllib.parse
+
     data_hoje = datetime.date.today()
-
-    # =========================
-    # 🔥 AÇÃO VIA POST (CORRETO)
-    # =========================
-    if request.method == "POST":
-        ag_id = request.POST.get("id")
-
-        if ag_id:
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE agendamentos
-                    SET status = 'Aguardando Atendimento'
-                    WHERE id = %s
-                """, [ag_id])
-
-        return HttpResponseRedirect("/recepcao/")
-
     unidade_filtro = request.GET.get('unidade')
+    acao = request.GET.get('acao')
+    agendamento_id = request.GET.get('id')
 
-    # =========================
-    # UNIDADES
-    # =========================
+    # ===============================
+    # AÇÃO: CHEGADA DO PACIENTE
+    # ===============================
+    if acao == "chegada" and agendamento_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE agendamentos
+                SET status = %s
+                WHERE id = %s
+            """, ["Chegada", agendamento_id])
+
+    # ===============================
+    # BUSCA DADOS
+    # ===============================
     with connection.cursor() as cursor:
+
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-    # =========================
-    # AGENDA
-    # =========================
-    sql = """
-        SELECT 
-            ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
-            ag.status, esp.nome, conv.nome, pac.telefone
-        FROM agendamentos ag
-        JOIN pacientes pac ON ag.paciente_id = pac.id
-        JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-        JOIN profissionais prof ON ac.profissional_id = prof.id
-        JOIN unidades u ON ac.unidade_id = u.id
-        LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
-        LEFT JOIN convenios conv ON pac.convenio_id = conv.id
-        WHERE ag.data_agendamento = %s
-    """
+        sql = """
+            SELECT 
+                ag.id,
+                pac.nome,
+                COALESCE(prof.nome, '---'),
+                COALESCE(u.nome, '---'),
+                ag.horario_selecionado,
+                COALESCE(ag.status, 'Agendado'),
+                COALESCE(esp.nome, '---'),
+                COALESCE(conv.nome, 'Particular'),
+                pac.telefone,
+                COALESCE(u.endereco, '---')
+            FROM agendamentos ag
+            LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
+            LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
+            LEFT JOIN unidades u ON ac.unidade_id = u.id
+            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+            LEFT JOIN convenios conv ON pac.convenio_id = conv.id
+            WHERE ag.data_agendamento = %s
+        """
 
-    params = [data_hoje]
+        params = [data_hoje]
 
-    if unidade_filtro:
-        sql += " AND u.id = %s"
-        params.append(unidade_filtro)
+        if unidade_filtro:
+            sql += " AND u.id = %s"
+            params.append(unidade_filtro)
 
-    sql += " ORDER BY ag.horario_selecionado ASC"
+        sql += " ORDER BY ag.horario_selecionado ASC"
 
-    with connection.cursor() as cursor:
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    # =========================
-    # LINHAS (COM FORM POST)
-    # =========================
+    # ===============================
+    # MONTA TABELA
+    # ===============================
     linhas = ""
 
     for a in agenda:
-        h = a[4].strftime('%H:%M') if not isinstance(a[4], str) else a[4][:5]
+        h = a[4].strftime('%H:%M') if a[4] else '--:--'
 
         tel_limpo = "".join(filter(str.isdigit, str(a[8]))) if a[8] else ""
-        msg = f"Olá, {a[1]}. Confirma consulta com {a[2]} às {h}"
+
+        # WHATSAPP COM ENDEREÇO
+        msg = f"Olá, {a[1]}. Confirmar consulta com {a[2]} ({a[6]}) hoje às {h} na unidade {a[3]} - {a[9]}"
         link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
 
         linhas += f"""
         <tr>
             <td><b>{h}</b></td>
-            <td>{a[1]}<br><small>{a[7] or 'Particular'}</small></td>
+            <td>{a[1]}<br><small class="badge bg-light text-dark border">{a[7]}</small></td>
             <td>{a[2]}<br><small>{a[6]}</small></td>
-            <td><span class="badge bg-info">{a[5] or 'Agendado'}</span></td>
+            <td><span class="badge bg-info">{a[5]}</span></td>
             <td>{a[8] or '-'}</td>
             <td>
-
-                <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success">
-                    Whats
-                </a>
-
-                <form method="POST" style="display:inline;">
-                    <input type="hidden" name="id" value="{a[0]}">
-                    <button type="submit" class="btn btn-sm btn-warning">
-                        Chegada
-                    </button>
-                </form>
-
+                <div class="btn-group">
+                    <a href="{link_zap}" target="_blank" class="btn btn-sm btn-success">Whats</a>
+                    <a href="/recepcao/?acao=chegada&id={a[0]}" class="btn btn-sm btn-warning">Chegada</a>
+                </div>
             </td>
         </tr>
         """
 
-    # =========================
-    # SELECT
-    # =========================
-    opts = ""
-    for u in unidades:
-        selected = "selected" if str(u[0]) == str(unidade_filtro) else ""
-        opts += f'<option value="{u[0]}" {selected}>{u[1]}</option>'
+    opts = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades
+    ])
 
-    # =========================
-    # HTML FINAL
-    # =========================
     conteudo = f"""
-    <div class="container-fluid">
+        <h4><i class="bi bi-person-check"></i> Recepção</h4>
 
-        <h4 class="mb-3">
-            <i class="bi bi-person-check"></i> Recepção
-        </h4>
-
-        <form method="GET" class="row mb-3">
+        <form method="GET" class="row mb-3 bg-light p-2 rounded">
             <div class="col-md-4">
                 <select name="unidade" class="form-select">
-                    <option value="">Todas Unidades</option>
+                    <option value="">Todas</option>
                     {opts}
                 </select>
             </div>
@@ -2137,28 +2126,25 @@ def recepcao_geral(request):
             </div>
         </form>
 
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover bg-white">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Hora</th>
-                        <th>Paciente</th>
-                        <th>Médico</th>
-                        <th>Status</th>
-                        <th>Telefone</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}
-                </tbody>
-            </table>
-        </div>
-
-    </div>
+        <table class="table table-hover border shadow-sm bg-white">
+            <thead class="table-dark">
+                <tr>
+                    <th>Hora</th>
+                    <th>Paciente</th>
+                    <th>Médico</th>
+                    <th>Status</th>
+                    <th>Telefone</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {linhas if linhas else '<tr><td colspan="6" class="text-center">Sem pacientes</td></tr>'}
+            </tbody>
+        </table>
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
 
 
 
