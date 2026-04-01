@@ -2271,153 +2271,177 @@ def prontuario_geral(request):
 
 
 # --_16.TELA ----
-
-
+# --- 16. TELA: CAIXA GERAL (MÉDICO, EXAMES, DENTISTA E DIVERSOS) ---
 @csrf_exempt
 def caixa_geral(request):
+    import datetime
     mensagem = ""
+    hoje = datetime.date.today()
 
     try:
-        # --- REGISTRAR PAGAMENTO ---
-        if request.method == "POST":
-            atendimento_id = request.POST.get('atendimento_id')
-            valor = request.POST.get('valor')
-            forma = request.POST.get('forma_pagamento')
+        with connection.cursor() as cursor:
+            # --- 1. LÓGICA DE LANÇAMENTO (POST) ---
+            if request.method == "POST":
+                tipo_lancamento = request.POST.get('tipo_lancamento') # consulta, exame, dentista, diversos
+                paciente = request.POST.get('paciente_nome')
+                valor = request.POST.get('valor') or 0
+                forma = request.POST.get('forma_pagamento')
+                descricao = request.POST.get('descricao', '')
+                profissional = request.POST.get('profissional', '')
+                status_caixa = request.POST.get('status_caixa', 'Entrada') # Para diversos: Entrada ou Saída
 
-            with connection.cursor() as cursor:
-                # Busca dados do atendimento
+                # Ajuste de sinal para Saída em Diversos
+                valor_final = float(valor)
+                if status_caixa == 'Saída':
+                    valor_final = -abs(valor_final)
+
                 cursor.execute("""
-                    SELECT p.nome, pr.nome, e.nome
-                    FROM agenda_diaria ag
-                    LEFT JOIN pacientes p ON ag.paciente_id = p.id
-                    LEFT JOIN profissionais pr ON ag.profissional_id = pr.id
-                    LEFT JOIN especialidades e ON ag.especialidade_id = e.id
-                    WHERE ag.id = %s
-                """, [atendimento_id])
+                    INSERT INTO caixa 
+                    (paciente_nome, profissional_nome, especialidade, valor, forma_pagamento, descricao, data_pagamento, categoria)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, [paciente, profissional, descricao, valor_final, forma, tipo_lancamento, hoje, tipo_lancamento])
 
-                dados = cursor.fetchone()
+                # Se for consulta (agendamento), finaliza o status na agenda
+                agendamento_id = request.POST.get('agendamento_id')
+                if agendamento_id:
+                    cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
 
-                if dados:
-                    paciente = dados[0] or "Não informado"
-                    profissional = dados[1] or "Não informado"
-                    especialidade = dados[2] or "Não informado"
+                mensagem = f'<div class="alert alert-success">✅ Lançamento de {tipo_lancamento} registrado!</div>'
 
-                    # Salva no caixa
-                    cursor.execute("""
-                        INSERT INTO caixa 
-                        (atendimento_id, paciente_nome, profissional_nome, especialidade, valor, forma_pagamento, status, data_atendimento)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE)
-                    """, [
-                        atendimento_id,
-                        paciente,
-                        profissional,
-                        especialidade,
-                        valor,
-                        forma,
-                        'Pago'
-                    ])
-
-                    # Atualiza status da agenda
-                    cursor.execute("""
-                        UPDATE agenda_diaria 
-                        SET status = 'Finalizado'
-                        WHERE id = %s
-                    """, [atendimento_id])
-
-                    mensagem = '<div class="alert alert-success">✅ Pagamento registrado com sucesso!</div>'
-                else:
-                    mensagem = '<div class="alert alert-danger">❌ Atendimento não encontrado!</div>'
-
-        # --- BUSCAR ATENDIMENTOS PARA COBRANÇA ---
-        with connection.cursor() as cursor:
+            # --- 2. BUSCA PACIENTES "CHEGADOS" (Médico/Dentista que aguardam pagamento) ---
             cursor.execute("""
-                SELECT ag.id, p.nome, pr.nome, e.nome, ag.horario, ag.status
-                FROM agenda_diaria ag
-                LEFT JOIN pacientes p ON ag.paciente_id = p.id
-                LEFT JOIN profissionais pr ON ag.profissional_id = pr.id
-                LEFT JOIN especialidades e ON ag.especialidade_id = e.id
-                WHERE ag.status IN ('Aguardando Atendimento', 'Atendido')
-                ORDER BY ag.horario
-            """)
-            atendimentos = cursor.fetchall()
+                SELECT ag.id, pac.nome, prof.nome, esp.nome, ag.horario_selecionado, conv.nome
+                FROM agendamentos ag
+                JOIN pacientes pac ON ag.paciente_id = pac.id
+                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                JOIN profissionais prof ON ac.profissional_id = prof.id
+                LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+                LEFT JOIN convenios conv ON pac.convenio_id = conv.id
+                WHERE ag.data_agendamento = %s AND ag.status = 'Chegada'
+                ORDER BY ag.horario_selecionado ASC
+            """, [hoje])
+            pacientes_espera = cursor.fetchall()
 
-        # --- BUSCAR MOVIMENTO DO CAIXA ---
-        with connection.cursor() as cursor:
+            # --- 3. BUSCA MOVIMENTAÇÃO DO DIA PARA O EXTRATO ---
             cursor.execute("""
-                SELECT paciente_nome, profissional_nome, especialidade, valor, forma_pagamento, data_pagamento
-                FROM caixa
-                ORDER BY data_pagamento DESC
-                LIMIT 20
-            """)
-            caixa_lista = cursor.fetchall()
+                SELECT paciente_nome, profissional_nome, valor, forma_pagamento, categoria, descricao
+                FROM caixa WHERE data_pagamento = %s ORDER BY id DESC
+            """, [hoje])
+            movimentacao = cursor.fetchall()
 
     except Exception as e:
         return HttpResponse(base_html("Erro Caixa", f"<h4>Erro:</h4><pre>{e}</pre>"))
 
-    # --- TABELA ATENDIMENTOS ---
-    linhas_atend = ""
-    for a in atendimentos:
-        linhas_atend += f"""
+    # --- MONTAGEM DA TABELA DE COBRANÇA (CONSULTAS) ---
+    linhas_espera = ""
+    for p in pacientes_espera:
+        linhas_espera += f"""
         <tr>
-            <td>{a[1] or '---'}</td>
-            <td>{a[2] or '---'}</td>
-            <td>{a[3] or '---'}</td>
-            <td>{a[4]}</td>
+            <td><b>{p[4]}</b></td>
+            <td>{p[1]}<br><small class='badge bg-light text-dark border'>{p[5] or 'Particular'}</small></td>
+            <td>{p[2]}<br><small class='text-muted'>{p[3]}</small></td>
             <td>
-                <form method="POST" class="d-flex gap-1">
-                    <input type="hidden" name="atendimento_id" value="{a[0]}">
-                    <input type="number" step="0.01" name="valor" class="form-control form-control-sm" placeholder="Valor" required>
-                    <select name="forma_pagamento" class="form-select form-select-sm">
-                        <option>Dinheiro</option>
-                        <option>Cartão</option>
-                        <option>Pix</option>
-                        <option>Convênio</option>
-                    </select>
-                    <button class="btn btn-success btn-sm">Cobrar</button>
+                <form method="POST" class="row g-1">
+                    <input type="hidden" name="agendamento_id" value="{p[0]}">
+                    <input type="hidden" name="paciente_nome" value="{p[1]}">
+                    <input type="hidden" name="profissional" value="{p[2]}">
+                    <input type="hidden" name="descricao" value="{p[3]}">
+                    <input type="hidden" name="tipo_lancamento" value="Consulta">
+                    <div class="col-4"><input type="number" step="0.01" name="valor" class="form-control form-control-sm" placeholder="R$" required></div>
+                    <div class="col-5">
+                        <select name="forma_pagamento" class="form-select form-select-sm">
+                            <option>Dinheiro</option><option>Pix</option><option>Cartão Crédito</option><option>Cartão Débito</option>
+                        </select>
+                    </div>
+                    <div class="col-3"><button class="btn btn-success btn-sm w-100">Pagar</button></div>
                 </form>
             </td>
-        </tr>
-        """
+        </tr>"""
 
-    # --- TABELA CAIXA ---
+    # --- TABELA DE MOVIMENTAÇÃO (EXTRATO) ---
     linhas_caixa = ""
-    for c in caixa_lista:
+    total_dia = 0
+    for m in movimentacao:
+        total_dia += float(m[2])
+        cor_valor = "text-danger" if m[2] < 0 else "text-success"
         linhas_caixa += f"""
         <tr>
-            <td>{c[0]}</td>
-            <td>{c[1]}</td>
-            <td>{c[2]}</td>
-            <td>R$ {c[3]}</td>
-            <td>{c[4]}</td>
-            <td>{c[5]}</td>
-        </tr>
-        """
+            <td><small class="badge bg-secondary">{m[4]}</small></td>
+            <td>{m[0] if m[0] else '---'}</td>
+            <td>{m[1] if m[1] else m[5]}</td>
+            <td class="fw-bold {cor_valor}">R$ {m[2]:.2f}</td>
+            <td>{m[3]}</td>
+        </tr>"""
 
     conteudo = f"""
-        <h4><i class="bi bi-cash-coin"></i> Caixa</h4>
-        {mensagem}
+        <div class="container-fluid py-3">
+            <h4 class="fw-bold mb-4"><i class="bi bi-cash-stack text-success"></i> Fluxo de Caixa</h4>
+            {mensagem}
 
-        <h5 class="mt-4">💰 Atendimentos para Cobrança</h5>
-        <table class="table table-hover">
-            <thead class="table-dark">
-                <tr><th>Paciente</th><th>Profissional</th><th>Especialidade</th><th>Horário</th><th>Ação</th></tr>
-            </thead>
-            <tbody>
-                {linhas_atend if linhas_atend else '<tr><td colspan="5" class="text-center">Nenhum atendimento</td></tr>'}
-            </tbody>
-        </table>
+            <div class="row">
+                <div class="col-md-8">
+                    
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white fw-bold"><i class="bi bi-person-check"></i> Consultas em Espera (Pagar)</div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light small">
+                                    <tr><th>Hora</th><th>Paciente</th><th>Profissional</th><th>Ação de Cobrança</th></tr>
+                                </thead>
+                                <tbody>{linhas_espera if pacientes_espera else '<tr><td colspan="4" class="text-center py-3 text-muted">Nenhum paciente aguardando pagamento.</td></tr>'}</tbody>
+                            </table>
+                        </div>
+                    </div>
 
-        <h5 class="mt-4">📊 Últimos Recebimentos</h5>
-        <table class="table table-striped">
-            <thead class="table-dark">
-                <tr><th>Paciente</th><th>Profissional</th><th>Especialidade</th><th>Valor</th><th>Forma</th><th>Data</th></tr>
-            </thead>
-            <tbody>
-                {linhas_caixa if linhas_caixa else '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
-            </tbody>
-        </table>
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-dark text-white fw-bold"><i class="bi bi-plus-circle"></i> Lançamentos Avulsos</div>
+                        <div class="card-body">
+                            <form method="POST" class="row g-3">
+                                <div class="col-md-3">
+                                    <label class="small fw-bold">Tipo</label>
+                                    <select name="tipo_lancamento" class="form-select border-primary" required>
+                                        <option value="Exame">Exame</option>
+                                        <option value="Dentista">Dentista (Avulso)</option>
+                                        <option value="Diversos">Diversos (Entrada/Saída)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-5"><label class="small fw-bold">Paciente / Descrição</label><input type="text" name="paciente_nome" class="form-control" placeholder="Nome ou Descrição da despesa" required></div>
+                                <div class="col-md-2"><label class="small fw-bold">Valor R$</label><input type="number" step="0.01" name="valor" class="form-control" required></div>
+                                <div class="col-md-2">
+                                    <label class="small fw-bold">Operação</label>
+                                    <select name="status_caixa" class="form-select bg-light">
+                                        <option value="Entrada">Entrada</option>
+                                        <option value="Saída">Saída</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4"><label class="small fw-bold">Profissional (Opcional)</label><input type="text" name="profissional" class="form-control"></div>
+                                <div class="col-md-4"><label class="small fw-bold">Forma Pagto</label>
+                                    <select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Boleto</option></select>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100 fw-bold">REGISTRAR NO CAIXA</button></div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-header bg-success text-white fw-bold text-center">Resumo de Hoje</div>
+                        <div class="card-body">
+                            <h2 class="text-center fw-bold text-success">R$ {total_dia:.2f}</h2>
+                            <hr>
+                            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                <table class="table table-sm small">
+                                    <thead><tr><th>Tipo</th><th>Ref.</th><th>Valor</th></tr></thead>
+                                    <tbody>{linhas_caixa if movimentacao else '<tr><td colspan="3" class="text-center">Sem movimento</td></tr>'}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     """
-
     return HttpResponse(base_html("Caixa", conteudo))
 
 
