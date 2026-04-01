@@ -432,7 +432,7 @@ def especialidades_geral(request):
 
 
 # --- 5. TELA 3: PROFISSIONAIS ---
-# --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM UNIDADES E ALTERAR) ---
+# --- 5. TELA 3: PROFISSIONAIS (ATUALIZADA COM UNIDADE ÚNICA EM SELECT) ---
 @csrf_exempt
 def profissionais_geral(request):
     mensagem = ""
@@ -445,18 +445,17 @@ def profissionais_geral(request):
 
     # 2. Carregar Dados para Edição
     edit_id = request.GET.get('edit_prof')
-    p_dados = ["", "CRM", "", "", "", ""] # nome, tipo, num, esp_id, tel, end
-    unidades_vinculadas = [] # Lista de IDs das unidades onde o prof atende
+    # Ordem: nome, tipo, num, esp_id, tel, end, unidade_id
+    p_dados = ["", "CRM", "", "", "", "", ""] 
     
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco FROM profissionais WHERE id = %s", [edit_id])
+            cursor.execute("""
+                SELECT nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco, unidade_id 
+                FROM profissionais WHERE id = %s
+            """, [edit_id])
             res = cursor.fetchone()
             if res: p_dados = res
-            
-            # Busca as unidades que esse profissional já tem marcadas
-            cursor.execute("SELECT unidade_id FROM profissional_unidades WHERE profissional_id = %s", [edit_id])
-            unidades_vinculadas = [row[0] for row in cursor.fetchall()]
 
     # 3. Lógica de Salvar (Novo ou Alteração)
     if request.method == "POST":
@@ -467,27 +466,22 @@ def profissionais_geral(request):
         esp = request.POST.get('especialidade_id')
         tel = request.POST.get('telefone')
         end = request.POST.get('endereco')
-        unidades_selecionadas = request.POST.getlist('unidades_check') # IDs das unidades marcadas
+        unid = request.POST.get('unidade_id') or None
         
         try:
             with connection.cursor() as cursor:
                 if id_post: # UPDATE
                     cursor.execute("""
-                        UPDATE profissionais SET nome=%s, conselho_tipo=%s, conselho_numero=%s, especialidade_id=%s, telefone=%s, endereco=%s
+                        UPDATE profissionais 
+                        SET nome=%s, conselho_tipo=%s, conselho_numero=%s, especialidade_id=%s, 
+                            telefone=%s, endereco=%s, unidade_id=%s
                         WHERE id=%s
-                    """, [nome, tipo, num, esp, tel, end, id_post])
-                    prof_id_final = id_post
+                    """, [nome, tipo, num, esp, tel, end, unid, id_post])
                 else: # INSERT
                     cursor.execute("""
-                        INSERT INTO profissionais (nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco) 
-                        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-                    """, [nome, tipo, num, esp, tel, end])
-                    prof_id_final = cursor.fetchone()[0]
-                
-                # Atualizar Unidades Vinculadas (Limpa e insere as novas)
-                cursor.execute("DELETE FROM profissional_unidades WHERE profissional_id = %s", [prof_id_final])
-                for u_id in unidades_selecionadas:
-                    cursor.execute("INSERT INTO profissional_unidades (profissional_id, unidade_id) VALUES (%s, %s)", [prof_id_final, u_id])
+                        INSERT INTO profissionais (nome, conselho_tipo, conselho_numero, especialidade_id, telefone, endereco, unidade_id) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, [nome, tipo, num, esp, tel, end, unid])
                     
             return HttpResponseRedirect('/profissionais/')
         except Exception as e:
@@ -499,29 +493,20 @@ def profissionais_geral(request):
         especialidades = cursor.fetchall()
         
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        todas_unidades = cursor.fetchall()
+        unidades = cursor.fetchall()
         
-        # Busca Profissionais com suas unidades (concatenadas para a tabela)
         cursor.execute("""
-            SELECT p.id, p.nome, p.conselho_tipo, p.conselho_numero, e.nome, p.telefone,
-            (SELECT string_agg(u.nome, ', ') FROM profissional_unidades pu JOIN unidades u ON pu.unidade_id = u.id WHERE pu.profissional_id = p.id) as unidades
+            SELECT p.id, p.nome, p.conselho_tipo, p.conselho_numero, e.nome, p.telefone, u.nome 
             FROM profissionais p 
             LEFT JOIN especialidades e ON p.especialidade_id = e.id 
+            LEFT JOIN unidades u ON p.unidade_id = u.id
             ORDER BY p.nome
         """)
         profs = cursor.fetchall()
 
-    # 5. Montagem do HTML dos Selects e Checkboxes
+    # 5. Montagem das Opções (Selects)
     opcoes_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==str(p_dados[3]) else ""}>{e[1]}</option>' for e in especialidades])
-    
-    check_unidades = ""
-    for u in todas_unidades:
-        marcado = "checked" if u[0] in unidades_vinculadas else ""
-        check_unidades += f"""
-        <div class="form-check form-check-inline bg-white border rounded p-2 me-2 mb-2 shadow-sm" style="min-width: 150px;">
-            <input class="form-check-input ms-1" type="checkbox" name="unidades_check" value="{u[0]}" id="unid_{u[0]}" {marcado}>
-            <label class="form-check-label small fw-bold ms-2" for="unid_{u[0]}">{u[1]}</label>
-        </div>"""
+    opcoes_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(p_dados[6]) else ""}>{u[1]}</option>' for u in unidades])
     
     linhas = ""
     for p in profs:
@@ -534,7 +519,7 @@ def profissionais_geral(request):
             <td>
                 <div class="btn-group">
                     <a href="/profissionais/?edit_prof={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
-                    <a href="/profissionais/?delete_prof={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir profissional?')"><i class="bi bi-trash"></i></a>
+                    <a href="/profissionais/?delete_prof={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
                 </div>
             </td>
         </tr>"""
@@ -555,17 +540,15 @@ def profissionais_geral(request):
             <div class='col-md-2'><label class='small fw-bold text-danger'>Número</label><input type='text' name='numero' class='form-control' value="{p_dados[2]}" required></div>
             <div class='col-md-3'><label class='small fw-bold'>Especialidade</label><select name='especialidade_id' class='form-select'>{opcoes_esp}</select></div>
             
-            <div class='col-md-4'><label class='small fw-bold'>Telefone de Contato</label><input type='text' name='telefone' class='form-control' value="{p_dados[4]}" placeholder='(00) 00000-0000'></div>
-            <div class='col-md-8'><label class='small fw-bold'>Endereço do Consultório</label><input type='text' name='endereco' class='form-control' value="{p_dados[5]}"></div>
-            
-            <div class="col-12 mt-3">
-                <label class="fw-bold small border-bottom w-100 mb-2">Unidades de Atendimento (Marque onde atende):</label>
-                <div class="p-2 border rounded bg-white" style="max-height: 150px; overflow-y: auto;">{check_unidades}</div>
+            <div class='col-md-4'><label class='small fw-bold text-primary'>Unidade Principal</label>
+                <select name='unidade_id' class='form-select border-primary'><option value="">-- Selecione a Unidade --</option>{opcoes_unid}</select>
             </div>
+            <div class='col-md-3'><label class='small fw-bold'>Telefone</label><input type='text' name='telefone' class='form-control' value="{p_dados[4]}" placeholder='(00) 00000-0000'></div>
+            <div class='col-md-5'><label class='small fw-bold'>Endereço</label><input type='text' name='endereco' class='form-control' value="{p_dados[5]}"></div>
             
             <div class='col-12 mt-3'>
                 <button type='submit' class='btn btn-primary w-100 fw-bold py-2 shadow'>
-                    { '<i class="bi bi-check-lg"></i> ATUALIZAR PROFISSIONAL' if edit_id else '<i class="bi bi-plus-lg"></i> SALVAR PROFISSIONAL' }
+                    { 'ATUALIZAR PROFISSIONAL' if edit_id else 'SALVAR PROFISSIONAL' }
                 </button>
             </div>
             { f'<div class="col-12 text-center mt-1"><a href="/profissionais/" class="text-muted small">Cancelar Edição</a></div>' if edit_id else '' }
@@ -574,14 +557,13 @@ def profissionais_geral(request):
         <div class='table-responsive bg-white rounded shadow-sm p-2 border'>
             <table class='table table-hover align-middle mb-0'>
                 <thead class='table-dark'>
-                    <tr><th>Nome / Unidades</th><th>Registro</th><th>Especialidade</th><th>Telefone</th><th>Ação</th></tr>
+                    <tr><th>Nome / Unidade</th><th>Registro</th><th>Especialidade</th><th>Telefone</th><th>Ação</th></tr>
                 </thead>
                 <tbody>{linhas if profs else '<tr><td colspan="5" class="text-center py-4">Nenhum profissional cadastrado.</td></tr>'}</tbody>
             </table>
         </div>
     """
     return HttpResponse(base_html("Profissionais", conteudo))
-
 
 
 
