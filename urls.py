@@ -1531,7 +1531,7 @@ def precos_exames_geral(request):
 
 
 # --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA - SEM ERROS) ---
+# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (SIMPLIFICADA) ---
 @csrf_exempt
 def agendas_config_geral(request):
     mensagem = ""
@@ -1545,27 +1545,26 @@ def agendas_config_geral(request):
 
     # 2. CARREGAR DADOS PARA EDIÇÃO (ALTERAR)
     edit_id = request.GET.get('edit_agenda')
-    # Ordem: prof_id, unid_id, esp_id, data, inicio, fim, intervalo
-    a_dados = ["", "", "", "", "", "", 20] 
+    # Ordem: prof_id, unid_id, data, inicio, fim, intervalo
+    a_dados = ["", "", "", "", "", 20] 
     
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT profissional_id, unidade_id, especialidade_id, data_especifica, 
+                SELECT profissional_id, unidade_id, data_especifica, 
                        horario_inicio, horario_fim, intervalo_minutos 
                 FROM agendas_config WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
             if res:
                 a_dados = list(res)
-                if a_dados[3]: a_dados[3] = a_dados[3].strftime('%Y-%m-%d')
+                if a_dados[2]: a_dados[2] = a_dados[2].strftime('%Y-%m-%d')
 
     # 3. SALVAR OU ATUALIZAR (POST)
     if request.method == "POST":
         id_post = request.POST.get('id_agenda')
         prof = request.POST.get('profissional_id')
         unid = request.POST.get('unidade_id')
-        esp = request.POST.get('especialidade_id')
         data_ag = request.POST.get('data_ag') or None
         inicio = request.POST.get('inicio')
         fim = request.POST.get('fim')
@@ -1576,22 +1575,23 @@ def agendas_config_geral(request):
                 if id_post: # UPDATE
                     cursor.execute("""
                         UPDATE agendas_config SET 
-                        profissional_id=%s, unidade_id=%s, especialidade_id=%s, 
+                        profissional_id=%s, unidade_id=%s, 
                         data_especifica=%s, horario_inicio=%s, horario_fim=%s, intervalo_minutos=%s
                         WHERE id=%s
-                    """, [prof, unid, esp, data_ag, inicio, fim, inter, id_post])
+                    """, [prof, unid, data_ag, inicio, fim, inter, id_post])
                 else: # INSERT
                     cursor.execute("""
                         INSERT INTO agendas_config 
-                        (profissional_id, unidade_id, especialidade_id, data_especifica, horario_inicio, horario_fim, intervalo_minutos) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, [prof, unid, esp, data_ag, inicio, fim, inter])
+                        (profissional_id, unidade_id, data_especifica, horario_inicio, horario_fim, intervalo_minutos) 
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, [prof, unid, data_ag, inicio, fim, inter])
             return HttpResponseRedirect('/agendas-config/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar grade: {e}</div>'
 
     # 4. BUSCA DE DADOS PARA OS SELECTS E LISTAGEM
     with connection.cursor() as cursor:
+        # Puxa o médico e sua especialidade padrão
         cursor.execute("""
             SELECT p.id, p.nome, e.nome 
             FROM profissionais p 
@@ -1603,34 +1603,30 @@ def agendas_config_geral(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unids = cursor.fetchall()
         
-        cursor.execute("SELECT id, nome FROM especialidades ORDER BY nome")
-        esps = cursor.fetchall()
-        
-        # BUSCA CORRIGIDA: intervalo_minutos (COM O 'O')
+        # LISTAGEM ORDENADA: UNIDADE -> DATA -> HORÁRIO
         cursor.execute("""
             SELECT ac.id, p.nome, u.nome, ac.data_especifica, 
                    ac.horario_inicio, ac.horario_fim, e.nome, ac.intervalo_minutos
             FROM agendas_config ac
             JOIN profissionais p ON ac.profissional_id = p.id
             JOIN unidades u ON ac.unidade_id = u.id
-            JOIN especialidades e ON ac.especialidade_id = e.id
+            LEFT JOIN especialidades e ON p.especialidade_id = e.id
             ORDER BY u.nome ASC, ac.data_especifica ASC, ac.horario_inicio ASC
         """)
         lista_agendas = cursor.fetchall()
 
     # 5. MONTAGEM DO HTML
-    opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==str(a_dados[0]) else ""}>{p[1]} ({p[2]})</option>' for p in profs])
+    opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==str(a_dados[0]) else ""}>{p[1]} ({p[2] if p[2] else "Geral"})</option>' for p in profs])
     opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(a_dados[1]) else ""}>{u[1]}</option>' for u in unids])
-    opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==str(a_dados[2]) else ""}>{e[1]}</option>' for e in esps])
     
     linhas = ""
     for a in lista_agendas:
         data_f = a[3].strftime('%d/%m/%Y') if a[3] else "Fixa"
         linhas += f"""
             <tr>
-                <td><span class="badge bg-primary">{a[2]}</span></td>
-                <td>{data_f} <br> <small class="fw-bold">{a[4]} às {a[5]}</small></td>
-                <td><b>{a[1]}</b><br><small class="text-muted">{a[6]}</small></td>
+                <td><span class="badge bg-primary shadow-sm">{a[2]}</span></td>
+                <td>{data_f} <br> <small class="fw-bold text-secondary">{a[4]} às {a[5]}</small></td>
+                <td><b>{a[1]}</b><br><small class="badge bg-light text-dark border">{a[6] if a[6] else "---"}</small></td>
                 <td>{a[7]} min</td>
                 <td>
                     <div class="btn-group shadow-sm">
@@ -1652,37 +1648,35 @@ def agendas_config_geral(request):
             <input type="hidden" name="id_agenda" value="{edit_id or ''}">
             <div class="row g-3">
                 <div class="col-md-5">
-                    <label class="fw-bold small">Profissional (Especialidade)</label>
+                    <label class="fw-bold small text-dark">Profissional (Especialidade)</label>
                     <select name="profissional_id" class="form-select border-success" required>
                         <option value="">-- Selecione o Médico --</option>
                         {opts_prof}
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label class="fw-bold small">Unidade</label>
-                    <select name="unidade_id" class="form-select" required>{opts_unid}</select>
+                    <label class="fw-bold small text-dark">Unidade</label>
+                    <select name="unidade_id" class="form-select" required>
+                        <option value="">-- Escolha a Unidade --</option>
+                        {opts_unid}
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="fw-bold small">Especialidade da Agenda</label>
-                    <select name="especialidade_id" class="form-select" required>{opts_esp}</select>
-                </div>
-
                 <div class="col-md-3">
                     <label class="fw-bold small text-danger">Data da Agenda</label>
-                    <input type="date" name="data_ag" class="form-control" value="{a_dados[3]}" required>
+                    <input type="date" name="data_ag" class="form-control" value="{a_dados[2]}" required>
                 </div>
 
-                <div class="col-md-3">
-                    <label class="fw-bold small">Hora de Início</label>
-                    <input type="time" name="inicio" class="form-control" value="{a_dados[4]}" required>
+                <div class="col-md-4">
+                    <label class="fw-bold small text-dark">Hora de Início</label>
+                    <input type="time" name="inicio" class="form-control" value="{a_dados[3]}" required>
                 </div>
-                <div class="col-md-3">
-                    <label class="fw-bold small">Hora Final</label>
-                    <input type="time" name="fim" class="form-control" value="{a_dados[5]}" required>
+                <div class="col-md-4">
+                    <label class="fw-bold small text-dark">Hora Final</label>
+                    <input type="time" name="fim" class="form-control" value="{a_dados[4]}" required>
                 </div>
-                <div class="col-md-3">
-                    <label class="fw-bold small">Intervalo (Minutos)</label>
-                    <input type="number" name="intervalo" class="form-control" value="{a_dados[6]}" required>
+                <div class="col-md-4">
+                    <label class="fw-bold small text-dark">Intervalo (Minutos)</label>
+                    <input type="number" name="intervalo" class="form-control" value="{a_dados[5]}" required>
                 </div>
 
                 <div class="col-12 mt-3">
@@ -1694,7 +1688,7 @@ def agendas_config_geral(request):
             </div>
         </form>
 
-        <h5 class="fw-bold"><i class="bi bi-list-ul"></i> Grades Configuradas</h5>
+        <h5 class="fw-bold"><i class="bi bi-list-ul text-primary"></i> Grades Configuradas</h5>
         <div class="table-responsive bg-white rounded shadow-sm border">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-dark">
@@ -1705,7 +1699,6 @@ def agendas_config_geral(request):
         </div>
     """
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
-
 
 
 
