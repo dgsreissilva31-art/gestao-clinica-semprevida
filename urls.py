@@ -1743,6 +1743,7 @@ def agendas_config_geral(request):
 
 
 # --- 14. TELA 12: AGENDA GERAL CONSULTAS ---
+# --- 14. TELA 12: AGENDA GERAL (MENSAGEM WHATSAPP SEM QUEM AGENDOU) ---
 @csrf_exempt
 def agenda_diaria(request):
     import datetime, urllib.parse
@@ -1756,8 +1757,7 @@ def agenda_diaria(request):
             cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
             unidades = cursor.fetchall()
 
-            # 2. BUSCAR AGENDAMENTOS EXISTENTES (OCUPADOS)
-            # Pegamos todos os detalhes do paciente e da unidade aqui
+            # 2. BUSCAR AGENDAMENTOS EXISTENTES
             sql_ocupados = """
                 SELECT 
                     ag.horario_selecionado, 
@@ -1786,7 +1786,6 @@ def agenda_diaria(request):
             cursor.execute(sql_ocupados, params_oc)
             agendados = cursor.fetchall()
 
-            # Organiza os ocupados em um dicionário para busca rápida {hora: dados}
             dict_ocupados = {}
             for a in agendados:
                 hora_key = a[0].strftime('%H:%M') if not isinstance(a[0], str) else a[0][:5]
@@ -1795,7 +1794,7 @@ def agenda_diaria(request):
                     "tel": a[4], "unidade": a[5], "endereco": a[6], "especialidade": a[7], "id": a[8]
                 }
 
-            # 3. BUSCAR GRADES ABERTAS (LIVRES)
+            # 3. BUSCAR GRADES ABERTAS
             sql_grades = """
                 SELECT ac.id, prof.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos, u.nome
                 FROM agendas_config ac
@@ -1823,21 +1822,24 @@ def agenda_diaria(request):
             while atual.time() < fim.time():
                 h_str = atual.strftime('%H:%M')
                 
-                # Se o horário estiver no dicionário de ocupados, pega os dados do paciente
                 if h_str in dict_ocupados:
                     dados = dict_ocupados[h_str]
-                    # Link WhatsApp
+                    
+                    # --- LÓGICA DE LIMPEZA PARA O WHATSAPP ---
+                    nome_completo = dados['paciente']
+                    nome_limpo = nome_completo.split("(Ag:")[0].strip() if "(Ag:" in nome_completo else nome_completo
+                    
                     tel_limpo = "".join(filter(str.isdigit, str(dados['tel'] or "")))
-                    msg = f"Olá, {dados['paciente']}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
+                    # Mensagem usando o nome_limpo
+                    msg = f"Olá, {nome_limpo}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
                     link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
                     
                     lista_final.append({
-                        "hora": h_str, "medico": dados['medico'], "paciente": dados['paciente'],
+                        "hora": h_str, "medico": dados['medico'], "paciente": nome_completo,
                         "convenio": dados['convenio'], "tel": dados['tel'], "status": "Ocupado",
                         "zap": link_zap, "id": dados['id']
                     })
                 else:
-                    # Horário Livre
                     lista_final.append({
                         "hora": h_str, "medico": nome_p, "paciente": "---",
                         "convenio": "---", "tel": "---", "status": "Livre",
@@ -1845,18 +1847,15 @@ def agenda_diaria(request):
                     })
                 atual += datetime.timedelta(minutes=inter)
 
-        # 5. MONTAR LINHAS DA TABELA (Ordenado por Hora)
+        # 5. MONTAR LINHAS DA TABELA
         linhas = ""
         for item in sorted(lista_final, key=lambda x: x['hora']):
-            cor_status = "text-danger" if item['status'] == "Ocupado" else "text-success"
-            
-            # Botão WhatsApp e Checkbox apenas se estiver ocupado
             col_acoes = ""
             if item['status'] == "Ocupado":
                 col_acoes = f"""
                     <div class="d-flex align-items-center gap-2">
                         <input type="checkbox" class="form-check-input border-primary" title="Confirmado?">
-                        <a href="{item['zap']}" target="_blank" class="btn btn-sm btn-success py-0">
+                        <a href="{item['zap']}" target="_blank" class="btn btn-sm btn-success py-0 shadow-sm">
                             <i class="bi bi-whatsapp"></i> Zap
                         </a>
                     </div>
@@ -1880,32 +1879,32 @@ def agenda_diaria(request):
             <div class="container-fluid py-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h4 class="fw-bold"><i class="bi bi-calendar3"></i> Agenda Geral</h4>
-                    <span class="badge bg-dark">Total de Horários: {len(lista_final)}</span>
+                    <span class="badge bg-dark p-2">Total de Horários: {len(lista_final)}</span>
                 </div>
 
                 <form method="GET" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
                     <div class="col-md-3">
                         <label class="small fw-bold">Unidade</label>
-                        <select name="unidade" class="form-select border-primary">
+                        <select name="unidade" class="form-select border-primary shadow-sm">
                             <option value="">Todas as Unidades</option>
                             {opts_unidades}
                         </select>
                     </div>
                     <div class="col-md-3">
                         <label class="small fw-bold">Data</label>
-                        <input type="date" name="data" value="{data_sel}" class="form-control border-primary">
+                        <input type="date" name="data" value="{data_sel}" class="form-control border-primary shadow-sm">
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary w-100 fw-bold">BUSCAR</button>
+                        <button class="btn btn-primary w-100 fw-bold shadow-sm">BUSCAR</button>
                     </div>
                 </form>
 
-                <div class="table-responsive card shadow-sm">
+                <div class="table-responsive card shadow border-0 overflow-hidden">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-dark">
                             <tr>
                                 <th>Hora</th>
-                                <th>Médico</th>
+                                <th>Profissional</th>
                                 <th>Paciente</th>
                                 <th>Convênio</th>
                                 <th>Telefone</th>
@@ -1923,8 +1922,6 @@ def agenda_diaria(request):
 
     except Exception as e:
         return HttpResponse(base_html("Erro", f"<h4>Erro na Agenda:</h4><pre>{e}</pre>"))
-
-
 
 
 
