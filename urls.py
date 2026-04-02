@@ -2093,6 +2093,8 @@ def agendar_consulta(request):
 
 
 
+
+
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
 @csrf_exempt
 def recepcao_geral(request):
