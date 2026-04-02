@@ -1936,7 +1936,7 @@ def agenda_diaria(request):
 
 
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
-# --- TELA 13: NOVO AGENDAMENTO (OCULTA OPÇÕES SEM GRADE) ---
+# --- TELA 13: NOVO AGENDAMENTO (COM AVISO DE AGENDA NÃO ABERTA) ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -1964,43 +1964,39 @@ def agendar_consulta(request):
     hora_sel = request.GET.get('hora_sel')
 
     with connection.cursor() as cursor:
-        # 🔹 1. UNIDADES: Só as que possuem pelo menos uma grade FUTURA aberta
+        # 🔹 1. UNIDADES
         cursor.execute("""
-            SELECT DISTINCT u.id, u.nome 
-            FROM unidades u 
+            SELECT DISTINCT u.id, u.nome FROM unidades u 
             JOIN agendas_config ac ON u.id = ac.unidade_id 
-            WHERE ac.data_especifica >= %s
-            ORDER BY u.nome
+            WHERE ac.data_especifica >= %s ORDER BY u.nome
         """, [hoje])
         unidades = cursor.fetchall()
 
-        # 🔹 2. ESPECIALIDADES: Só as que possuem grade FUTURA na Unidade selecionada
+        # 🔹 2. ESPECIALIDADES
         especialidades = []
         if unid_id:
             cursor.execute("""
-                SELECT DISTINCT e.id, e.nome 
-                FROM especialidades e 
+                SELECT DISTINCT e.id, e.nome FROM especialidades e 
                 JOIN profissionais p ON e.id = p.especialidade_id 
                 JOIN agendas_config ac ON p.id = ac.profissional_id 
-                WHERE ac.unidade_id = %s AND ac.data_especifica >= %s
-                ORDER BY e.nome
+                WHERE ac.unidade_id = %s AND ac.data_especifica >= %s ORDER BY e.nome
             """, [unid_id, hoje])
             especialidades = cursor.fetchall()
 
-        # 🔹 3. PROFISSIONAIS: Só os que possuem grade FUTURA na Unidade + Especialidade
+        # 🔹 3. PROFISSIONAIS
         profs_filtrados = []
         if unid_id and esp_id:
             cursor.execute("""
-                SELECT DISTINCT p.id, p.nome 
-                FROM profissionais p 
+                SELECT DISTINCT p.id, p.nome FROM profissionais p 
                 JOIN agendas_config ac ON p.id = ac.profissional_id 
-                WHERE ac.unidade_id = %s AND p.especialidade_id = %s AND ac.data_especifica >= %s
-                ORDER BY p.nome
+                WHERE ac.unidade_id = %s AND p.especialidade_id = %s AND ac.data_especifica >= %s ORDER BY p.nome
             """, [unid_id, esp_id, hoje])
             profs_filtrados = cursor.fetchall()
 
-        # 🔹 4. DATAS: Só datas com horários LIVRES (Trava de vagas)
+        # 🔹 4. DATAS (Com Verificação de Agenda Aberta)
         datas_disponiveis = []
+        agenda_existe = True # Flag para verificar se há grade
+        
         if prof_id and unid_id:
             cursor.execute("""
                 SELECT data_especifica, horario_inicio, horario_fim, intervalo_minutos, id 
@@ -2010,6 +2006,9 @@ def agendar_consulta(request):
             """, [prof_id, unid_id, hoje])
             grades_candidatas = cursor.fetchall()
             
+            if not grades_candidatas:
+                agenda_existe = False
+            
             for gf in grades_candidatas:
                 d_grade, h_ini, h_fim, inter, g_id = gf
                 total_minutos = (datetime.datetime.combine(hoje, h_fim) - datetime.datetime.combine(hoje, h_ini)).seconds / 60
@@ -2018,13 +2017,15 @@ def agendar_consulta(request):
                 cursor.execute("SELECT count(*) FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [g_id, d_grade])
                 total_ocupados = cursor.fetchone()[0]
                 
-                # SÓ ADICIONA A DATA SE TIVER VAGA
                 if total_ocupados < slots_possiveis:
                     datas_disponiveis.append(d_grade)
+            
+            # Se havia grade mas todas as datas estão lotadas
+            if grades_candidatas and not datas_disponiveis:
+                agenda_existe = False
 
-        # 🔹 5. GERAÇÃO DE HORÁRIOS LIVRES
+        # 🔹 5. HORÁRIOS
         horarios_list = []
-        agenda_config_id = None
         if prof_id and data_sel and unid_id:
             cursor.execute("""
                 SELECT horario_inicio, horario_fim, intervalo_minutos, id 
@@ -2034,27 +2035,24 @@ def agendar_consulta(request):
             grade = cursor.fetchone()
             
             if grade:
-                agenda_config_id = grade[3]
                 d_obj = datetime.datetime.strptime(data_sel, '%Y-%m-%d').date()
                 inicio = datetime.datetime.combine(d_obj, grade[0])
                 fim = datetime.datetime.combine(d_obj, grade[1])
                 intervalo = datetime.timedelta(minutes=grade[2] or 20)
                 
-                cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [agenda_config_id, data_sel])
-                res_ocupados = cursor.fetchall()
-                ocupados = [r[0].strftime('%H:%M') if not isinstance(r[0], str) else r[0][:5] for r in res_ocupados]
+                cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [grade[3], data_sel])
+                ocupados = [r[0].strftime('%H:%M') if not isinstance(r[0], str) else r[0][:5] for r in cursor.fetchall()]
                 
                 atual = inicio
                 while atual < fim:
                     h_str = atual.strftime('%H:%M')
-                    if h_str not in ocupados:
-                        horarios_list.append(h_str)
+                    if h_str not in ocupados: horarios_list.append(h_str)
                     atual += intervalo
 
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         lista_convenios = cursor.fetchall()
 
-    # --- Lógica de Salvamento (POST) ---
+    # --- POST / SALVAMENTO ---
     if request.method == "POST":
         try:
             with connection.cursor() as cursor:
@@ -2077,7 +2075,15 @@ def agendar_consulta(request):
     opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==esp_id else ""}>{e[1]}</option>' for e in especialidades])
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
     opts_datas = "".join([f'<option value="{d}" {"selected" if str(d)==data_sel else ""}>{d.strftime("%d/%m/%Y")}</option>' for d in datas_disponiveis])
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in lista_convenios])
+    
+    # Lógica do label de Data
+    label_data = "4. Data Disponível"
+    placeholder_data = "Selecione..."
+    estilo_data = "border-danger"
+    if prof_id and not agenda_existe:
+        placeholder_data = "⚠️ Agenda não aberta"
+        estilo_data = "border-warning bg-warning-subtle"
+
     btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
 
     conteudo = f"""
@@ -2089,24 +2095,24 @@ def agendar_consulta(request):
                     <div class="col-md-3"><label class="small fw-bold">1. Unidade</label><select name="unidade_id" class="form-select border-primary" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_unid}</select></div>
                     <div class="col-md-3"><label class="small fw-bold">2. Especialidade</label><select name="especialidade_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not unid_id else ""}><option value="">Selecione...</option>{opts_esp}</select></div>
                     <div class="col-md-3"><label class="small fw-bold">3. Profissional</label><select name="profissional_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not esp_id else ""}><option value="">Selecione...</option>{opts_prof}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold text-danger">4. Data Disponível</label><select name="data_sel" class="form-select border-danger" onchange="this.form.submit()" {"disabled" if not prof_id else ""}><option value="">Selecione...</option>{opts_datas}</select></div>
+                    <div class="col-md-3"><label class="small fw-bold text-danger">{label_data}</label><select name="data_sel" class="form-select {estilo_data}" onchange="this.form.submit()" {"disabled" if not datas_disponiveis else ""}><option value="">{placeholder_data}</option>{opts_datas}</select></div>
                 </form>
             </div>
-            
-            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários Livres em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "<span class=\'text-danger small\'>⚠️ Sem horários livres.</span>"}</div></div>' if data_sel else ""}
-            
+            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "Sem horários livres."}</div></div>' if data_sel else ""}
             {f'''<div class="card p-4 shadow border-success">
                 <form method="POST" class="row g-3">
-                    <div class="col-md-6"><label class="small fw-bold">Nome do Paciente</label><input type="text" name="nome" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold text-primary">Quem Está Agendando?</label><input type="text" name="quem_agenda" class="form-control" placeholder="Mãe, Esposa, Próprio..." required></div>
+                    <div class="col-md-6"><label class="small fw-bold">Paciente</label><input type="text" name="nome" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">Quem Agendando?</label><input type="text" name="quem_agenda" class="form-control" required></div>
                     <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opts_conv}</select></div>
-                    <div class="col-12 mt-4"><button type="submit" class="btn btn-success w-100 fw-bold shadow">CONFIRMAR PARA {hora_sel}</button></div>
+                    <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select">{"".join([f"<option value='{c[0]}'>{c[1]}</option>" for c in lista_convenios])}</select></div>
+                    <div class="col-12 mt-3"><button type="submit" class="btn btn-success w-100 fw-bold shadow">CONFIRMAR PARA {hora_sel}</button></div>
                 </form>
             </div>''' if hora_sel else ""}
         </div>
     """
     return HttpResponse(base_html("Agendar", conteudo))
+
+
 
 
 
