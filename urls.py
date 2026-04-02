@@ -1743,7 +1743,7 @@ def agendas_config_geral(request):
 
 
 # --- 14. TELA 12: AGENDA GERAL CONSULTAS ---
-# --- 14. TELA 12: AGENDA GERAL (MENSAGEM WHATSAPP SEM QUEM AGENDOU) ---
+# --- 14. TELA 12: AGENDA GERAL (COM COLUNA QUEM AGENDOU) ---
 @csrf_exempt
 def agenda_diaria(request):
     import datetime, urllib.parse
@@ -1753,7 +1753,7 @@ def agenda_diaria(request):
     
     try:
         with connection.cursor() as cursor:
-            # 1. BUSCAR UNIDADES PARA O FILTRO
+            # 1. BUSCAR UNIDADES
             cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
             unidades = cursor.fetchall()
 
@@ -1794,7 +1794,7 @@ def agenda_diaria(request):
                     "tel": a[4], "unidade": a[5], "endereco": a[6], "especialidade": a[7], "id": a[8]
                 }
 
-            # 3. BUSCAR GRADES ABERTAS
+            # 3. BUSCAR GRADES
             sql_grades = """
                 SELECT ac.id, prof.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos, u.nome
                 FROM agendas_config ac
@@ -1810,7 +1810,7 @@ def agenda_diaria(request):
             cursor.execute(sql_grades, params_gr)
             grades = cursor.fetchall()
 
-        # 4. GERAR LISTA MESTRA DE HORÁRIOS
+        # 4. GERAR LISTA DE HORÁRIOS
         lista_final = []
         for g in grades:
             id_conf, nome_p, h_ini, h_fim, inter, u_nome = g
@@ -1825,29 +1825,34 @@ def agenda_diaria(request):
                 if h_str in dict_ocupados:
                     dados = dict_ocupados[h_str]
                     
-                    # --- LÓGICA DE LIMPEZA PARA O WHATSAPP ---
-                    nome_completo = dados['paciente']
-                    nome_limpo = nome_completo.split("(Ag:")[0].strip() if "(Ag:" in nome_completo else nome_completo
-                    
+                    # --- LÓGICA DE SEPARAÇÃO DE NOMES ---
+                    nome_completo = dados['paciente'] or "---"
+                    nome_paciente = nome_completo
+                    quem_agendou = "Próprio"
+
+                    if "(Ag: " in nome_completo:
+                        partes = nome_completo.split("(Ag: ")
+                        nome_paciente = partes[0].strip()
+                        quem_agendou = partes[1].replace(")", "").strip()
+
                     tel_limpo = "".join(filter(str.isdigit, str(dados['tel'] or "")))
-                    # Mensagem usando o nome_limpo
-                    msg = f"Olá, {nome_limpo}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
+                    # Mensagem Zap sempre com o nome limpo
+                    msg = f"Olá, {nome_paciente}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
                     link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
                     
                     lista_final.append({
-                        "hora": h_str, "medico": dados['medico'], "paciente": nome_completo,
-                        "convenio": dados['convenio'], "tel": dados['tel'], "status": "Ocupado",
-                        "zap": link_zap, "id": dados['id']
+                        "hora": h_str, "medico": dados['medico'], "paciente": nome_paciente,
+                        "quem_agendou": quem_agendou, "convenio": dados['convenio'], 
+                        "tel": dados['tel'], "status": "Ocupado", "zap": link_zap
                     })
                 else:
                     lista_final.append({
                         "hora": h_str, "medico": nome_p, "paciente": "---",
-                        "convenio": "---", "tel": "---", "status": "Livre",
-                        "zap": None, "id": None
+                        "quem_agendou": "---", "convenio": "---", "tel": "---", "status": "Livre", "zap": None
                     })
                 atual += datetime.timedelta(minutes=inter)
 
-        # 5. MONTAR LINHAS DA TABELA
+        # 5. MONTAR TABELA
         linhas = ""
         for item in sorted(lista_final, key=lambda x: x['hora']):
             col_acoes = ""
@@ -1868,6 +1873,7 @@ def agenda_diaria(request):
                     <td><b class="text-primary">{item['hora']}</b></td>
                     <td>{item['medico']}</td>
                     <td>{item['paciente']}</td>
+                    <td class="text-muted small">{item['quem_agendou']}</td>
                     <td><small>{item['convenio']}</small></td>
                     <td><small>{item['tel']}</small></td>
                     <td>{col_acoes}</td>
@@ -1878,16 +1884,15 @@ def agenda_diaria(request):
         conteudo = f"""
             <div class="container-fluid py-3">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h4 class="fw-bold"><i class="bi bi-calendar3"></i> Agenda Geral</h4>
-                    <span class="badge bg-dark p-2">Total de Horários: {len(lista_final)}</span>
+                    <h4 class="fw-bold"><i class="bi bi-calendar3 text-primary"></i> Agenda Geral</h4>
+                    <span class="badge bg-dark">Horários: {len(lista_final)}</span>
                 </div>
 
                 <form method="GET" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
                     <div class="col-md-3">
                         <label class="small fw-bold">Unidade</label>
                         <select name="unidade" class="form-select border-primary shadow-sm">
-                            <option value="">Todas as Unidades</option>
-                            {opts_unidades}
+                            <option value="">Todas as Unidades</option>{opts_unidades}
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -1906,13 +1911,14 @@ def agenda_diaria(request):
                                 <th>Hora</th>
                                 <th>Profissional</th>
                                 <th>Paciente</th>
+                                <th>Quem Agendou</th>
                                 <th>Convênio</th>
                                 <th>Telefone</th>
                                 <th>Ações / Confirmação</th>
                             </tr>
                         </thead>
                         <tbody style="font-size: 0.9rem;">
-                            {linhas if linhas else '<tr><td colspan="6" class="text-center py-5">Nenhuma grade aberta para esta data/unidade.</td></tr>'}
+                            {linhas if linhas else '<tr><td colspan="7" class="text-center py-5">Nenhuma grade aberta.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -1921,7 +1927,8 @@ def agenda_diaria(request):
         return HttpResponse(base_html("Agenda Geral", conteudo))
 
     except Exception as e:
-        return HttpResponse(base_html("Erro", f"<h4>Erro na Agenda:</h4><pre>{e}</pre>"))
+        return HttpResponse(base_html("Erro", f"<h4>Erro:</h4><pre>{e}</pre>"))
+
 
 
 
