@@ -1932,7 +1932,7 @@ def agenda_diaria(request):
 
 
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
-# --- TELA 13: NOVO AGENDAMENTO (CAMPO ATUALIZADO PARA PROFISSIONAL) ---
+# --- TELA 13: NOVO AGENDAMENTO (OCULTA OPÇÕES SEM GRADE) ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -1960,29 +1960,53 @@ def agendar_consulta(request):
     hora_sel = request.GET.get('hora_sel')
 
     with connection.cursor() as cursor:
-        # 🔹 UNIDADES
-        cursor.execute("SELECT DISTINCT u.id, u.nome FROM unidades u JOIN agendas_config ac ON u.id = ac.unidade_id ORDER BY u.nome")
+        # 🔹 1. UNIDADES: Só as que possuem pelo menos uma grade FUTURA aberta
+        cursor.execute("""
+            SELECT DISTINCT u.id, u.nome 
+            FROM unidades u 
+            JOIN agendas_config ac ON u.id = ac.unidade_id 
+            WHERE ac.data_especifica >= %s
+            ORDER BY u.nome
+        """, [hoje])
         unidades = cursor.fetchall()
 
-        # 🔹 ESPECIALIDADES
+        # 🔹 2. ESPECIALIDADES: Só as que possuem grade FUTURA na Unidade selecionada
         especialidades = []
         if unid_id:
-            cursor.execute("SELECT DISTINCT e.id, e.nome FROM especialidades e JOIN profissionais p ON e.id = p.especialidade_id JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s ORDER BY e.nome", [unid_id])
+            cursor.execute("""
+                SELECT DISTINCT e.id, e.nome 
+                FROM especialidades e 
+                JOIN profissionais p ON e.id = p.especialidade_id 
+                JOIN agendas_config ac ON p.id = ac.profissional_id 
+                WHERE ac.unidade_id = %s AND ac.data_especifica >= %s
+                ORDER BY e.nome
+            """, [unid_id, hoje])
             especialidades = cursor.fetchall()
 
-        # 🔹 PROFISSIONAIS
+        # 🔹 3. PROFISSIONAIS: Só os que possuem grade FUTURA na Unidade + Especialidade
         profs_filtrados = []
         if unid_id and esp_id:
-            cursor.execute("SELECT DISTINCT p.id, p.nome FROM profissionais p JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s AND p.especialidade_id = %s ORDER BY p.nome", [unid_id, esp_id])
+            cursor.execute("""
+                SELECT DISTINCT p.id, p.nome 
+                FROM profissionais p 
+                JOIN agendas_config ac ON p.id = ac.profissional_id 
+                WHERE ac.unidade_id = %s AND p.especialidade_id = %s AND ac.data_especifica >= %s
+                ORDER BY p.nome
+            """, [unid_id, esp_id, hoje])
             profs_filtrados = cursor.fetchall()
 
-        # 🔹 DATAS (Com Trava de Vagas)
+        # 🔹 4. DATAS: Só datas com horários LIVRES (Trava de vagas)
         datas_disponiveis = []
         if prof_id and unid_id:
-            cursor.execute("SELECT data_especifica, horario_inicio, horario_fim, intervalo_minutos, id FROM agendas_config WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s ORDER BY data_especifica", [prof_id, unid_id, hoje])
-            grades_futuras = cursor.fetchall()
+            cursor.execute("""
+                SELECT data_especifica, horario_inicio, horario_fim, intervalo_minutos, id 
+                FROM agendas_config 
+                WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s 
+                ORDER BY data_especifica
+            """, [prof_id, unid_id, hoje])
+            grades_candidatas = cursor.fetchall()
             
-            for gf in grades_futuras:
+            for gf in grades_candidatas:
                 d_grade, h_ini, h_fim, inter, g_id = gf
                 total_minutos = (datetime.datetime.combine(hoje, h_fim) - datetime.datetime.combine(hoje, h_ini)).seconds / 60
                 slots_possiveis = total_minutos / (inter or 20)
@@ -1990,14 +2014,19 @@ def agendar_consulta(request):
                 cursor.execute("SELECT count(*) FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [g_id, d_grade])
                 total_ocupados = cursor.fetchone()[0]
                 
+                # SÓ ADICIONA A DATA SE TIVER VAGA
                 if total_ocupados < slots_possiveis:
                     datas_disponiveis.append(d_grade)
 
-        # 🔹 HORÁRIOS LIVRES
+        # 🔹 5. GERAÇÃO DE HORÁRIOS LIVRES
         horarios_list = []
         agenda_config_id = None
         if prof_id and data_sel and unid_id:
-            cursor.execute("SELECT horario_inicio, horario_fim, intervalo_minutos, id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s", [prof_id, data_sel, unid_id])
+            cursor.execute("""
+                SELECT horario_inicio, horario_fim, intervalo_minutos, id 
+                FROM agendas_config 
+                WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s
+            """, [prof_id, data_sel, unid_id])
             grade = cursor.fetchone()
             
             if grade:
@@ -2021,29 +2050,25 @@ def agendar_consulta(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         lista_convenios = cursor.fetchall()
 
-    # 2. SALVAMENTO (POST)
+    # --- Lógica de Salvamento (POST) ---
     if request.method == "POST":
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s", [prof_id, data_sel, unid_id])
                 id_conf_save = cursor.fetchone()[0]
-                
                 nome_pac = request.POST.get('nome')
                 quem_agenda = request.POST.get('quem_agenda')
                 whatsapp = request.POST.get('whatsapp')
                 conv_id = request.POST.get('convenio_id') or None
-                
                 nome_completo = f"{nome_pac} (Ag: {quem_agenda})" if quem_agenda else nome_pac
                 cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [nome_completo, whatsapp, conv_id])
                 paciente_id = cursor.fetchone()[0]
-                
                 cursor.execute("INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')", [paciente_id, id_conf_save, data_sel, hora_sel])
-            
             return HttpResponseRedirect(f"{request.path}?sucesso=1")
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- HTML (Label alterada para Profissional) ---
+    # --- HTML DINÂMICO ---
     opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid_id else ""}>{u[1]}</option>' for u in unidades])
     opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==esp_id else ""}>{e[1]}</option>' for e in especialidades])
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
@@ -2053,7 +2078,7 @@ def agendar_consulta(request):
 
     conteudo = f"""
         <div class="container py-3">
-            <h4 class="text-center mb-4 fw-bold">Novo Agendamento</h4>
+            <h4 class="text-center mb-4 fw-bold"><i class="bi bi-calendar-check text-primary"></i> Novo Agendamento</h4>
             {mensagem}
             <div class="card p-3 shadow-sm border-0 bg-light mb-4">
                 <form method="GET" class="row g-2">
@@ -2064,7 +2089,7 @@ def agendar_consulta(request):
                 </form>
             </div>
             
-            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários Livres em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "<span class=\'text-danger small\'>⚠️ Sem horários livres para esta data.</span>"}</div></div>' if data_sel else ""}
+            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários Livres em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "<span class=\'text-danger small\'>⚠️ Sem horários livres.</span>"}</div></div>' if data_sel else ""}
             
             {f'''<div class="card p-4 shadow border-success">
                 <form method="POST" class="row g-3">
