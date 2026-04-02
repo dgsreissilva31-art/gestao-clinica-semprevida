@@ -2258,13 +2258,14 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
+# --- 17. TELA 15: PRONTUÁRIO (NOME LIMPO) ---
 @csrf_exempt
 def prontuario_geral(request):
     agendamento_id = request.GET.get('id')
     mensagem = ""
 
     with connection.cursor() as cursor:
-        # 1. BUSCA DADOS DO PACIENTE E MÉDICO
+        # 1. BUSCA DADOS DO PACIENTE E PROFISSIONAL
         cursor.execute("""
             SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
             FROM agendamentos ag
@@ -2279,7 +2280,10 @@ def prontuario_geral(request):
         if not dados:
             return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
-        pac_id, pac_nome, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
+        pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
+        
+        # --- LÓGICA PARA LIMPAR O NOME (RETIRAR QUEM AGENDOU) ---
+        pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
 
     # 2. SALVAR ATENDIMENTO (POST)
     if request.method == "POST":
@@ -2291,17 +2295,14 @@ def prontuario_geral(request):
 
         try:
             with connection.cursor() as cursor:
-                # Insere no Prontuário
                 cursor.execute("""
                     INSERT INTO prontuarios (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, [pac_id, prof_id, data, hora, queixa, anamnese, diag, proc, obs])
 
-                # Finaliza o Agendamento
                 cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
             
-            mensagem = '<div class="alert alert-success">✅ Atendimento finalizado e salvo com sucesso!</div>'
-            return HttpResponseRedirect('/recepcao/') # Volta para a recepção após salvar
+            return HttpResponseRedirect('/recepcao/') 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
@@ -2324,61 +2325,66 @@ def prontuario_geral(request):
     conteudo = f"""
         <div class="container py-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Médico</h4>
-                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
+                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair sem salvar</a>
             </div>
             
             {mensagem}
 
             <div class="row">
                 <div class="col-md-8">
-                    <div class="card shadow-sm p-3 mb-4">
-                        <div class="row mb-3 bg-light p-2 rounded">
-                            <div class="col-md-6"><b>Paciente:</b> {pac_nome}</div>
-                            <div class="col-md-6 text-end"><b>Convênio:</b> {conv_nome or 'Particular'}</div>
+                    <div class="card shadow-sm p-3 mb-4 border-0">
+                        <div class="row mb-3 bg-light p-3 rounded shadow-sm">
+                            <div class="col-md-6"><span class="text-muted small">Paciente:</span><br><b class="fs-5">{pac_nome}</b></div>
+                            <div class="col-md-6 text-end"><span class="text-muted small">Convênio:</span><br><b>{conv_nome or 'Particular'}</b></div>
                         </div>
 
                         <form method="POST">
-                            <label class="fw-bold small">Queixa Principal</label>
-                            <textarea name="queixa" class="form-control mb-2" rows="2" required></textarea>
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Queixa Principal</label>
+                                <textarea name="queixa" class="form-control" rows="2" required></textarea>
+                            </div>
 
-                            <label class="fw-bold small">Anamnese / Evolução</label>
-                            <textarea name="anamnese" class="form-control mb-2" rows="4"></textarea>
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Anamnese / Evolução Clínica</label>
+                                <textarea name="anamnese" class="form-control" rows="5"></textarea>
+                            </div>
 
-                            <div class="row">
+                            <div class="row mb-3">
                                 <div class="col-md-6">
-                                    <label class="fw-bold small">Diagnóstico (Hipótese)</label>
-                                    <textarea name="diagnostico" class="form-control mb-2" rows="2"></textarea>
+                                    <label class="fw-bold small text-secondary">Diagnóstico / Hipótese</label>
+                                    <textarea name="diagnostico" class="form-control" rows="2"></textarea>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="fw-bold small">Procedimentos / Conduta</label>
-                                    <textarea name="procedimentos" class="form-control mb-2" rows="2"></textarea>
+                                    <label class="fw-bold small text-secondary">Procedimentos / Conduta</label>
+                                    <textarea name="procedimentos" class="form-control" rows="2"></textarea>
                                 </div>
                             </div>
 
-                            <label class="fw-bold small">Observações Internas</label>
-                            <textarea name="observacoes" class="form-control mb-3" rows="1"></textarea>
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Observações Internas</label>
+                                <textarea name="observacoes" class="form-control" rows="1"></textarea>
+                            </div>
 
-                            <button type="submit" class="btn btn-primary w-100 fw-bold py-2 shadow">
-                                <i class="bi bi-check-circle"></i> SALVAR E FINALIZAR ATENDIMENTO
+                            <button type="submit" class="btn btn-primary w-100 fw-bold py-3 shadow-sm text-uppercase">
+                                <i class="bi bi-save"></i> Finalizar e Salvar Prontuário
                             </button>
                         </form>
                     </div>
                 </div>
 
                 <div class="col-md-4">
-                    <h6 class="fw-bold"><i class="bi bi-clock-history"></i> Histórico do Paciente</h6>
-                    <hr>
-                    <div style="max-height: 500px; overflow-y: auto;">
-                        {lista_hist if historico else '<p class="text-muted small">Nenhum atendimento anterior.</p>'}
+                    <div class="card shadow-sm p-3 border-0 bg-light" style="min-height: 100%;">
+                        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-clock-history"></i> Histórico de Consultas</h6>
+                        <div style="max-height: 600px; overflow-y: auto;">
+                            {lista_hist if historico else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     """
     return HttpResponse(base_html("Prontuário", conteudo))
-
-
 
 
 
