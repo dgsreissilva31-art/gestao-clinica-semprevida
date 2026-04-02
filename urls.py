@@ -1745,134 +1745,194 @@ def agendas_config_geral(request):
 
 
 # --- TELA 12 FINAL (COM LINK PARA AGENDAMENTO) ---
+# --- TELA 12: AGENDA GERAL (COM FILTROS E CONFIRMAÇÃO) ---
 @csrf_exempt
 def agenda_diaria(request):
+    import datetime, urllib.parse
+    hoje_str = datetime.date.today().strftime('%Y-%m-%d')
+    data_sel = request.GET.get('data') or hoje_str
+    unidade_id = request.GET.get('unidade')
+    
     try:
-        data_hoje = request.GET.get('data') or datetime.date.today().strftime('%Y-%m-%d')
-
-        data_obj = datetime.datetime.strptime(data_hoje, '%Y-%m-%d')
-
-        dias = ['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo']
-        dia_semana = dias[data_obj.weekday()]
-
-        horarios = []
-
         with connection.cursor() as cursor:
+            # 1. BUSCAR UNIDADES PARA O FILTRO
+            cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+            unidades = cursor.fetchall()
 
-            # 🔹 BUSCAR AGENDAS
-            cursor.execute("""
-                SELECT ac.id, p.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos
+            # 2. BUSCAR AGENDAMENTOS EXISTENTES (OCUPADOS)
+            # Pegamos todos os detalhes do paciente e da unidade aqui
+            sql_ocupados = """
+                SELECT 
+                    ag.horario_selecionado, 
+                    pac.nome, 
+                    prof.nome, 
+                    conv.nome, 
+                    pac.telefone, 
+                    u.nome, 
+                    u.endereco,
+                    esp.nome,
+                    ag.id
+                FROM agendamentos ag
+                JOIN pacientes pac ON ag.paciente_id = pac.id
+                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                JOIN profissionais prof ON ac.profissional_id = prof.id
+                JOIN unidades u ON ac.unidade_id = u.id
+                LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+                LEFT JOIN convenios conv ON pac.convenio_id = conv.id
+                WHERE ag.data_agendamento = %s
+            """
+            params_oc = [data_sel]
+            if unidade_id:
+                sql_ocupados += " AND u.id = %s"
+                params_oc.append(unidade_id)
+            
+            cursor.execute(sql_ocupados, params_oc)
+            agendados = cursor.fetchall()
+
+            # Organiza os ocupados em um dicionário para busca rápida {hora: dados}
+            dict_ocupados = {}
+            for a in agendados:
+                hora_key = a[0].strftime('%H:%M') if not isinstance(a[0], str) else a[0][:5]
+                dict_ocupados[hora_key] = {
+                    "paciente": a[1], "medico": a[2], "convenio": a[3] or "Particular",
+                    "tel": a[4], "unidade": a[5], "endereco": a[6], "especialidade": a[7], "id": a[8]
+                }
+
+            # 3. BUSCAR GRADES ABERTAS (LIVRES)
+            sql_grades = """
+                SELECT ac.id, prof.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos, u.nome
                 FROM agendas_config ac
-                JOIN profissionais p ON ac.profissional_id = p.id
-                WHERE (ac.dia_semana = %s OR ac.data_especifica = %s)
-            """, [dia_semana, data_hoje])
+                JOIN profissionais prof ON ac.profissional_id = prof.id
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ac.data_especifica = %s
+            """
+            params_gr = [data_sel]
+            if unidade_id:
+                sql_grades += " AND u.id = %s"
+                params_gr.append(unidade_id)
+            
+            cursor.execute(sql_grades, params_gr)
+            grades = cursor.fetchall()
 
-            agendas = cursor.fetchall()
-
-            for ag in agendas:
-                prof_nome = ag[1]
-                inicio = ag[2]
-                fim = ag[3]
-                intervalo = ag[4] or 20
-
-                # 🔥 CONVERSÃO SEGURA (resolve erro do banco)
-                if isinstance(inicio, str):
-                    inicio = datetime.datetime.strptime(inicio, '%H:%M:%S').time()
-                if isinstance(fim, str):
-                    fim = datetime.datetime.strptime(fim, '%H:%M:%S').time()
-
-                hora_atual = datetime.datetime.combine(data_obj, inicio)
-
-                while hora_atual.time() < fim:
-                    horarios.append({
-                        "hora": hora_atual.strftime('%H:%M'),
-                        "profissional": prof_nome
+        # 4. GERAR LISTA MESTRA DE HORÁRIOS
+        lista_final = []
+        for g in grades:
+            id_conf, nome_p, h_ini, h_fim, inter, u_nome = g
+            inter = inter or 20
+            
+            atual = datetime.datetime.combine(datetime.date.today(), h_ini)
+            fim = datetime.datetime.combine(datetime.date.today(), h_fim)
+            
+            while atual.time() < fim.time():
+                h_str = atual.strftime('%H:%M')
+                
+                # Se o horário estiver no dicionário de ocupados, pega os dados do paciente
+                if h_str in dict_ocupados:
+                    dados = dict_ocupados[h_str]
+                    # Link WhatsApp
+                    tel_limpo = "".join(filter(str.isdigit, str(dados['tel'] or "")))
+                    msg = f"Olá, {dados['paciente']}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
+                    link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
+                    
+                    lista_final.append({
+                        "hora": h_str, "medico": dados['medico'], "paciente": dados['paciente'],
+                        "convenio": dados['convenio'], "tel": dados['tel'], "status": "Ocupado",
+                        "zap": link_zap, "id": dados['id']
                     })
-
-                    hora_atual += datetime.timedelta(minutes=intervalo)
-
-            # 🔹 BUSCAR AGENDAMENTOS
-            cursor.execute("""
-                SELECT horario_selecionado
-                FROM agendamentos
-                WHERE data_agendamento = %s
-            """, [data_hoje])
-
-            agendados_raw = cursor.fetchall()
-
-            ocupados = set()
-
-            for a in agendados_raw:
-                hora = a[0]
-
-                if isinstance(hora, str):
-                    hora = datetime.datetime.strptime(hora, '%H:%M:%S').strftime('%H:%M')
                 else:
-                    hora = hora.strftime('%H:%M')
+                    # Horário Livre
+                    lista_final.append({
+                        "hora": h_str, "medico": nome_p, "paciente": "---",
+                        "convenio": "---", "tel": "---", "status": "Livre",
+                        "zap": None, "id": None
+                    })
+                atual += datetime.timedelta(minutes=inter)
 
-                ocupados.add(hora)
-
-        # 🔹 MONTAR TABELA
+        # 5. MONTAR LINHAS DA TABELA (Ordenado por Hora)
         linhas = ""
-
-        for h in sorted(horarios, key=lambda x: x['hora']):
-
-            if h['hora'] in ocupados:
-                status = "<span class='badge bg-danger'>Ocupado</span>"
-                botao = f"""
-                    <button class="btn btn-sm btn-danger" disabled>
-                        {h['hora']}
-                    </button>
+        for item in sorted(lista_final, key=lambda x: x['hora']):
+            cor_status = "text-danger" if item['status'] == "Ocupado" else "text-success"
+            
+            # Botão WhatsApp e Checkbox apenas se estiver ocupado
+            col_acoes = ""
+            if item['status'] == "Ocupado":
+                col_acoes = f"""
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="checkbox" class="form-check-input border-primary" title="Confirmado?">
+                        <a href="{item['zap']}" target="_blank" class="btn btn-sm btn-success py-0">
+                            <i class="bi bi-whatsapp"></i> Zap
+                        </a>
+                    </div>
                 """
             else:
-                status = "<span class='badge bg-success'>Livre</span>"
-                botao = f"""
-                    <a href="/agendar/?hora={h['hora']}&prof={h['profissional']}&data={data_hoje}" 
-                       class="btn btn-sm btn-outline-primary">
-                       {h['hora']}
-                    </a>
-                """
+                col_acoes = f'<a href="/agendar/?hora={item["hora"]}&prof={item["medico"]}&data={data_sel}" class="btn btn-sm btn-outline-primary py-0">Agendar</a>'
 
             linhas += f"""
                 <tr>
-                    <td>{botao}</td>
-                    <td>{h['profissional']}</td>
-                    <td>{status}</td>
-                </tr>
-            """
+                    <td><b class="text-primary">{item['hora']}</b></td>
+                    <td>{item['medico']}</td>
+                    <td>{item['paciente']}</td>
+                    <td><small>{item['convenio']}</small></td>
+                    <td><small>{item['tel']}</small></td>
+                    <td>{col_acoes}</td>
+                </tr>"""
+
+        opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
 
         conteudo = f"""
-            <h4><i class="bi bi-calendar3"></i> Agenda do Dia</h4>
-
-            <form method="GET" class="row mb-3">
-                <div class="col-md-4">
-                    <input type="date" name="data" value="{data_hoje}" class="form-control">
+            <div class="container-fluid py-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="fw-bold"><i class="bi bi-calendar3"></i> Agenda Geral</h4>
+                    <span class="badge bg-dark">Total de Horários: {len(lista_final)}</span>
                 </div>
-                <div class="col-md-2">
-                    <button class="btn btn-primary">Buscar</button>
-                </div>
-            </form>
 
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Horário</th>
-                            <th>Profissional</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {linhas if linhas else "<tr><td colspan='3' class='text-center'>Sem horários disponíveis</td></tr>"}
-                    </tbody>
-                </table>
+                <form method="GET" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
+                    <div class="col-md-3">
+                        <label class="small fw-bold">Unidade</label>
+                        <select name="unidade" class="form-select border-primary">
+                            <option value="">Todas as Unidades</option>
+                            {opts_unidades}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="small fw-bold">Data</label>
+                        <input type="date" name="data" value="{data_sel}" class="form-control border-primary">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-primary w-100 fw-bold">BUSCAR</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive card shadow-sm">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Hora</th>
+                                <th>Médico</th>
+                                <th>Paciente</th>
+                                <th>Convênio</th>
+                                <th>Telefone</th>
+                                <th>Ações / Confirmação</th>
+                            </tr>
+                        </thead>
+                        <tbody style="font-size: 0.9rem;">
+                            {linhas if linhas else '<tr><td colspan="6" class="text-center py-5">Nenhuma grade aberta para esta data/unidade.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         """
-
-        return HttpResponse(base_html("Agenda do Dia", conteudo))
+        return HttpResponse(base_html("Agenda Geral", conteudo))
 
     except Exception as e:
-        return HttpResponse(base_html("Erro", f"<h4>Erro:</h4><pre>{e}</pre>"))
+        return HttpResponse(base_html("Erro", f"<h4>Erro na Agenda:</h4><pre>{e}</pre>"))
+
+
+
+
+
+
+
 
 
 # --- TELA 13: AGENDAMENTO ---
