@@ -103,7 +103,7 @@ def base_html(titulo, conteudo):
     </html>
     """
 
-# --- 2. TELA 0: PAINEL DE GESTÃO ---
+
 
 # --- 2. TELA 0: PAINEL DE GESTÃO (VERSÃO PROFISSIONAL CORRIGIDA) ---
 
@@ -436,7 +436,6 @@ def especialidades_geral(request):
 
 
 # --- 5. TELA 3: PROFISSIONAIS ---
-# --- 5. TELA 3: PROFISSIONAIS (UNIDADE PRIMEIRO NO FORMULÁRIO) ---
 @csrf_exempt
 def profissionais_geral(request):
     mensagem = ""
@@ -595,8 +594,8 @@ def profissionais_geral(request):
 
 
 
-# --- 7. TELA 4: GESTÃO DE CONVÊNIOS ---
-# --- 6. TELA 4: GESTÃO DE CONVÊNIOS (ATUALIZADA COM RESPONSÁVEL E ALTERAR) ---
+
+# --- 6. TELA 4: CONVÊNIOS ---
 @csrf_exempt
 def convenios_geral(request):
     mensagem = ""
@@ -740,8 +739,8 @@ def convenios_geral(request):
 
 
 
-# --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM GRUPO) ---
-# --- 8. TELA 5: GESTÃO DE EXAMES (ATUALIZADA COM ALTERAR) ---
+
+# --- 7. TELA 5: EXAMES ---
 @csrf_exempt
 def exames_geral(request):
     mensagem = ""
@@ -880,8 +879,8 @@ def exames_geral(request):
 
 
 
-# --- 9. TELA 6: GESTÃO DE ODONTOLOGIA ---
-# --- 9. TELA 6: GESTÃO DE ODONTOLOGIA (ATUALIZADA COM ALTERAR) ---
+
+# --- 8. TELA 6: ODONTOLOGIA ---
 @csrf_exempt
 def odonto_geral(request):
     mensagem = ""
@@ -1019,8 +1018,8 @@ def odonto_geral(request):
 
 
 
-# --- 10. TELA 7: GESTÃO DE PACIENTES ---
-# --- 10. TELA 7: GESTÃO DE PACIENTES (COM BUSCA E DATA BR) ---
+
+# --- 9. TELA 7: PACIENTES ---
 @csrf_exempt
 def pacientes_geral(request):
     mensagem = ""
@@ -1195,7 +1194,7 @@ def pacientes_geral(request):
 
 
 
-# --- 11. TELA 8: GESTÃO DE ACESSOS E FUNCIONÁRIOS ---
+# --- 10. TELA 8: ACESSOS ---
 @csrf_exempt
 def acesso_geral(request):
     mensagem = ""
@@ -1264,8 +1263,8 @@ def acesso_geral(request):
 
 
 
-# --- 12. TELA 9: PREÇOS DE CONSULTAS POR CONVÊNIO ---
-# --- 12. TELA 9: PREÇOS E GRUPOS (CADASTRO EM LOTE COM BOTÃO ALTERAR) ---
+
+# --- 11. TELA 9: TABELA DE PREÇOS DE CONSTULTAS ---
 @csrf_exempt
 def precos_geral(request):
     mensagem = ""
@@ -1455,8 +1454,8 @@ def precos_geral(request):
 
 
 
-# --- 13. TELA 10: PREÇOS DE EXAMES POR CONVÊNIO ---
-# --- 13. TELA 10: PREÇOS DE EXAMES POR CONVÊNIO ---
+
+# --- 12. TELA 10: PREÇOS DE EXAMES ---
 @csrf_exempt
 def precos_exames_geral(request):
     mensagem = ""
@@ -1537,8 +1536,8 @@ def precos_exames_geral(request):
 
 
 
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (VERSÃO CORRIGIDA) ---
-# --- 14. TELA 11: CONFIGURAÇÃO DE AGENDAS (COM TRAVA DE UNIDADE) ---
+
+# --- 13. TELA 11: CONFIGURAÇÃO DE AGENDAS (ABRIR GRADES) ---
 @csrf_exempt
 def agendas_config_geral(request):
     mensagem = ""
@@ -1743,9 +1742,7 @@ def agendas_config_geral(request):
     return HttpResponse(base_html("Configuração de Agendas", conteudo))
 
 
-
-# --- TELA 12 FINAL (COM LINK PARA AGENDAMENTO) ---
-# --- TELA 12: AGENDA GERAL (COM FILTROS E CONFIRMAÇÃO) ---
+# --- 14. TELA 12: AGENDA GERAL CONSULTAS ---
 @csrf_exempt
 def agenda_diaria(request):
     import datetime, urllib.parse
@@ -1934,9 +1931,7 @@ def agenda_diaria(request):
 
 
 
-
-# --- TELA 13: AGENDAMENTO ---
-# --- TELA 13: AGENDAMENTO (CORREÇÃO DE LINK DE SUCESSO) ---
+# --- 15. TELA 13: NOVO AGENDAMENTO ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -2071,8 +2066,8 @@ def agendar_consulta(request):
 
 
 
-# --- TELA 14 FINAL: RECEPÇÃO INTEGRADA ---
-# --- 15. TELA 14: RECEPÇÃO INTEGRADA (CORRIGIDA COM ROTA /AGENDAR/) ---
+
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
@@ -2203,9 +2198,7 @@ def recepcao_geral(request):
 
 
 
-
-# --- TELA 15: PRONTUÁRIO ---
-# --- TELA 15: PRONTUÁRIO (VERSÃO FINAL) ---
+# --- 17. TELA 15: PRONTUÁRIO ---
 @csrf_exempt
 def prontuario_geral(request):
     agendamento_id = request.GET.get('id')
@@ -2334,10 +2327,7 @@ def prontuario_geral(request):
 
 
 
-
-# --_16.TELA ----
-# --- 16. TELA: CAIXA NO MODELO PLANILHA (CONSULTAS, EXAMES, ODONTO E DIVERSOS) ---
-# --- 16. TELA: CAIXA (CORREÇÃO DE SQL - VÍNCULO PROFISSIONAL) ---
+# --- 18. TELA 16: CAIXA ---
 @csrf_exempt
 def caixa_geral(request):
     import datetime
