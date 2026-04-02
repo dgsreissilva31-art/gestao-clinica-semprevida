@@ -1932,6 +1932,7 @@ def agenda_diaria(request):
 
 
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
+# --- TELA 13: NOVO AGENDAMENTO (ATUALIZADA) ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -1964,29 +1965,24 @@ def agendar_consulta(request):
     hora_sel = request.GET.get('hora_sel')
 
     with connection.cursor() as cursor:
-        # Busca Unidades (Apenas com grade)
         cursor.execute("SELECT DISTINCT u.id, u.nome FROM unidades u JOIN agendas_config ac ON u.id = ac.unidade_id ORDER BY u.nome")
         unidades = cursor.fetchall()
 
-        # Busca Especialidades
         especialidades = []
         if unid_id:
             cursor.execute("SELECT DISTINCT e.id, e.nome FROM especialidades e JOIN profissionais p ON e.id = p.especialidade_id JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s ORDER BY e.nome", [unid_id])
             especialidades = cursor.fetchall()
 
-        # Busca Médicos
         profs_filtrados = []
         if unid_id and esp_id:
             cursor.execute("SELECT DISTINCT p.id, p.nome FROM profissionais p JOIN agendas_config ac ON p.id = ac.profissional_id WHERE ac.unidade_id = %s AND p.especialidade_id = %s", [unid_id, esp_id])
             profs_filtrados = cursor.fetchall()
 
-        # Busca Datas
         datas_disponiveis = []
         if prof_id and unid_id:
             cursor.execute("SELECT DISTINCT data_especifica FROM agendas_config WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s ORDER BY data_especifica", [prof_id, unid_id, hoje])
             datas_disponiveis = cursor.fetchall()
 
-        # Geração de Horários
         horarios_list = []
         agenda_config_id = None
         if prof_id and data_sel and unid_id:
@@ -2011,17 +2007,18 @@ def agendar_consulta(request):
     # 2. SALVAMENTO (POST)
     if request.method == "POST":
         nome_pac = request.POST.get('nome')
-        sobrenome_pac = request.POST.get('sobrenome')
+        quem_agenda = request.POST.get('quem_agenda') # Substituído sobrenome
         whatsapp = request.POST.get('whatsapp')
         conv_id = request.POST.get('convenio_id') or None
         
         try:
             with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [f"{nome_pac} {sobrenome_pac}", whatsapp, conv_id])
+                # Salva no banco combinando Nome + Quem Agendou
+                nome_completo = f"{nome_pac} (Ag: {quem_agenda})" if quem_agenda else nome_pac
+                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [nome_completo, whatsapp, conv_id])
                 paciente_id = cursor.fetchone()[0]
                 cursor.execute("INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')", [paciente_id, agenda_config_id, data_sel, hora_sel])
             
-            # REDIRECIONA PARA A PRÓPRIA PÁGINA COM O SINAL DE SUCESSO
             return HttpResponseRedirect(f"{request.path}?sucesso=1")
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
@@ -2049,8 +2046,8 @@ def agendar_consulta(request):
             {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6 class="fw-bold mb-3 text-secondary">Horários Disponíveis</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if btns_horas else "Selecione a data"}</div></div>' if data_sel else ""}
             {f'''<div class="card p-4 shadow border-success"><h6 class="fw-bold text-success border-bottom pb-2 mb-3">Dados do Paciente ({hora_sel})</h6>
                 <form method="POST" class="row g-3">
-                    <div class="col-md-6"><label class="small fw-bold">Nome</label><input type="text" name="nome" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">Sobrenome</label><input type="text" name="sobrenome" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold">Nome do Paciente</label><input type="text" name="nome" class="form-control" required></div>
+                    <div class="col-md-6"><label class="small fw-bold text-primary">Quem Está Agendando?</label><input type="text" name="quem_agenda" class="form-control" placeholder="Mãe, Esposa, Próprio..." required></div>
                     <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" placeholder="(00) 00000-0000" required></div>
                     <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select"><option value="">Particular</option>{opts_conv}</select></div>
                     <div class="col-12 mt-4"><button type="submit" class="btn btn-success w-100 fw-bold py-2 shadow">CONFIRMAR AGENDAMENTO</button></div>
@@ -2059,8 +2056,6 @@ def agendar_consulta(request):
         </div>
     """
     return HttpResponse(base_html("Agendar", conteudo))
-
-
 
 
 
