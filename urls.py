@@ -2122,49 +2122,39 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO (CORREÇÃO DE SQL: JOIN ESPECIALIDADES) ---
+# --- TELA 14: RECEPÇÃO (FLUXO COMPLETO: CADASTRO -> CAIXA -> PRONTUÁRIO) ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
     data_hoje = datetime.date.today()
     unidade_filtro = request.GET.get('unidade')
     agendamento_id = request.GET.get('fluxo_id') 
+    etapa = request.GET.get('etapa', '1') # Controla se mostra Cadastro ou Caixa
     mensagem = ""
 
-    # --- 1. PROCESSAMENTO DO SALVAMENTO (PÓS-CADASTRO E CAIXA) ---
-    if request.method == "POST" and "finalizar_chegada" in request.POST:
+    # --- 1. PROCESSAMENTO FINAL (SALVAR CAIXA E LIBERAR PRONTUÁRIO) ---
+    if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
             ag_id = request.POST.get('ag_id')
-            pac_id = request.POST.get('pac_id')
-            cep = request.POST.get('cep', '')
-            rua = request.POST.get('rua', '')
-            num = request.POST.get('numero', '')
-            bairro = request.POST.get('bairro', '')
-            obs = request.POST.get('observacoes', '')
-            conv_id = request.POST.get('convenio_id') or None
             tipo_pagto = request.POST.get('tipo_pagto')
             valor = request.POST.get('valor') or 0
             forma = request.POST.get('forma_pagamento') if tipo_pagto == 'avista' else 'Faturado'
 
             with connection.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE pacientes 
-                    SET endereco = %s, convenio_id = %s, observacoes = %s 
-                    WHERE id = %s
-                """, [f"{rua}, {num} - {bairro} (CEP: {cep})", conv_id, obs, pac_id])
-
+                # Lança no Caixa
                 cursor.execute("""
                     INSERT INTO caixa (atendimento_id, valor, forma_pagamento, status, data_pagamento)
                     VALUES (%s, %s, %s, %s, CURRENT_DATE)
                 """, [ag_id, valor, forma, 'Pago' if tipo_pagto == 'avista' else 'A Faturar'])
 
+                # Muda status para 'Chegada' (Isso habilita o botão de Prontuário na tela)
                 cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
                 
-            mensagem = '<div class="alert alert-success shadow">✅ Check-in concluído! O prontuário está liberado.</div>'
+            mensagem = '<div class="alert alert-success shadow">✅ Financeiro lançado! Paciente liberado para o Prontuário.</div>'
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger shadow">❌ Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger shadow">❌ Erro ao finalizar: {e}</div>'
 
-    # --- 2. BUSCA DE DADOS (SQL CORRIGIDO COM JOIN ESP) ---
+    # --- 2. BUSCA DE DADOS ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
@@ -2179,7 +2169,7 @@ def recepcao_geral(request):
             LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
             LEFT JOIN unidades u ON ac.unidade_id = u.id
-            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id  -- << CORREÇÃO AQUI
+            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
             LEFT JOIN convenios conv ON pac.convenio_id = conv.id
             WHERE ag.data_agendamento = %s
         """
@@ -2193,8 +2183,8 @@ def recepcao_geral(request):
 
     # --- 3. MONTAGEM DA TABELA ---
     linhas = ""
-    modal_fluxo = ""
-    link_cadastro_externo = "https://gestao-clinica-semprevida-production.up.railway.app/pacientes/"
+    modal_html = ""
+    link_cadastro = "https://gestao-clinica-semprevida-production.up.railway.app/pacientes/"
 
     for a in agenda:
         ag_id_item = a[0]
@@ -2202,95 +2192,78 @@ def recepcao_geral(request):
         status = a[5]
         
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={ag_id_item}&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">CHEGADA</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">CHECK-IN</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-primary fw-bold shadow-sm"><i class="bi bi-file-medical"></i> ATENDER</a>'
+            # APÓS O CAIXA, LIBERA O PRONTUÁRIO
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-success fw-bold shadow-sm"><i class="bi bi-file-earmark-medical"></i> ABRIR PRONTUÁRIO</a>'
         else:
-            btn = f'<span class="badge bg-dark">{status}</span>'
+            btn = f'<span class="badge bg-secondary">{status}</span>'
 
         linhas += f"""
         <tr>
-            <td class="fw-bold text-primary">{str(a[4])[:5]}</td>
+            <td class="fw-bold">{str(a[4])[:5]}</td>
             <td><b>{nome_pac}</b><br><small class="text-muted">{a[7] or 'Particular'}</small></td>
-            <td>{a[2]}<br><small class="text-muted">{a[6]}</small></td>
+            <td>{a[2]}<br><small class="text-secondary">{a[6]}</small></td>
             <td>{btn}</td>
         </tr>"""
 
+        # --- MODAL DINÂMICO (ETAPAS) ---
         if str(ag_id_item) == agendamento_id:
-            opts_conv = "".join([f'<option value="{c[0]}" {"selected" if a[7]==c[1] else ""}>{c[1]}</option>' for c in convenios_list])
-            modal_fluxo = f"""
-            <div class="modal fade show d-block" style="background: rgba(0,0,0,0.7); z-index: 1050;">
-                <div class="modal-dialog modal-lg border-0 shadow-lg">
-                    <div class="modal-content border-0">
-                        <div class="modal-header bg-warning">
-                            <h5 class="modal-title fw-bold">Check-in de Paciente</h5>
-                            <a href="?unidade={unidade_filtro or ""}" class="btn-close"></a>
-                        </div>
-                        <div class="modal-body p-4">
-                            <div class="text-center mb-4 p-3 border rounded bg-light">
-                                <a href="{link_cadastro_externo}" target="_blank" class="btn btn-outline-danger fw-bold">
-                                    <i class="bi bi-external-link"></i> ABRIR FORMULÁRIO DE CADASTRO OFICIAL
-                                </a>
-                            </div>
-                            <form method="POST">
-                                <input type="hidden" name="ag_id" value="{ag_id_item}">
-                                <input type="hidden" name="pac_id" value="{a[9]}">
-                                <h6 class="fw-bold text-primary border-bottom pb-2 mb-3">Dados de Endereço</h6>
-                                <div class="row g-2 mb-4">
-                                    <div class="col-md-3"><label class="small fw-bold">CEP</label><input type="text" name="cep" class="form-control" required></div>
-                                    <div class="col-md-6"><label class="small fw-bold">Rua</label><input type="text" name="rua" class="form-control" required></div>
-                                    <div class="col-md-3"><label class="small fw-bold">Nº</label><input type="text" name="numero" class="form-control" required></div>
-                                    <div class="col-md-12"><label class="small fw-bold">Observações</label><input type="text" name="observacoes" class="form-control"></div>
-                                </div>
-                                <h6 class="fw-bold text-success border-bottom pb-2 mb-3">Financeiro</h6>
-                                <div class="row g-2">
-                                    <div class="col-md-5">
-                                        <select name="tipo_pagto" id="t_pagto" class="form-select" onchange="checkFinanceiro()">
-                                            <option value="avista">Particular</option>
-                                            <option value="faturado">Faturado (Convênio)</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-7" id="area_conv" style="display:none">
-                                        <select name="convenio_id" class="form-select border-danger">{opts_conv}</select>
-                                    </div>
-                                    <div class="col-md-3 area_money"><input type="number" name="valor" class="form-control" placeholder="Valor R$"></div>
-                                    <div class="col-md-4 area_money"><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select></div>
-                                </div>
-                            </div>
-                            <div class="modal-footer bg-light">
-                                <button type="submit" name="finalizar_chegada" class="btn btn-success btn-lg w-100 fw-bold shadow">CONCLUIR E LIBERAR ATENDIMENTO</button>
-                            </div>
-                            </form>
+            if etapa == '1': # ETAPA DE CADASTRO
+                conteudo_modal = f"""
+                    <div class="text-center py-4">
+                        <i class="bi bi-person-vcard text-primary display-4"></i>
+                        <h5 class="mt-3 fw-bold">Etapa 1: Cadastro do Paciente</h5>
+                        <p class="text-muted small">Clique no botão abaixo para abrir o sistema de cadastro oficial.</p>
+                        <a href="{link_cadastro}" target="_blank" class="btn btn-danger btn-lg px-4 fw-bold shadow-sm">
+                            <i class="bi bi-external-link"></i> CADASTRAR / ATUALIZAR PACIENTE
+                        </a>
+                        <hr class="my-4">
+                        <p class="small">Após concluir o cadastro na outra aba, clique abaixo:</p>
+                        <a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro or ""}" class="btn btn-primary w-100 fw-bold">
+                            PROSSEGUIR PARA O FINANCEIRO <i class="bi bi-arrow-right"></i>
+                        </a>
                     </div>
-                </div>
-            </div>
-            <script>
-                function checkFinanceiro(){{
-                    var t = document.getElementById('t_pagto').value;
-                    document.getElementById('area_conv').style.display = (t == 'faturado') ? 'block' : 'none';
-                    document.querySelectorAll('.area_money').forEach(m => m.style.display = (t == 'faturado') ? 'none' : 'block');
-                }}
-            </script>
-            """
+                """
+            else: # ETAPA DE CAIXA
+                opts_conv = "".join([f'<option value="{c[0]}" {"selected" if a[7]==c[1] else ""}>{c[1]}</option>' for c in convenios_list])
+                conteudo_modal = f"""
+                    <form method="POST">
+                        <input type="hidden" name="ag_id" value="{ag_id_item}">
+                        <h5 class="fw-bold text-success mb-3"><i class="bi bi-cash-stack"></i> Etapa 2: Lançamento de Caixa</h5>
+                        <div class="bg-light p-3 rounded mb-3">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="small fw-bold">Tipo de Cobrança</label>
+                                    <select name="tipo_pagto" id="tipo_p" class="form-select border-success" onchange="toggleCaixa()">
+                                        <option value="avista">Particular (Dinheiro/Pix/Cartão)</option>
+                                        <option value="faturado">Faturado (Convênio)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6" id="f_conv" style="display:none">
+                                    <label class="small fw-bold text-danger">Convênio</label>
+                                    <select name="convenio_id" class="form-select border-danger">{opts_conv}</select>
+                                </div>
+                                <div class="col-md-3 area_p"><label class="small fw-bold">Valor R$</label><input type="number" step="0.01" name="valor" class="form-control"></div>
+                                <div class="col-md-3 area_p"><label class="small fw-bold">Forma</label><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select></div>
+                            </div>
+                        </div>
+                        <button type="submit" name="finalizar_fluxo" class="btn btn-success btn-lg w-100 fw-bold shadow">
+                            FINALIZAR E IR PARA PRONTUÁRIO
+                        </button>
+                        <div class="text-center mt-2">
+                            <a href="?fluxo_id={ag_id_item}&etapa=1" class="text-muted small">Voltar ao Cadastro</a>
+                        </div>
+                    </form>
+                """
 
-    conteudo = f"""
-        <div class="container py-3">
-            <h4 class="fw-bold mb-4 text-primary">Recepção</h4>
-            {mensagem}
-            <div class="card shadow border-0 overflow-hidden">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr><th>Hora</th><th>Paciente</th><th>Profissional</th><th>Ações</th></tr>
-                    </thead>
-                    <tbody>{linhas if linhas else '<tr><td colspan="4" class="text-center py-4">Sem agendamentos.</td></tr>'}</tbody>
-                </table>
-            </div>
-            {modal_fluxo}
-        </div>
-    """
-    return HttpResponse(base_html("Recepção", conteudo))
-
-
+            modal_html = f"""
+            <div class="modal fade show d-block" style="background: rgba(0,0,0,0.7); z-index: 1050;">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-lg">
+                        <div class="modal-header bg-dark text-white border-0">
+                            <h6 class="modal-title fw-bold">FLUXO DE ADMISSÃO - {nome_pac}</h6>
+                            <a href="?unidade={unidade_filtro or ""
 
 
 
