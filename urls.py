@@ -2122,53 +2122,61 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO INTEGRADA (FLUXO: CHEGADA > CADASTRO > CAIXA > ATENDER) ---
+# --- TELA 14: RECEPÇÃO (CORREÇÃO DE SALVAMENTO NO CAIXA E PACIENTE) ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
     data_hoje = datetime.date.today()
     unidade_filtro = request.GET.get('unidade')
-    agendamento_id = request.GET.get('fluxo_id') # ID para o Modal de fluxo
+    agendamento_id = request.GET.get('fluxo_id') 
     mensagem = ""
 
     # --- PROCESSAMENTO DO FLUXO (POST) ---
     if request.method == "POST" and "finalizar_chegada" in request.POST:
-        ag_id = request.POST.get('ag_id')
-        pac_id = request.POST.get('pac_id')
-        
-        # 1. Atualizar Cadastro do Paciente
-        cep = request.POST.get('cep')
-        endereco = f"{request.POST.get('rua')}, {request.POST.get('numero')} - {request.POST.get('bairro')}"
-        obs = request.POST.get('observacoes')
-        conv_id = request.POST.get('convenio_id') or None
-
-        # 2. Dados do Financeiro
-        tipo_pagto = request.POST.get('tipo_pagto') # 'avista' ou 'faturado'
-        forma = request.POST.get('forma_pagamento')
-        valor = request.POST.get('valor') or 0
-
         try:
-            with connection.cursor() as cursor:
-                # Update Paciente
-                cursor.execute("""
-                    UPDATE pacientes SET endereco = %s, convenio_id = %s, observacoes = %s 
-                    WHERE id = %s
-                """, [f"{endereco} (CEP: {cep})", conv_id, obs, pac_id])
+            # Captura IDs
+            ag_id = request.POST.get('ag_id')
+            pac_id = request.POST.get('pac_id')
+            
+            # Dados do Paciente
+            cep = request.POST.get('cep', '')
+            rua = request.POST.get('rua', '')
+            num = request.POST.get('numero', '')
+            bairro = request.POST.get('bairro', '')
+            obs = request.POST.get('observacoes', '')
+            conv_id = request.POST.get('convenio_id') or None
+            
+            endereco_completo = f"{rua}, {num} - {bairro} (CEP: {cep})"
 
-                # Lançar no Caixa
+            # Dados do Financeiro
+            tipo_pagto = request.POST.get('tipo_pagto') # 'avista' ou 'faturado'
+            valor = request.POST.get('valor') or 0
+            forma = request.POST.get('forma_pagamento') if tipo_pagto == 'avista' else 'Faturado'
+            status_caixa = 'Pago' if tipo_pagto == 'avista' else 'A Faturar'
+
+            with connection.cursor() as cursor:
+                # 1. ATUALIZA CADASTRO DO PACIENTE
+                cursor.execute("""
+                    UPDATE pacientes 
+                    SET endereco = %s, convenio_id = %s, observacoes = %s 
+                    WHERE id = %s
+                """, [endereco_completo, conv_id, obs, pac_id])
+
+                # 2. ALIMENTA O CAIXA
+                # Nota: Certifique-se que a tabela 'caixa' tem a coluna 'agendamento_id'
                 cursor.execute("""
                     INSERT INTO caixa (atendimento_id, valor, forma_pagamento, status, data_pagamento)
                     VALUES (%s, %s, %s, %s, CURRENT_DATE)
-                """, [ag_id, valor, forma if tipo_pagto == 'avista' else 'Faturado', 'Pago' if tipo_pagto == 'avista' else 'A Faturar'])
+                """, [ag_id, valor, forma, status_caixa])
 
-                # Mudar Status para Chegada (Liberando para o médico)
+                # 3. ATUALIZA STATUS DO AGENDAMENTO (LIBERA PARA ATENDER)
                 cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
                 
-            mensagem = '<div class="alert alert-success shadow">✅ Check-in realizado! Paciente enviado para a fila de atendimento.</div>'
+            mensagem = '<div class="alert alert-success shadow">✅ Sucesso! Cadastro atualizado e financeiro lançado.</div>'
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro no processamento: {e}</div>'
+            mensagem = f'<div class="alert alert-danger shadow">❌ Erro ao salvar: {e}</div>'
 
-    # --- BUSCA DE DADOS PARA A TABELA ---
+    # --- BUSCA DE DADOS (CARREGAMENTO DA TELA) ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
@@ -2196,77 +2204,79 @@ def recepcao_geral(request):
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    # --- CONSTRUÇÃO DA TABELA ---
+    # --- MONTAGEM DO HTML ---
     linhas = ""
     modal_fluxo = ""
     
     for a in agenda:
         ag_id_item = a[0]
-        nome_paciente = a[1].split("(Ag:")[0].strip() if "(Ag:" in (a[1] or "") else a[1]
+        # Limpa o nome para exibição (remove o marcador de quem agendou)
+        nome_pac = a[1].split("(Ag:")[0].strip() if "(Ag:" in (a[1] or "") else a[1]
         status = a[5]
         
-        # Lógica de Botão de Ação
+        # Define o botão baseado no status atual
         if status == "Agendado":
-            btn_acao = f'<a href="?fluxo_id={ag_id_item}&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">FAZER CHEGADA</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">FAZER CHEGADA</a>'
         elif status == "Chegada":
-            btn_acao = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-primary fw-bold">ATENDER</a>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-primary fw-bold shadow-sm">ATENDER</a>'
         else:
-            btn_acao = f'<button class="btn btn-sm btn-dark" disabled>{status}</button>'
+            btn = f'<span class="badge bg-secondary">{status}</span>'
 
         linhas += f"""
         <tr>
-            <td><b>{str(a[4])[:5]}</b></td>
-            <td>{nome_paciente}<br><small class="text-muted">{a[7] or 'Particular'}</small></td>
+            <td class="fw-bold">{str(a[4])[:5]}</td>
+            <td>{nome_pac}<br><small class="text-muted">{a[7] or 'Particular'}</small></td>
             <td>{a[2]}</td>
-            <td>{btn_acao}</td>
+            <td>{btn}</td>
         </tr>"""
 
-        # --- SE O USUÁRIO CLICOU EM CHEGADA, MONTA O FORMULÁRIO DE ETAPAS ---
+        # Se este item for o selecionado para o fluxo de chegada
         if str(ag_id_item) == agendamento_id:
             opts_conv = "".join([f'<option value="{c[0]}" {"selected" if a[7]==c[1] else ""}>{c[1]}</option>' for c in convenios_list])
             modal_fluxo = f"""
-            <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+            <div class="modal fade show d-block" style="background: rgba(0,0,0,0.6); z-index: 1050;">
                 <div class="modal-dialog modal-lg">
-                    <div class="modal-content border-0 shadow-lg">
-                        <div class="modal-header bg-warning text-dark">
-                            <h5 class="modal-title fw-bold">PROCESSO DE CHEGADA: {nome_paciente}</h5>
-                            <a href="?unidade={unidade_filtro or ""}" class="btn-close"></a>
+                    <div class="modal-content shadow-lg border-0">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title fw-bold">Fluxo de Admissão: {nome_pac}</h5>
+                            <a href="?unidade={unidade_filtro or ""}" class="btn-close btn-close-white"></a>
                         </div>
                         <form method="POST">
                             <input type="hidden" name="ag_id" value="{ag_id_item}">
                             <input type="hidden" name="pac_id" value="{a[9]}">
-                            <div class="modal-body">
-                                <h6 class="text-primary fw-bold border-bottom pb-2">1. Cadastro Complementar</h6>
-                                <div class="row g-2 mb-3">
-                                    <div class="col-md-3"><label class="small">CEP</label><input type="text" name="cep" class="form-control" placeholder="00000-000"></div>
-                                    <div class="col-md-6"><label class="small">Rua</label><input type="text" name="rua" class="form-control"></div>
-                                    <div class="col-md-3"><label class="small">Nº</label><input type="text" name="numero" class="form-control"></div>
-                                    <div class="col-md-4"><label class="small">Bairro</label><input type="text" name="bairro" class="form-control"></div>
-                                    <div class="col-md-8"><label class="small">Observações</label><input type="text" name="observacoes" class="form-control"></div>
+                            <div class="modal-body p-4">
+                                <h6 class="fw-bold text-primary mb-3"><i class="bi bi-person-lines-fill"></i> Etapa 1: Cadastro Completo</h6>
+                                <div class="row g-2 mb-4">
+                                    <div class="col-md-3"><label class="small fw-bold">CEP</label><input type="text" name="cep" class="form-control" required></div>
+                                    <div class="col-md-6"><label class="small fw-bold">Rua</label><input type="text" name="rua" class="form-control" required></div>
+                                    <div class="col-md-3"><label class="small fw-bold">Nº</label><input type="text" name="numero" class="form-control" required></div>
+                                    <div class="col-md-4"><label class="small fw-bold">Bairro</label><input type="text" name="bairro" class="form-control" required></div>
+                                    <div class="col-md-8"><label class="small fw-bold">Observações Internas</label><input type="text" name="observacoes" class="form-control"></div>
                                 </div>
 
-                                <h6 class="text-success fw-bold border-bottom pb-2 mt-4">2. Financeiro / Caixa</h6>
-                                <div class="row g-2">
+                                <h6 class="fw-bold text-success mb-3"><i class="bi bi-cash-coin"></i> Etapa 2: Financeiro</h6>
+                                <div class="row g-2 border p-3 rounded bg-light">
                                     <div class="col-md-4">
-                                        <label class="small">Tipo de Atendimento</label>
-                                        <select name="tipo_pagto" class="form-select bg-light fw-bold" onchange="toggleFinanceiro(this.value)">
+                                        <label class="small fw-bold">Tipo de Pagamento</label>
+                                        <select name="tipo_pagto" id="tipo_pagto" class="form-select border-primary" onchange="atualizarInterface()">
                                             <option value="avista">A VISTA / PARTICULAR</option>
                                             <option value="faturado">FATURADO (CONVÊNIO)</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-4" id="div_valor"><label class="small">Valor R$</label><input type="number" step="0.01" name="valor" class="form-control"></div>
-                                    <div class="col-md-4" id="div_forma"><label class="small">Forma de Pagamento</label>
+                                    <div class="col-md-4 financeiro-avista"><label class="small fw-bold">Valor R$</label><input type="number" step="0.01" name="valor" class="form-control" value="0"></div>
+                                    <div class="col-md-4 financeiro-avista">
+                                        <label class="small fw-bold">Forma</label>
                                         <select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select>
                                     </div>
-                                    <div class="col-md-8 d-none" id="div_convenio">
-                                        <label class="small fw-bold text-danger">Selecione o Convênio para Faturamento</label>
+                                    <div class="col-md-8 d-none" id="campo_convenio">
+                                        <label class="small fw-bold text-danger">Convênio para Faturamento</label>
                                         <select name="convenio_id" class="form-select border-danger">{opts_conv}</select>
                                     </div>
                                 </div>
                             </div>
-                            <div class="modal-footer bg-light">
-                                <button type="submit" name="finalizar_chegada" class="btn btn-success w-100 fw-bold py-2 shadow">
-                                    CONCLUIR CHEGADA E LIBERAR PARA ATENDIMENTO
+                            <div class="modal-footer">
+                                <button type="submit" name="finalizar_chegada" class="btn btn-success btn-lg w-100 fw-bold shadow">
+                                    CONFIRMAR CADASTRO E LANÇAR CAIXA
                                 </button>
                             </div>
                         </form>
@@ -2274,46 +2284,46 @@ def recepcao_geral(request):
                 </div>
             </div>
             <script>
-                function toggleFinanceiro(val){{
-                    if(val == 'faturado'){{
-                        document.getElementById('div_convenio').classList.remove('d-none');
-                        document.getElementById('div_forma').classList.add('d-none');
-                        document.getElementById('div_valor').classList.add('d-none');
+                function atualizarInterface(){{
+                    var tipo = document.getElementById('tipo_pagto').value;
+                    var avista = document.querySelectorAll('.financeiro-avista');
+                    var convenio = document.getElementById('campo_convenio');
+                    
+                    if(tipo === 'faturado'){{
+                        avista.forEach(el => el.classList.add('d-none'));
+                        convenio.classList.remove('d-none');
                     }} else {{
-                        document.getElementById('div_convenio').classList.add('d-none');
-                        document.getElementById('div_forma').classList.remove('d-none');
-                        document.getElementById('div_valor').classList.remove('d-none');
+                        avista.forEach(el => el.classList.remove('d-none'));
+                        convenio.classList.add('d-none');
                     }}
                 }}
             </script>
             """
 
-    opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
-
     conteudo = f"""
         <div class="container py-3">
-            <h4 class="fw-bold mb-4">Recepção: Painel de Controle</h4>
+            <h4 class="fw-bold mb-4 text-primary">Recepção Diária</h4>
             {mensagem}
-            <div class="card mb-3 p-3 bg-light border-0 shadow-sm">
+            <div class="card mb-3 p-2 bg-light border-0 shadow-sm">
                 <form method="GET" class="row g-2">
-                    <div class="col-md-6"><select name="unidade" class="form-select">{f'<option value="">Todas Unidades</option>'}{opts_unid}</select></div>
-                    <div class="col-md-2"><button class="btn btn-primary w-100">FILTRAR</button></div>
+                    <div class="col-md-5"><select name="unidade" class="form-select">
+                        <option value="">Todas Unidades</option>{"".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])}
+                    </select></div>
+                    <div class="col-md-2"><button class="btn btn-primary w-100 fw-bold">FILTRAR</button></div>
                 </form>
             </div>
-            <div class="table-responsive card shadow border-0">
+            <div class="table-responsive card shadow border-0 overflow-hidden">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-dark">
-                        <tr><th>Hora</th><th>Paciente / Convênio</th><th>Profissional</th><th>Ações</th></tr>
+                        <tr><th>Hora</th><th>Paciente / Plano</th><th>Profissional</th><th>Ações</th></tr>
                     </thead>
-                    <tbody>{linhas if linhas else '<tr><td colspan="4" class="text-center">Nenhum registro.</td></tr>'}</tbody>
+                    <tbody>{linhas if linhas else '<tr><td colspan="4" class="text-center py-4">Nenhum agendamento.</td></tr>'}</tbody>
                 </table>
             </div>
             {modal_fluxo}
         </div>
     """
-    return HttpResponse(base_html("Recepção Diária", conteudo))
-
-
+    return HttpResponse(base_html("Recepção", conteudo))
 
 
 
