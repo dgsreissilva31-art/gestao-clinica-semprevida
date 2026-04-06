@@ -2385,138 +2385,82 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA (SINCRO COM RECEPÇÃO) ---
 @csrf_exempt
 def caixa_geral(request):
     import datetime
     hoje = datetime.date.today()
+    unidade_id = request.GET.get('unidade')
     mensagem = ""
 
-    # --- 1. LÓGICA DE PROCESSAMENTO (POST) ---
+    # --- 1. LANÇAMENTO AVULSO ---
     if request.method == "POST":
-        categoria = request.POST.get('categoria')
-        paciente = request.POST.get('paciente_nome')
-        valor = float(request.POST.get('valor') or 0)
-        forma = request.POST.get('forma_pagamento')
-        profissional = request.POST.get('profissional', '---')
-        detalhe = request.POST.get('detalhe', '---')
-        operacao = request.POST.get('operacao', 'entrada')
-
-        if operacao == 'saída': valor = -abs(valor)
-
         try:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO caixa 
-                    (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, [paciente, profissional, detalhe, valor, forma, categoria, hoje])
-                
-                ag_id = request.POST.get('agendamento_id')
-                if ag_id:
-                    cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [ag_id])
-            
-            mensagem = f'<div class="alert alert-success py-1 small">✅ Lançamento em {categoria} realizado!</div>'
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger py-1 small">❌ Erro ao salvar: {e}</div>'
+                    INSERT INTO caixa (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento, unidade_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, [request.POST.get('paciente_nome'), request.POST.get('profissional', '---'), 
+                      request.POST.get('detalhe', '---'), float(request.POST.get('valor') or 0), 
+                      request.POST.get('forma_pagamento'), request.POST.get('categoria'), hoje, unidade_id])
+            mensagem = '<div class="alert alert-success py-1 small">✅ Lançamento realizado!</div>'
+        except Exception as e: mensagem = f'<div class="alert alert-danger py-1 small">❌ Erro: {e}</div>'
 
-    # --- 2. BUSCA DE DADOS (SQL CORRIGIDO) ---
+    # --- 2. BUSCA DE MOVIMENTAÇÃO ---
     with connection.cursor() as cursor:
-        # Correção do JOIN: ag -> ac -> prof
-        cursor.execute("""
-            SELECT 
-                ag.id, 
-                pac.nome, 
-                prof.nome, 
-                conv.nome, 
-                ag.horario_selecionado
-            FROM agendamentos ag
-            JOIN pacientes pac ON ag.paciente_id = pac.id
-            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-            JOIN profissionais prof ON ac.profissional_id = prof.id
-            LEFT JOIN convenios conv ON pac.convenio_id = conv.id
-            WHERE ag.data_agendamento = %s AND ag.status = 'Chegada'
-            ORDER BY ag.horario_selecionado ASC
-        """, [hoje])
-        consultas_pendentes = cursor.fetchall()
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades_list = cursor.fetchall()
 
-        cursor.execute("""
-            SELECT categoria, paciente_nome, profissional_nome, descricao, valor, forma_pagamento 
-            FROM caixa WHERE data_pagamento = %s ORDER BY id ASC
-        """, [hoje])
+        sql_mov = "SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento FROM caixa WHERE data_pagamento = %s"
+        params = [hoje]
+        if unidade_id:
+            sql_mov += " AND unidade_id = %s"
+            params.append(unidade_id)
+        
+        cursor.execute(sql_mov, params)
         movimentos = cursor.fetchall()
 
-    # --- 3. SEPARAÇÃO E TOTAIS (ESTILO PLANILHA) ---
+    # --- 3. TOTAIS ---
     tabelas = {'Consulta': '', 'Exame': '', 'Odonto': '', 'Diverso': ''}
-    totais = {'Consulta': 0, 'Exame': 0, 'Odonto': 0, 'Diverso_In': 0, 'Diverso_Out': 0}
-
+    total_geral = 0
     for m in movimentos:
-        cat, pac, prof, desc, val, forma = m
-        cor_val = "text-danger" if val < 0 else ""
-        linha = f"<tr><td>{pac}</td><td>{prof}</td><td>{desc}</td><td class='fw-bold {cor_val}'>{val:.2f}</td><td>{forma}</td></tr>"
-        
-        if cat in tabelas:
-            tabelas[cat] += linha
-            if cat == 'Diverso':
-                if val > 0: totais['Diverso_In'] += val
-                else: totais['Diverso_Out'] += abs(val)
-            else:
-                totais[cat] += val
+        cat, pac, prof, val, forma = m
+        total_geral += val
+        linha = f"<tr><td>{pac}</td><td><small>{prof}</small></td><td class='fw-bold'>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        if cat in tabelas: tabelas[cat] += linha
 
-    total_geral = totais['Consulta'] + totais['Exame'] + totais['Odonto'] + totais['Diverso_In'] - totais['Diverso_Out']
+    opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
 
     conteudo = f"""
         <div class="container-fluid py-2">
-            <h5 class="fw-bold mb-3"><i class="bi bi-cash-coin text-success"></i> Caixa Consolidado - {hoje.strftime('%d/%m/%Y')}</h5>
+            <div class="d-flex justify-content-between align-items-end mb-3">
+                <h5 class="fw-bold m-0 text-success">Caixa Consolidado</h5>
+                <form method="GET" class="d-flex gap-2">
+                    <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Selecione Unidade</option>{opts_uni}
+                    </select>
+                </form>
+            </div>
             {mensagem}
 
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-primary text-white py-1 fw-bold">Aguardando Pagamento (Consultas)</div>
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0 small">
-                        <thead class="table-light"><tr><th>Paciente</th><th>Médico</th><th>Convênio</th><th>Hora</th><th>Ação</th></tr></thead>
-                        <tbody>
-                            {"".join([f'<tr><td>{p[1]}</td><td>{p[2]}</td><td>{p[3] or "Particular"}</td><td>{p[4]}</td><td>'
-                                      f'<form method="POST" class="d-flex gap-1">'
-                                      f'<input type="hidden" name="categoria" value="Consulta"><input type="hidden" name="agendamento_id" value="{p[0]}">'
-                                      f'<input type="hidden" name="paciente_nome" value="{p[1]}"><input type="hidden" name="profissional" value="{p[2]}">'
-                                      f'<input type="number" step="0.01" name="valor" class="form-control form-control-sm" placeholder="R$" style="width:90px" required>'
-                                      f'<select name="forma_pagamento" class="form-select form-select-sm"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select>'
-                                      f'<button class="btn btn-success btn-sm">Pagar</button></form></td></tr>' for p in consultas_pendentes]) if consultas_pendentes else '<tr><td colspan="5" class="text-center text-muted">Nenhum paciente na fila de cobrança.</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
+            <div class="row g-2">
+                <div class="col-md-3"><div class="card p-2 shadow-sm bg-primary text-white"><small>Consultas</small><h6 class="m-0">R$ {sum([m[3] for m in movimentos if m[0]=='Consulta']):.2f}</h6></div></div>
+                <div class="col-md-3"><div class="card p-2 shadow-sm bg-info text-white"><small>Exames</small><h6 class="m-0">R$ {sum([m[3] for m in movimentos if m[0]=='Exame']):.2f}</h6></div></div>
+                <div class="col-md-3"><div class="card p-2 shadow-sm bg-success text-white"><small>Odonto</small><h6 class="m-0">R$ {sum([m[3] for m in movimentos if m[0]=='Odonto']):.2f}</h6></div></div>
+                <div class="col-md-3"><div class="card p-2 shadow-sm bg-dark text-warning"><small>TOTAL GERAL</small><h6 class="m-0">R$ {total_geral:.2f}</h6></div></div>
             </div>
 
-            <div class="card shadow-sm mb-4 border-dark">
-                <div class="card-header bg-dark text-white py-1 fw-bold">Novo Lançamento (Exames, Odonto ou Despesas)</div>
-                <div class="card-body p-2">
-                    <form method="POST" class="row g-2">
-                        <div class="col-md-2"><select name="categoria" class="form-select form-select-sm"><option value="Exame">Exame</option><option value="Odonto">Odontologia</option><option value="Diverso">Diverso/Despesa</option></select></div>
-                        <div class="col-md-3"><input type="text" name="paciente_nome" class="form-control form-control-sm" placeholder="Paciente / Descrição" required></div>
-                        <div class="col-md-2"><input type="text" name="detalhe" class="form-control form-control-sm" placeholder="Detalhes"></div>
-                        <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control form-control-sm" placeholder="Valor" required></div>
-                        <div class="col-md-1"><select name="operacao" class="form-select form-select-sm"><option value="entrada">Entrada</option><option value="saída">Saída</option></select></div>
-                        <div class="col-md-2"><button class="btn btn-dark btn-sm w-100 fw-bold">REGISTRAR</button></div>
-                    </form>
-                </div>
+            <div class="row mt-3 g-3">
+                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header py-1 small fw-bold">Detalhamento Consultas</div><table class="table table-sm table-hover mb-0 small"><tbody>{tabelas['Consulta']}</tbody></table></div></div>
+                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header py-1 small fw-bold">Outros Lançamentos</div><table class="table table-sm table-hover mb-0 small"><tbody>{tabelas['Exame']}{tabelas['Odonto']}{tabelas['Diverso']}</tbody></table></div></div>
             </div>
-
-            <div class="row g-3">
-                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header bg-secondary text-white py-1">Consultas: <b>R$ {totais['Consulta']:.2f}</b></div><table class="table table-sm mb-0 x-small"><tbody>{tabelas['Consulta'] or '<tr><td>-</td></tr>'}</tbody></table></div></div>
-                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header bg-info text-white py-1">Exames: <b>R$ {totais['Exame']:.2f}</b></div><table class="table table-sm mb-0 x-small"><tbody>{tabelas['Exame'] or '<tr><td>-</td></tr>'}</tbody></table></div></div>
-                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header bg-success text-white py-1">Odontologia: <b>R$ {totais['Odonto']:.2f}</b></div><table class="table table-sm mb-0 x-small"><tbody>{tabelas['Odonto'] or '<tr><td>-</td></tr>'}</tbody></table></div></div>
-                <div class="col-md-6"><div class="card shadow-sm"><div class="card-header bg-danger text-white py-1">Diversos/Despesas (Saldo: {totais['Diverso_In']-totais['Diverso_Out']:.2f})</div><table class="table table-sm mb-0 x-small"><tbody>{tabelas['Diverso'] or '<tr><td>-</td></tr>'}</tbody></table></div></div>
+            
+            <div class="card mt-3 bg-light border-dashed p-2 text-center">
+                <small class="text-muted">Os lançamentos de Consultas são automáticos via Check-in da Recepção.</small>
             </div>
-
-            <div class="card mt-3 bg-dark text-white border-0 shadow">
-                <div class="card-body py-2 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fw-bold text-warning text-uppercase">Total Consolidado:</h5>
-                    <h4 class="mb-0 fw-bold">R$ {total_geral:.2f}</h4>
-                </div>
-            </div>
-        </div>
-    """
+        </div>"""
     return HttpResponse(base_html("Caixa", conteudo))
+
 
 
 
