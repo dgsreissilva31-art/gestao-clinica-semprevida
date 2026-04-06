@@ -2132,6 +2132,7 @@ def agendar_consulta(request):
 def recepcao_geral(request):
     from django.db import connection
     from django.http import HttpResponse
+    from django.shortcuts import redirect
     import datetime
 
     data_hoje = datetime.date.today()
@@ -2143,7 +2144,7 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN
+    # FINALIZAR CHECK-IN (COM REDIRECT)
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
@@ -2156,7 +2157,6 @@ def recepcao_geral(request):
 
             with connection.cursor() as cursor:
 
-                # Buscar dados
                 cursor.execute("""
                     SELECT pac.nome, prof.nome
                     FROM agendamentos ag
@@ -2168,7 +2168,6 @@ def recepcao_geral(request):
 
                 info = cursor.fetchone()
 
-                # Inserir no caixa
                 cursor.execute("""
                     INSERT INTO caixa
                     (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento)
@@ -2182,17 +2181,15 @@ def recepcao_geral(request):
                     'Consulta'
                 ])
 
-                # Atualizar status
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
                     WHERE id = %s
                 """, [ag_id])
 
-            mensagem = '<div class="alert alert-success">✅ Check-in concluído!</div>'
-
-            # 🔥 FECHA MODAL AUTOMÁTICO
-            agendamento_id = None
+            # 🔥 REDIRECT (FECHA MODAL)
+            url = f"/recepcao/?unidade={unidade_filtro}" if unidade_filtro else "/recepcao/"
+            return redirect(url)
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
@@ -2314,7 +2311,6 @@ def recepcao_geral(request):
             }}
         }}
 
-        // Executa ao abrir
         togglePagamento();
         </script>
         """
@@ -2354,7 +2350,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 
 
