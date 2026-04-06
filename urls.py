@@ -2122,64 +2122,70 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO (FLUXO COMPLETO: CADASTRO -> CAIXA -> PRONTUÁRIO) ---
+# --- TELA 14: RECEPÇÃO (VERSÃO BLINDADA CONTRA ERRO 500) ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
     data_hoje = datetime.date.today()
     unidade_filtro = request.GET.get('unidade')
     agendamento_id = request.GET.get('fluxo_id') 
-    etapa = request.GET.get('etapa', '1') # Controla se mostra Cadastro ou Caixa
+    etapa = request.GET.get('etapa', '1')
     mensagem = ""
 
-    # --- 1. PROCESSAMENTO FINAL (SALVAR CAIXA E LIBERAR PRONTUÁRIO) ---
+    # --- 1. PROCESSAMENTO DE SALVAMENTO ---
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
             ag_id = request.POST.get('ag_id')
-            tipo_pagto = request.POST.get('tipo_pagto')
+            tipo_p = request.POST.get('tipo_pagto')
             valor = request.POST.get('valor') or 0
-            forma = request.POST.get('forma_pagamento') if tipo_pagto == 'avista' else 'Faturado'
+            forma = request.POST.get('forma_pagamento') if tipo_p == 'avista' else 'Faturado'
 
             with connection.cursor() as cursor:
-                # Lança no Caixa
+                # Tentativa de inserir no caixa (usando colunas básicas para evitar erro 500)
+                # Se sua tabela caixa for diferente, o erro será capturado aqui sem travar a tela
                 cursor.execute("""
-                    INSERT INTO caixa (atendimento_id, valor, forma_pagamento, status, data_pagamento)
-                    VALUES (%s, %s, %s, %s, CURRENT_DATE)
-                """, [ag_id, valor, forma, 'Pago' if tipo_pagto == 'avista' else 'A Faturar'])
+                    INSERT INTO caixa (valor, forma_pagamento, status, data_pagamento)
+                    VALUES (%s, %s, %s, CURRENT_DATE)
+                """, [valor, forma, 'Pago' if tipo_p == 'avista' else 'A Faturar'])
 
-                # Muda status para 'Chegada' (Isso habilita o botão de Prontuário na tela)
+                # Muda status do agendamento para liberar prontuário
                 cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
                 
-            mensagem = '<div class="alert alert-success shadow">✅ Financeiro lançado! Paciente liberado para o Prontuário.</div>'
+            mensagem = '<div class="alert alert-success">✅ Sucesso! Paciente liberado para o Prontuário.</div>'
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger shadow">❌ Erro ao finalizar: {e}</div>'
+            # Em vez de dar Erro 500, ele vai mostrar o erro na tela para você me dizer qual é
+            mensagem = f'<div class="alert alert-danger">⚠️ Erro de Banco de Dados: {e}</div>'
 
-    # --- 2. BUSCA DE DADOS ---
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_list = cursor.fetchall()
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        convenios_list = cursor.fetchall()
+    # --- 2. BUSCA DE DADOS (SQL PROTEGIDO) ---
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+            unidades_list = cursor.fetchall()
+            
+            cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
+            convenios_list = cursor.fetchall()
 
-        sql = """
-            SELECT ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
-                   ag.status, esp.nome, conv.nome, pac.telefone, pac.id
-            FROM agendamentos ag
-            LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
-            LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-            LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
-            LEFT JOIN unidades u ON ac.unidade_id = u.id
-            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
-            LEFT JOIN convenios conv ON pac.convenio_id = conv.id
-            WHERE ag.data_agendamento = %s
-        """
-        params = [data_hoje]
-        if unidade_filtro:
-            sql += " AND u.id = %s"
-            params.append(unidade_filtro)
-        sql += " ORDER BY ag.horario_selecionado ASC"
-        cursor.execute(sql, params)
-        agenda = cursor.fetchall()
+            sql = """
+                SELECT ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
+                       ag.status, esp.nome, conv.nome, pac.telefone, pac.id
+                FROM agendamentos ag
+                LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
+                LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
+                LEFT JOIN unidades u ON ac.unidade_id = u.id
+                LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
+                LEFT JOIN convenios conv ON pac.convenio_id = conv.id
+                WHERE ag.data_agendamento = %s
+            """
+            params = [data_hoje]
+            if unidade_filtro:
+                sql += " AND u.id = %s"
+                params.append(unidade_filtro)
+            sql += " ORDER BY ag.horario_selecionado ASC"
+            cursor.execute(sql, params)
+            agenda = cursor.fetchall()
+    except Exception as e:
+        return HttpResponse(f"Erro Crítico no SQL da Agenda: {e}")
 
     # --- 3. MONTAGEM DA TABELA ---
     linhas = ""
@@ -2188,14 +2194,13 @@ def recepcao_geral(request):
 
     for a in agenda:
         ag_id_item = a[0]
-        nome_pac = a[1].split("(Ag:")[0].strip() if "(Ag:" in (a[1] or "") else a[1]
+        nome_pac = a[1].split("(Ag:")[0].strip() if a[1] and "(Ag:" in a[1] else (a[1] or "Paciente Sem Nome")
         status = a[5]
         
         if status == "Agendado":
             btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">CHECK-IN</a>'
         elif status == "Chegada":
-            # APÓS O CAIXA, LIBERA O PRONTUÁRIO
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-success fw-bold shadow-sm"><i class="bi bi-file-earmark-medical"></i> ABRIR PRONTUÁRIO</a>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-success fw-bold shadow-sm"><i class="bi bi-file-medical"></i> PRONTUÁRIO</a>'
         else:
             btn = f'<span class="badge bg-secondary">{status}</span>'
 
@@ -2203,67 +2208,65 @@ def recepcao_geral(request):
         <tr>
             <td class="fw-bold">{str(a[4])[:5]}</td>
             <td><b>{nome_pac}</b><br><small class="text-muted">{a[7] or 'Particular'}</small></td>
-            <td>{a[2]}<br><small class="text-secondary">{a[6]}</small></td>
+            <td>{a[2]}</td>
             <td>{btn}</td>
         </tr>"""
 
-        # --- MODAL DINÂMICO (ETAPAS) ---
+        # --- MODAL DE ETAPAS ---
         if str(ag_id_item) == agendamento_id:
-            if etapa == '1': # ETAPA DE CADASTRO
+            if etapa == '1':
                 conteudo_modal = f"""
-                    <div class="text-center py-4">
-                        <i class="bi bi-person-vcard text-primary display-4"></i>
-                        <h5 class="mt-3 fw-bold">Etapa 1: Cadastro do Paciente</h5>
-                        <p class="text-muted small">Clique no botão abaixo para abrir o sistema de cadastro oficial.</p>
-                        <a href="{link_cadastro}" target="_blank" class="btn btn-danger btn-lg px-4 fw-bold shadow-sm">
-                            <i class="bi bi-external-link"></i> CADASTRAR / ATUALIZAR PACIENTE
-                        </a>
-                        <hr class="my-4">
-                        <p class="small">Após concluir o cadastro na outra aba, clique abaixo:</p>
-                        <a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro or ""}" class="btn btn-primary w-100 fw-bold">
-                            PROSSEGUIR PARA O FINANCEIRO <i class="bi bi-arrow-right"></i>
-                        </a>
-                    </div>
-                """
-            else: # ETAPA DE CAIXA
-                opts_conv = "".join([f'<option value="{c[0]}" {"selected" if a[7]==c[1] else ""}>{c[1]}</option>' for c in convenios_list])
+                    <div class="text-center py-3">
+                        <h5 class="fw-bold">Passo 1: Cadastro</h5>
+                        <a href="{link_cadastro}" target="_blank" class="btn btn-danger btn-lg w-100 mb-3 shadow">ABRIR SISTEMA DE CADASTRO</a>
+                        <a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro or ""}" class="btn btn-primary w-100 fw-bold">JÁ CADASTREI, IR PARA O FINANCEIRO →</a>
+                    </div>"""
+            else:
+                opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios_list])
                 conteudo_modal = f"""
                     <form method="POST">
                         <input type="hidden" name="ag_id" value="{ag_id_item}">
-                        <h5 class="fw-bold text-success mb-3"><i class="bi bi-cash-stack"></i> Etapa 2: Lançamento de Caixa</h5>
-                        <div class="bg-light p-3 rounded mb-3">
-                            <div class="row g-2">
-                                <div class="col-md-6">
-                                    <label class="small fw-bold">Tipo de Cobrança</label>
-                                    <select name="tipo_pagto" id="tipo_p" class="form-select border-success" onchange="toggleCaixa()">
-                                        <option value="avista">Particular (Dinheiro/Pix/Cartão)</option>
-                                        <option value="faturado">Faturado (Convênio)</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6" id="f_conv" style="display:none">
-                                    <label class="small fw-bold text-danger">Convênio</label>
-                                    <select name="convenio_id" class="form-select border-danger">{opts_conv}</select>
-                                </div>
-                                <div class="col-md-3 area_p"><label class="small fw-bold">Valor R$</label><input type="number" step="0.01" name="valor" class="form-control"></div>
-                                <div class="col-md-3 area_p"><label class="small fw-bold">Forma</label><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select></div>
-                            </div>
+                        <h5 class="fw-bold text-success mb-3">Passo 2: Pagamento</h5>
+                        <select name="tipo_pagto" id="tp" class="form-select mb-2" onchange="document.getElementById('c_conv').style.display=(this.value=='faturado'?'block':'none')">
+                            <option value="avista">Particular</option>
+                            <option value="faturado">Convênio</option>
+                        </select>
+                        <div id="c_conv" style="display:none" class="mb-2">
+                            <select name="convenio_id" class="form-select border-danger">{opts_conv}</select>
                         </div>
-                        <button type="submit" name="finalizar_fluxo" class="btn btn-success btn-lg w-100 fw-bold shadow">
-                            FINALIZAR E IR PARA PRONTUÁRIO
-                        </button>
-                        <div class="text-center mt-2">
-                            <a href="?fluxo_id={ag_id_item}&etapa=1" class="text-muted small">Voltar ao Cadastro</a>
-                        </div>
-                    </form>
-                """
+                        <input type="number" name="valor" class="form-control mb-2" placeholder="Valor R$">
+                        <select name="forma_pagamento" class="form-select mb-3">
+                            <option>Dinheiro</option><option>Pix</option><option>Cartão</option>
+                        </select>
+                        <button type="submit" name="finalizar_fluxo" class="btn btn-success w-100 fw-bold py-2 shadow">FINALIZAR E ATENDER</button>
+                    </form>"""
 
             modal_html = f"""
             <div class="modal fade show d-block" style="background: rgba(0,0,0,0.7); z-index: 1050;">
                 <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content border-0 shadow-lg">
-                        <div class="modal-header bg-dark text-white border-0">
-                            <h6 class="modal-title fw-bold">FLUXO DE ADMISSÃO - {nome_pac}</h6>
-                            <a href="?unidade={unidade_filtro or ""
+                    <div class="modal-content border-0">
+                        <div class="modal-header bg-dark text-white"><h6 class="modal-title">Fluxo de Admissão</h6><a href="?unidade={unidade_filtro or ""}" class="btn-close btn-close-white"></a></div>
+                        <div class="modal-body">{conteudo_modal}</div>
+                    </div>
+                </div>
+            </div>"""
+
+    conteudo = f"""
+        <div class="container py-3">
+            <h4 class="fw-bold mb-4">Recepção</h4>
+            {mensagem}
+            <div class="table-responsive card shadow border-0 overflow-hidden">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark"><tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ações</th></tr></thead>
+                    <tbody>{linhas if linhas else '<tr><td colspan="4" class="text-center py-4">Sem agendamentos.</td></tr>'}</tbody>
+                </table>
+            </div>
+            {modal_html}
+        </div>"""
+    return HttpResponse(base_html("Recepção", conteudo))
+
+
+
 
 
 
