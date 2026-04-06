@@ -1199,6 +1199,7 @@ def pacientes_geral(request):
 
 
 
+
 # --- 10. TELA 8: ACESSOS ---
 @csrf_exempt
 def acesso_geral(request):
