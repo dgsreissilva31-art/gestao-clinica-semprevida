@@ -2496,7 +2496,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- TELA 16: CAIXA CORRIGIDA ---
+# --- 18. TELA 16: CAIXA (COM FILTRO POR UNIDADE E COMPATÍVEL) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2505,56 +2505,199 @@ def caixa_geral(request):
 
     hoje = datetime.date.today()
 
+    # 🔒 Mantém unidade no POST e GET
+    unidade_id = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
+    mensagem = ""
+
+    # ===============================
+    # 🔍 VERIFICA SE EXISTE COLUNA unidade_id
+    # ===============================
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, status
-            FROM caixa
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'caixa'
+        """)
+        colunas = [c[0] for c in cursor.fetchall()]
+        tem_unidade = 'unidade_id' in colunas
+
+    # ===============================
+    # 1. LANÇAMENTO AVULSO
+    # ===============================
+    if request.method == "POST" and "lancar" in request.POST:
+        try:
+            with connection.cursor() as cursor:
+
+                if tem_unidade:
+                    cursor.execute("""
+                        INSERT INTO caixa 
+                        (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento, unidade_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, [
+                        request.POST.get('paciente_nome'),
+                        request.POST.get('profissional', '---'),
+                        request.POST.get('detalhe', '---'),
+                        float(request.POST.get('valor') or 0),
+                        request.POST.get('forma_pagamento'),
+                        request.POST.get('categoria'),
+                        hoje,
+                        unidade_id if unidade_id else None
+                    ])
+                else:
+                    cursor.execute("""
+                        INSERT INTO caixa 
+                        (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, [
+                        request.POST.get('paciente_nome'),
+                        request.POST.get('profissional', '---'),
+                        request.POST.get('detalhe', '---'),
+                        float(request.POST.get('valor') or 0),
+                        request.POST.get('forma_pagamento'),
+                        request.POST.get('categoria'),
+                        hoje
+                    ])
+
+            mensagem = '<div class="alert alert-success py-1 small">✅ Lançamento realizado!</div>'
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger py-1 small">❌ Erro: {e}</div>'
+
+    # ===============================
+    # 2. BUSCA DE DADOS
+    # ===============================
+    with connection.cursor() as cursor:
+
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades_list = cursor.fetchall()
+
+        sql_mov = """
+            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento 
+            FROM caixa 
             WHERE data_pagamento = %s
-        """, [hoje])
+        """
+        params = [hoje]
 
-        dados = cursor.fetchall()
+        if unidade_id and tem_unidade:
+            sql_mov += " AND unidade_id = %s"
+            params.append(unidade_id)
 
-    total_recebido = 0
-    total_faturado = 0
+        cursor.execute(sql_mov, params)
+        movimentos = cursor.fetchall()
 
-    linhas_recebido = ""
-    linhas_faturado = ""
+    # ===============================
+    # 3. TOTAIS
+    # ===============================
+    tabelas = {'Consulta': '', 'Exame': '', 'Odonto': '', 'Diverso': ''}
+    total_geral = 0
 
-    for d in dados:
-        cat, pac, prof, val, forma, status = d
+    for m in movimentos:
+        cat, pac, prof, val, forma = m
+        val = float(val or 0)
+        total_geral += val
 
-        linha = f"<tr><td>{pac}</td><td>{prof}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        linha = f"""
+        <tr>
+            <td>{pac}</td>
+            <td><small>{prof}</small></td>
+            <td class='fw-bold'>R$ {val:.2f}</td>
+            <td>{forma}</td>
+        </tr>
+        """
 
-        if status == "Pago":
-            total_recebido += val
-            linhas_recebido += linha
-        else:
-            total_faturado += val
-            linhas_faturado += linha
+        if cat in tabelas:
+            tabelas[cat] += linha
 
+    # ===============================
+    # 4. SELECT UNIDADES (COM PERSISTÊNCIA)
+    # ===============================
+    opts_uni = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades_list
+    ])
+
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
-    <div class="container">
+    <div class="container-fluid py-2">
 
-        <h4 class="text-success">Caixa do Dia</h4>
+        <div class="d-flex justify-content-between align-items-end mb-3">
+            <h5 class="fw-bold m-0 text-success">Caixa Consolidado</h5>
 
-        <div class="row mb-3">
-            <div class="col">
-                <div class="card p-2 bg-success text-white">
-                    Recebido<br><b>R$ {total_recebido:.2f}</b>
+            <form method="GET" class="d-flex gap-2">
+                <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Todas Unidades</option>
+                    {opts_uni}
+                </select>
+            </form>
+        </div>
+
+        {mensagem}
+
+        <!-- TOTAL -->
+        <div class="row g-2">
+            <div class="col-md-3">
+                <div class="card p-2 shadow-sm bg-primary text-white">
+                    <small>Consultas</small>
+                    <h6>R$ {sum([float(m[3] or 0) for m in movimentos if m[0]=='Consulta']):.2f}</h6>
                 </div>
             </div>
-            <div class="col">
-                <div class="card p-2 bg-warning">
-                    Faturado<br><b>R$ {total_faturado:.2f}</b>
+
+            <div class="col-md-3">
+                <div class="card p-2 shadow-sm bg-info text-white">
+                    <small>Exames</small>
+                    <h6>R$ {sum([float(m[3] or 0) for m in movimentos if m[0]=='Exame']):.2f}</h6>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card p-2 shadow-sm bg-success text-white">
+                    <small>Odonto</small>
+                    <h6>R$ {sum([float(m[3] or 0) for m in movimentos if m[0]=='Odonto']):.2f}</h6>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card p-2 shadow-sm bg-dark text-warning">
+                    <small>TOTAL GERAL</small>
+                    <h6>R$ {total_geral:.2f}</h6>
                 </div>
             </div>
         </div>
 
-        <h6>Recebidos</h6>
-        <table class="table table-sm">{linhas_recebido}</table>
+        <!-- TABELAS -->
+        <div class="row mt-3 g-3">
 
-        <h6>Convênios (Faturar)</h6>
-        <table class="table table-sm">{linhas_faturado}</table>
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header py-1 small fw-bold">Consultas</div>
+                    <table class="table table-sm table-hover mb-0 small">
+                        <tbody>{tabelas['Consulta']}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header py-1 small fw-bold">Outros</div>
+                    <table class="table table-sm table-hover mb-0 small">
+                        <tbody>
+                            {tabelas['Exame']}
+                            {tabelas['Odonto']}
+                            {tabelas['Diverso']}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="card mt-3 bg-light p-2 text-center">
+            <small class="text-muted">
+                ✔ Consultas entram automaticamente via Recepção (Check-in)
+            </small>
+        </div>
 
     </div>
     """
