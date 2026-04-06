@@ -2128,7 +2128,6 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO CORRIGIDA ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2136,10 +2135,11 @@ def recepcao_geral(request):
     import datetime
 
     data_hoje = datetime.date.today()
-    unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
 
+    unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
+
     mensagem = ""
 
     # ===============================
@@ -2148,23 +2148,18 @@ def recepcao_geral(request):
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
             ag_id = request.POST.get('ag_id')
-            tipo_p = request.POST.get('tipo_pagto')
+            tipo = request.POST.get('tipo_pagto')
 
-            # 🔥 REGRA PRINCIPAL
-            if tipo_p == "faturado":
-                valor = 0
-                forma = "Faturado"
-                status_pg = "A Faturar"
-            else:
-                valor = float(request.POST.get('valor') or 0)
-                forma = request.POST.get('forma_pagamento')
-                status_pg = "Pago"
+            valor = float(request.POST.get('valor') or 0) if tipo == 'avista' else 0
+            forma = request.POST.get('forma_pagamento') if tipo == 'avista' else 'Faturado'
+            status_financeiro = 'Pago' if tipo == 'avista' else 'A Faturar'
 
             with connection.cursor() as cursor:
 
+                # Buscar dados
                 cursor.execute("""
                     SELECT pac.nome, prof.nome
-                    FROM agendamentos ag 
+                    FROM agendamentos ag
                     JOIN pacientes pac ON ag.paciente_id = pac.id
                     JOIN agendas_config ac ON ag.agenda_config_id = ac.id
                     JOIN profissionais prof ON ac.profissional_id = prof.id
@@ -2173,134 +2168,192 @@ def recepcao_geral(request):
 
                 info = cursor.fetchone()
 
-                # 🔥 CAIXA
+                # Inserir no caixa
                 cursor.execute("""
-                    INSERT INTO caixa 
+                    INSERT INTO caixa
                     (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento)
                     VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE)
                 """, [
-                    info[0], info[1], valor, forma,
-                    status_pg, 'Consulta'
+                    info[0],
+                    info[1],
+                    valor,
+                    forma,
+                    status_financeiro,
+                    'Consulta'
                 ])
 
-                # STATUS AGENDA
+                # Atualizar status
                 cursor.execute("""
-                    UPDATE agendamentos 
-                    SET status = %s 
+                    UPDATE agendamentos
+                    SET status = 'Chegada'
                     WHERE id = %s
-                """, ["Chegada", ag_id])
+                """, [ag_id])
 
-            mensagem = '<div class="alert alert-success">✅ Check-in realizado!</div>'
+            mensagem = '<div class="alert alert-success">✅ Check-in concluído!</div>'
+
+            # 🔥 FECHA MODAL AUTOMÁTICO
+            agendamento_id = None
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
 
     # ===============================
-    # BUSCA
+    # BUSCAR DADOS
     # ===============================
     with connection.cursor() as cursor:
 
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_list = cursor.fetchall()
+        unidades = cursor.fetchall()
 
-        cursor.execute("""
+        sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
             LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
             LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
+            LEFT JOIN unidades u ON ac.unidade_id = u.id
             WHERE ag.data_agendamento = %s
-            ORDER BY ag.horario_selecionado
-        """, [data_hoje])
+        """
 
+        params = [data_hoje]
+
+        if unidade_filtro:
+            sql += " AND u.id = %s"
+            params.append(unidade_filtro)
+
+        sql += " ORDER BY ag.horario_selecionado"
+
+        cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
+    # ===============================
+    # SELECT UNIDADES
+    # ===============================
+    opts_unidades = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades
+    ])
+
+    # ===============================
+    # LINHAS
+    # ===============================
     linhas = ""
 
     for a in agenda:
+        ag_id_item = a[0]
+        nome = a[1] or "---"
+        hora = str(a[3])[:5]
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={a[0]}&etapa=1" class="btn btn-warning btn-sm">Check-in</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
-            btn = status
+            btn = f'<span class="badge bg-secondary">{status}</span>'
 
         linhas += f"""
         <tr>
-            <td>{str(a[3])[:5]}</td>
-            <td>{a[1]}</td>
-            <td>{a[2]}</td>
+            <td>{hora}</td>
+            <td>{nome}</td>
+            <td>{a[2] or '-'}</td>
             <td>{btn}</td>
         </tr>
         """
 
     # ===============================
-    # MODAL FINANCEIRO
+    # MODAL
     # ===============================
     modal_html = ""
 
-    if agendamento_id:
+    if agendamento_id and etapa == '2':
         modal_html = f"""
         <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
-            <div class="modal-dialog">
-                <div class="modal-content p-3">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content p-4">
+
                     <form method="POST">
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
+                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
-                        <h5>Financeiro</h5>
+                        <h5 class="text-success">Lançamento de Caixa</h5>
 
-                        <select name="tipo_pagto" class="form-select mb-2" onchange="toggleValor(this)">
-                            <option value="avista">Particular</option>
+                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
+                            <option value="avista">Particular (À Vista)</option>
                             <option value="faturado">Convênio</option>
                         </select>
 
-                        <input id="campoValor" type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
+                        <div id="bloco_pagamento">
+                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
 
-                        <select id="formaPg" name="forma_pagamento" class="form-select mb-3">
-                            <option>Pix</option>
-                            <option>Cartão</option>
-                            <option>Dinheiro</option>
-                        </select>
+                            <select name="forma_pagamento" class="form-select mb-3">
+                                <option>Pix</option>
+                                <option>Cartão</option>
+                                <option>Dinheiro</option>
+                            </select>
+                        </div>
 
-                        <button name="finalizar_fluxo" class="btn btn-success w-100">Finalizar</button>
+                        <button name="finalizar_fluxo" class="btn btn-success w-100">
+                            CONCLUIR CHECK-IN
+                        </button>
                     </form>
+
                 </div>
             </div>
         </div>
 
         <script>
-        function toggleValor(select){
-            let v = document.getElementById("campoValor");
-            let f = document.getElementById("formaPg");
+        function togglePagamento() {{
+            var tipo = document.getElementById("tipo").value;
+            var bloco = document.getElementById("bloco_pagamento");
 
-            if(select.value == "faturado"){
-                v.value = 0;
-                v.disabled = true;
-                f.disabled = true;
-            }else{
-                v.disabled = false;
-                f.disabled = false;
-            }
-        }
+            if (tipo === "faturado") {{
+                bloco.style.display = "none";
+            }} else {{
+                bloco.style.display = "block";
+            }}
+        }}
+
+        // Executa ao abrir
+        togglePagamento();
         </script>
         """
 
+    # ===============================
+    # HTML FINAL
+    # ===============================
     conteudo = f"""
-    <h4>Recepção</h4>
+    <div class="mb-3 d-flex justify-content-between">
+        <h4>Recepção Diária</h4>
+
+        <form method="GET">
+            <select name="unidade" class="form-select" onchange="this.form.submit()">
+                <option value="">Todas</option>
+                {opts_unidades}
+            </select>
+        </form>
+    </div>
+
     {mensagem}
 
-    <table class="table">
-        <tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr>
-        {linhas}
+    <table class="table table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Hora</th>
+                <th>Paciente</th>
+                <th>Médico</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {linhas if linhas else "<tr><td colspan='4'>Sem pacientes</td></tr>"}
+        </tbody>
     </table>
 
     {modal_html}
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 
 
