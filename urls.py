@@ -2128,15 +2128,18 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-@csrf_exempt
+# --- TELA 14: RECEPÇÃO CHECK-IN CORRIGIDO ---
+from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse
+from django.db import connection
+import datetime
+
+@csrf_exempt  # ⚠️ depois podemos remover e usar csrf_token no template
 def recepcao_geral(request):
-    from django.db import connection
-    from django.http import HttpResponse
-    import datetime, urllib.parse
 
     data_hoje = datetime.date.today()
 
-    # 🔒 GARANTIA TOTAL DO FILTRO
+    # 🔒 GARANTIA DO FILTRO
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
 
     agendamento_id = request.GET.get('fluxo_id')
@@ -2150,11 +2153,20 @@ def recepcao_geral(request):
         try:
             ag_id = request.POST.get('ag_id')
             tipo_p = request.POST.get('tipo_pagto')
-            valor = float(request.POST.get('valor') or 0)
-            forma = request.POST.get('forma_pagamento') if tipo_p == 'avista' else 'Faturado'
+
+            # ✅ REGRA: convênio não cobra valor
+            if tipo_p == 'avista':
+                valor = float(request.POST.get('valor') or 0)
+                forma = request.POST.get('forma_pagamento')
+                status_pagamento = 'Pago'
+            else:
+                valor = 0
+                forma = 'Faturado'
+                status_pagamento = 'A Faturar'
 
             with connection.cursor() as cursor:
 
+                # 🔍 Buscar dados
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id 
                     FROM agendamentos ag 
@@ -2167,17 +2179,22 @@ def recepcao_geral(request):
 
                 info = cursor.fetchone()
 
+                # ✅ VALIDAÇÃO (evita erro)
+                if not info:
+                    raise Exception("Agendamento não encontrado")
+
+                # 💰 Inserir no caixa
                 cursor.execute("""
                     INSERT INTO caixa 
                     (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
                     VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
                 """, [
                     info[0], info[1], valor, forma,
-                    'Pago' if tipo_p == 'avista' else 'A Faturar',
+                    status_pagamento,
                     'Consulta', info[2]
                 ])
 
-                # ⚠️ STATUS CURTO (evita erro varchar)
+                # 🔄 Atualizar status
                 cursor.execute("""
                     UPDATE agendamentos 
                     SET status = %s 
@@ -2223,7 +2240,7 @@ def recepcao_geral(request):
         agenda = cursor.fetchall()
 
     # ===============================
-    # SELECT UNIDADES (COM PERSISTÊNCIA)
+    # SELECT UNIDADES
     # ===============================
     opts_unidades = "".join([
         f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
@@ -2241,7 +2258,6 @@ def recepcao_geral(request):
         status = a[5] or "Agendado"
         hora = str(a[4])[:5]
 
-        # 🔒 LINK COM UNIDADE PRESERVADA
         if status == "Agendado":
             btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
         elif status == "Chegada":
@@ -2287,12 +2303,12 @@ def recepcao_geral(request):
 
                             <h5 class="text-success">Financeiro</h5>
 
-                            <select name="tipo_pagto" class="form-select mb-2">
+                            <select name="tipo_pagto" id="tipo_pagto" class="form-select mb-2" onchange="toggleValor()">
                                 <option value="avista">Particular</option>
                                 <option value="faturado">Convênio</option>
                             </select>
 
-                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
+                            <input type="number" step="0.01" name="valor" id="campo_valor" class="form-control mb-2" placeholder="Valor">
 
                             <select name="forma_pagamento" class="form-select mb-3">
                                 <option>Pix</option>
@@ -2301,12 +2317,26 @@ def recepcao_geral(request):
                             </select>
 
                             <button name="finalizar_fluxo" class="btn btn-success w-100">
-                                Finalizar
+                                CONCLUIR CHECK-IN
                             </button>
                         </form>
                     </div>
                 </div>
             </div>
+
+            <script>
+            function toggleValor() {{
+                let tipo = document.getElementById("tipo_pagto").value;
+                let campo = document.getElementById("campo_valor");
+
+                if (tipo === "faturado") {{
+                    campo.style.display = "none";
+                    campo.value = "";
+                }} else {{
+                    campo.style.display = "block";
+                }}
+            }}
+            </script>
             """
 
     # ===============================
@@ -2343,6 +2373,8 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
