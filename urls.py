@@ -2128,17 +2128,14 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO CHECK-IN COMPLETA E CORRIGIDA ---
-from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse
-from django.db import connection
-import datetime
-
+# --- TELA 14: RECEPÇÃO CORRIGIDA ---
 @csrf_exempt
 def recepcao_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse
+    import datetime
 
     data_hoje = datetime.date.today()
-
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
 
     agendamento_id = request.GET.get('fluxo_id')
@@ -2146,63 +2143,47 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # SALVAR CHECK-IN
+    # FINALIZAR CHECK-IN
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
-            import traceback
-
             ag_id = request.POST.get('ag_id')
             tipo_p = request.POST.get('tipo_pagto')
 
-            # ✅ VALIDAÇÃO
-            if not ag_id:
-                raise Exception("ID do agendamento não enviado")
-
-            # 💰 REGRA FINANCEIRO
-            if tipo_p == 'avista':
-                try:
-                    valor = float(request.POST.get('valor') or 0)
-                except:
-                    valor = 0
-
-                forma = request.POST.get('forma_pagamento')
-                status_pagamento = 'Pago'
-            else:
+            # 🔥 REGRA PRINCIPAL
+            if tipo_p == "faturado":
                 valor = 0
-                forma = 'Faturado'
-                status_pagamento = 'A Faturar'
+                forma = "Faturado"
+                status_pg = "A Faturar"
+            else:
+                valor = float(request.POST.get('valor') or 0)
+                forma = request.POST.get('forma_pagamento')
+                status_pg = "Pago"
 
             with connection.cursor() as cursor:
 
-                # 🔍 BUSCAR DADOS
                 cursor.execute("""
-                    SELECT pac.nome, prof.nome, u.id 
+                    SELECT pac.nome, prof.nome
                     FROM agendamentos ag 
                     JOIN pacientes pac ON ag.paciente_id = pac.id
                     JOIN agendas_config ac ON ag.agenda_config_id = ac.id
                     JOIN profissionais prof ON ac.profissional_id = prof.id
-                    JOIN unidades u ON ac.unidade_id = u.id
                     WHERE ag.id = %s
                 """, [ag_id])
 
                 info = cursor.fetchone()
 
-                if not info:
-                    raise Exception("Agendamento não encontrado")
-
-                # 💰 INSERIR NO CAIXA
+                # 🔥 CAIXA
                 cursor.execute("""
                     INSERT INTO caixa 
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento)
+                    VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE)
                 """, [
                     info[0], info[1], valor, forma,
-                    status_pagamento,
-                    'Consulta', info[2]
+                    status_pg, 'Consulta'
                 ])
 
-                # 🔄 ATUALIZAR STATUS
+                # STATUS AGENDA
                 cursor.execute("""
                     UPDATE agendamentos 
                     SET status = %s 
@@ -2212,182 +2193,115 @@ def recepcao_geral(request):
             mensagem = '<div class="alert alert-success">✅ Check-in realizado!</div>'
 
         except Exception as e:
-            import traceback
-            mensagem = f"""
-            <div class="alert alert-danger">
-            ❌ Erro ao processar:<br>
-            {str(e)}
-            <pre>{traceback.format_exc()}</pre>
-            </div>
-            """
+            mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
 
     # ===============================
-    # BUSCAR DADOS
+    # BUSCA
     # ===============================
     with connection.cursor() as cursor:
 
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
 
-        sql = """
-            SELECT ag.id, pac.nome, prof.nome, u.nome,
-                   ag.horario_selecionado, ag.status,
-                   esp.nome, conv.nome, pac.telefone
+        cursor.execute("""
+            SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
             LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
             LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
-            LEFT JOIN unidades u ON ac.unidade_id = u.id
-            LEFT JOIN especialidades esp ON prof.especialidade_id = esp.id
-            LEFT JOIN convenios conv ON pac.convenio_id = conv.id
             WHERE ag.data_agendamento = %s
-        """
+            ORDER BY ag.horario_selecionado
+        """, [data_hoje])
 
-        params = [data_hoje]
-
-        if unidade_filtro:
-            sql += " AND u.id = %s"
-            params.append(unidade_filtro)
-
-        sql += " ORDER BY ag.horario_selecionado ASC"
-
-        cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    # ===============================
-    # SELECT UNIDADES
-    # ===============================
-    opts_unidades = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades_list
-    ])
-
-    # ===============================
-    # TABELA
-    # ===============================
     linhas = ""
 
     for a in agenda:
-        ag_id_item = a[0]
-        nome = a[1] or "---"
-        status = a[5] or "Agendado"
-        hora = str(a[4])[:5]
+        status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
+            btn = f'<a href="?fluxo_id={a[0]}&etapa=1" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
+            btn = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
-            btn = f'<span class="badge bg-secondary">{status}</span>'
+            btn = status
 
         linhas += f"""
         <tr>
-            <td>{hora}</td>
-            <td>{nome}</td>
-            <td>{a[2] or '-'}</td>
+            <td>{str(a[3])[:5]}</td>
+            <td>{a[1]}</td>
+            <td>{a[2]}</td>
             <td>{btn}</td>
         </tr>
         """
 
     # ===============================
-    # MODAL
+    # MODAL FINANCEIRO
     # ===============================
     modal_html = ""
 
     if agendamento_id:
-        if etapa == '1':
-            modal_html = f"""
-            <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content p-4 text-center">
-                        <h5>Cadastro do Paciente</h5>
-                        <a href="/pacientes/" target="_blank" class="btn btn-danger w-100 mb-3">Abrir Cadastro</a>
-                        <a href="?fluxo_id={agendamento_id}&etapa=2&unidade={unidade_filtro}" class="btn btn-primary w-100">Continuar</a>
-                    </div>
+        modal_html = f"""
+        <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
+            <div class="modal-dialog">
+                <div class="modal-content p-3">
+                    <form method="POST">
+                        <input type="hidden" name="ag_id" value="{agendamento_id}">
+
+                        <h5>Financeiro</h5>
+
+                        <select name="tipo_pagto" class="form-select mb-2" onchange="toggleValor(this)">
+                            <option value="avista">Particular</option>
+                            <option value="faturado">Convênio</option>
+                        </select>
+
+                        <input id="campoValor" type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
+
+                        <select id="formaPg" name="forma_pagamento" class="form-select mb-3">
+                            <option>Pix</option>
+                            <option>Cartão</option>
+                            <option>Dinheiro</option>
+                        </select>
+
+                        <button name="finalizar_fluxo" class="btn btn-success w-100">Finalizar</button>
+                    </form>
                 </div>
             </div>
-            """
-        else:
-            modal_html = f"""
-            <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content p-4">
-                        <form method="POST">
-                            <input type="hidden" name="ag_id" value="{agendamento_id}">
-                            <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
+        </div>
 
-                            <h5 class="text-success">Financeiro</h5>
+        <script>
+        function toggleValor(select){
+            let v = document.getElementById("campoValor");
+            let f = document.getElementById("formaPg");
 
-                            <select name="tipo_pagto" id="tipo_pagto" class="form-select mb-2" onchange="toggleValor()">
-                                <option value="avista">Particular</option>
-                                <option value="faturado">Convênio</option>
-                            </select>
+            if(select.value == "faturado"){
+                v.value = 0;
+                v.disabled = true;
+                f.disabled = true;
+            }else{
+                v.disabled = false;
+                f.disabled = false;
+            }
+        }
+        </script>
+        """
 
-                            <input type="number" step="0.01" name="valor" id="campo_valor" class="form-control mb-2" placeholder="Valor">
-
-                            <select name="forma_pagamento" class="form-select mb-3">
-                                <option>Pix</option>
-                                <option>Cartão</option>
-                                <option>Dinheiro</option>
-                            </select>
-
-                            <button name="finalizar_fluxo" class="btn btn-success w-100">
-                                CONCLUIR CHECK-IN
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <script>
-            function toggleValor() {{
-                let tipo = document.getElementById("tipo_pagto").value;
-                let campo = document.getElementById("campo_valor");
-
-                if (tipo === "faturado") {{
-                    campo.style.display = "none";
-                    campo.value = "";
-                }} else {{
-                    campo.style.display = "block";
-                }}
-            }}
-            </script>
-            """
-
-    # ===============================
-    # HTML FINAL
-    # ===============================
     conteudo = f"""
-    <div class="mb-3 d-flex justify-content-between align-items-center">
-        <h4>Recepção</h4>
-        <form method="GET">
-            <select name="unidade" class="form-select" onchange="this.form.submit()">
-                <option value="">Todas Unidades</option>
-                {opts_unidades}
-            </select>
-        </form>
-    </div>
-
+    <h4>Recepção</h4>
     {mensagem}
 
-    <table class="table table-hover">
-        <thead class="table-dark">
-            <tr>
-                <th>Hora</th>
-                <th>Paciente</th>
-                <th>Médico</th>
-                <th>Ação</th>
-            </tr>
-        </thead>
-        <tbody>
-            {linhas if linhas else "<tr><td colspan='4'>Sem pacientes</td></tr>"}
-        </tbody>
+    <table class="table">
+        <tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr>
+        {linhas}
     </table>
 
     {modal_html}
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
