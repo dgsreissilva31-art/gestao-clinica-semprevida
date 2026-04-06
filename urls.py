@@ -2122,7 +2122,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- TELA 14: RECEPÇÃO (COM FILTRO E LANÇAMENTO AUTOMÁTICO) ---
+# --- TELA 14: RECEPÇÃO (COM FILTRO EM LISTA SUSPENSA E LANÇAMENTO AUTOMÁTICO) ---
 @csrf_exempt
 def recepcao_geral(request):
     import datetime, urllib.parse
@@ -2140,8 +2140,8 @@ def recepcao_geral(request):
             valor = float(request.POST.get('valor') or 0)
             forma = request.POST.get('forma_pagamento') if tipo_p == 'avista' else 'Faturado'
             
-            # Buscamos dados do agendamento para o caixa automático
             with connection.cursor() as cursor:
+                # Busca dados para o caixa
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id 
                     FROM agendamentos ag 
@@ -2162,18 +2162,15 @@ def recepcao_geral(request):
                 # Libera para prontuário
                 cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
                 
-            mensagem = '<div class="alert alert-success">✅ Check-in e Lançamento no Caixa realizados!</div>'
+            mensagem = '<div class="alert alert-success shadow-sm">✅ Check-in e Lançamento no Caixa realizados com sucesso!</div>'
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">⚠️ Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">⚠️ Erro ao processar: {e}</div>'
 
-    # --- 2. BUSCA DE DADOS ---
+    # --- 2. BUSCA DE UNIDADES E AGENDAMENTOS ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
         
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        convenios_list = cursor.fetchall()
-
         sql = """
             SELECT ag.id, pac.nome, prof.nome, u.nome, ag.horario_selecionado, 
                    ag.status, esp.nome, conv.nome, pac.telefone, pac.id
@@ -2194,49 +2191,112 @@ def recepcao_geral(request):
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    # --- 3. HTML ---
-    linhas = ""
+    # --- 3. MONTAGEM DO HTML ---
     opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     
+    linhas = ""
     for a in agenda:
         ag_id_item, pac_n, prof_n, uni_n, hora, status, esp_n, conv_n, tel, pac_id = a
         nome_pac = pac_n.split("(Ag:")[0].strip() if pac_n and "(Ag:" in pac_n else (pac_n or "---")
         
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold">CHECK-IN</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=1&unidade={unidade_filtro or ""}" class="btn btn-sm btn-warning fw-bold shadow-sm">CHECK-IN</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-success fw-bold">PRONTUÁRIO</a>'
-        else: btn = f'<span class="badge bg-secondary">{status}</span>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-sm btn-success fw-bold shadow-sm">PRONTUÁRIO</a>'
+        else:
+            btn = f'<span class="badge bg-light text-dark border">{status}</span>'
 
-        linhas += f"<tr><td>{str(hora)[:5]}</td><td><b>{nome_pac}</b></td><td>{prof_n}</td><td>{btn}</td></tr>"
+        linhas += f"""
+        <tr>
+            <td class="fw-bold text-primary">{str(hora)[:5]}</td>
+            <td>{nome_pac}</td>
+            <td>{prof_n} <br><small class='text-muted'>{esp_n or ''}</small></td>
+            <td>{btn}</td>
+        </tr>"""
 
+    # MODAIS DE FLUXO
     modal_html = ""
     if agendamento_id:
         if etapa == '1':
-            modal_html = f"""<div class="modal fade show d-block" style="background:rgba(0,0,0,0.7)"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center"><h5>Cadastro</h5><a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-danger w-100 mb-3">ABRIR CADASTRO</a><a href="?fluxo_id={agendamento_id}&etapa=2&unidade={unidade_filtro or ""}" class="btn btn-primary w-100">IR PARA O FINANCEIRO →</a></div></div></div></div>"""
+            modal_html = f"""
+            <div class="modal fade show d-block" style="background:rgba(0,0,0,0.7)">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow">
+                        <div class="modal-body text-center p-4">
+                            <h5 class="fw-bold mb-3">Cadastro do Paciente</h5>
+                            <p class="small text-muted">Certifique-se de que o cadastro está completo no sistema oficial.</p>
+                            <a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-danger w-100 mb-3 fw-bold">ABRIR FORMULÁRIO DE CADASTRO</a>
+                            <a href="?fluxo_id={agendamento_id}&etapa=2&unidade={unidade_filtro or ""}" class="btn btn-primary w-100 fw-bold">PROSSEGUIR PARA FINANCEIRO →</a>
+                        </div>
+                    </div>
+                </div>
+            </div>"""
         else:
-            modal_html = f"""<div class="modal fade show d-block" style="background:rgba(0,0,0,0.7)"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body"><form method="POST"><input type="hidden" name="ag_id" value="{agendamento_id}"><h5 class="text-success">Financeiro</h5><select name="tipo_pagto" class="form-select mb-2"><option value="avista">Particular</option><option value="faturado">Convênio</option></select><input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor R$"><select name="forma_pagamento" class="form-select mb-3"><option>Dinheiro</option><option>Pix</option><option>Cartão</option></select><button type="submit" name="finalizar_fluxo" class="btn btn-success w-100">FINALIZAR CHECK-IN</button></form></div></div></div></div>"""
+            modal_html = f"""
+            <div class="modal fade show d-block" style="background:rgba(0,0,0,0.7)">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow">
+                        <div class="modal-body p-4">
+                            <form method="POST">
+                                <input type="hidden" name="ag_id" value="{agendamento_id}">
+                                <h5 class="fw-bold text-success mb-3">Lançamento de Caixa</h5>
+                                <label class="small fw-bold">Tipo</label>
+                                <select name="tipo_pagto" class="form-select mb-2">
+                                    <option value="avista">Particular (À Vista)</option>
+                                    <option value="faturado">Faturado (Convênio)</option>
+                                </select>
+                                <label class="small fw-bold">Valor R$</label>
+                                <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="0,00" required>
+                                <label class="small fw-bold">Forma de Pagamento</label>
+                                <select name="forma_pagamento" class="form-select mb-3">
+                                    <option>Dinheiro</option><option>Pix</option><option>Cartão</option>
+                                </select>
+                                <button type="submit" name="finalizar_fluxo" class="btn btn-success w-100 fw-bold">CONCLUIR CHECK-IN</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>"""
 
     conteudo = f"""
         <div class="container py-3">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h4 class="fw-bold m-0">Recepção</h4>
-                <form method="GET" class="d-flex gap-2">
-                    <select name="unidade" class="form-select form-select-sm border-primary" onchange="this.form.submit()">
-                        <option value="">Todas Unidades</option>{opts_unidades}
-                    </select>
-                </form>
+            <div class="card p-3 shadow-sm border-0 mb-4 bg-primary text-white">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h4 class="fw-bold m-0"><i class="bi bi-person-check"></i> Recepção Diária</h4>
+                    </div>
+                    <div class="col-md-6">
+                        <form method="GET" class="d-flex justify-content-md-end mt-2 mt-md-0">
+                            <div class="input-group input-group-sm" style="max-width: 300px;">
+                                <span class="input-group-text bg-white border-0"><i class="bi bi-geo-alt"></i></span>
+                                <select name="unidade" class="form-select border-0" onchange="this.form.submit()">
+                                    <option value="">Todas as Unidades</option>
+                                    {opts_unidades}
+                                </select>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
             {mensagem}
-            <div class="card shadow border-0"><table class="table table-hover align-middle mb-0">
-                <thead class="table-dark"><tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr></thead>
-                <tbody>{linhas if linhas else '<tr><td colspan="4" class="text-center">Sem agendamentos.</td></tr>'}</tbody>
-            </table></div>
+            <div class="table-responsive card shadow border-0 overflow-hidden">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Hora</th>
+                            <th>Paciente</th>
+                            <th>Profissional</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {linhas if linhas else '<tr><td colspan="4" class="text-center py-4 text-muted">Nenhum agendamento encontrado para esta unidade.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
             {modal_html}
         </div>"""
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
