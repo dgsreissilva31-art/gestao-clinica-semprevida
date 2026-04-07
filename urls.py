@@ -2681,7 +2681,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (CORRIGIDO EXAMES) ---
+# --- 18. TELA 16: CAIXA COMPLETO COM BLOCO EXAMES ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2695,8 +2695,6 @@ def caixa_geral(request):
     data_ini = request.GET.get('data_ini') or ""
     data_fim = request.GET.get('data_fim') or ""
     busca = request.GET.get('busca') or ""
-
-    mensagem = ""
 
     # ===============================
     # FUNÇÕES
@@ -2776,10 +2774,12 @@ def caixa_geral(request):
     # ===============================
     # TOTAIS
     # ===============================
-    total_pago = 0
+    total_consultas = 0
+    total_exames = 0
     total_faturado = 0
 
-    linhas_pago = ""
+    linhas_consultas = ""
+    linhas_exames = ""
     linhas_faturado = ""
 
     for m in movimentos:
@@ -2788,22 +2788,32 @@ def caixa_geral(request):
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
-
-        # 🔥 DEFINE TEXTO CONVÊNIO / EXAME
-        descricao = desc or cat or "-"
+        descricao = desc or "-"
 
         # ===============================
-        # PAGO (INCLUI EXAMES)
+        # EXAMES
         # ===============================
-        if status == "Pago":
+        if cat == "Exame" and status == "Pago":
+            total_exames += val
 
-            total_pago += val
+            linhas_exames += f"""
+            <tr>
+                <td>{data_br}</td>
+                <td>{pac}</td>
+                <td>{prof or '-'}</td>
+                <td>{descricao}</td>
+                <td class="fw-bold text-primary">R$ {val:.2f}</td>
+                <td>{forma}</td>
+            </tr>
+            """
 
-            # 🔥 IDENTIFICA EXAME
-            if cat == "Exame":
-                descricao = f"Exame: {descricao}"
+        # ===============================
+        # CONSULTAS (PAGO)
+        # ===============================
+        elif status == "Pago":
+            total_consultas += val
 
-            linhas_pago += f"""
+            linhas_consultas += f"""
             <tr>
                 <td>{data_br}</td>
                 <td>{pac}</td>
@@ -2815,7 +2825,7 @@ def caixa_geral(request):
             """
 
         # ===============================
-        # FATURADO
+        # CONVÊNIOS
         # ===============================
         else:
             total_faturado += val
@@ -2859,7 +2869,7 @@ def caixa_geral(request):
             </div>
 
             <div class="col-md-3">
-                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Convênio / Exame">
+                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Busca geral">
             </div>
 
             <div class="col-md-3">
@@ -2877,57 +2887,59 @@ def caixa_geral(request):
 
         <!-- RESUMO -->
         <div class="row g-2 mb-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card p-2 bg-success text-white text-center">
-                    <small>Recebido</small>
-                    <h5>R$ {total_pago:.2f}</h5>
+                    <small>Consultas</small>
+                    <h5>R$ {total_consultas:.2f}</h5>
                 </div>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <div class="card p-2 bg-primary text-white text-center">
+                    <small>Exames</small>
+                    <h5>R$ {total_exames:.2f}</h5>
+                </div>
+            </div>
+
+            <div class="col-md-3">
                 <div class="card p-2 bg-warning text-dark text-center">
-                    <small>Faturado</small>
+                    <small>Convênios</small>
                     <h5>R$ {total_faturado:.2f}</h5>
                 </div>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="card p-2 bg-dark text-warning text-center">
-                    <small>Total</small>
-                    <h5>R$ {(total_pago + total_faturado):.2f}</h5>
+                    <small>Total Geral</small>
+                    <h5>R$ {(total_consultas + total_exames + total_faturado):.2f}</h5>
                 </div>
             </div>
         </div>
 
-        <!-- PAGO -->
+        <!-- CONSULTAS -->
         <div class="card mb-3">
-            <div class="card-header bg-success text-white">Recebidos (Consultas + Exames)</div>
+            <div class="card-header bg-success text-white">Consultas</div>
             <table class="table table-sm">
-                <tr>
-                    <th>Data</th>
-                    <th>Paciente</th>
-                    <th>Profissional</th>
-                    <th>Convênio / Exame</th>
-                    <th>Valor</th>
-                    <th>Forma</th>
-                </tr>
-                {linhas_pago if linhas_pago else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
+                <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>
+                {linhas_consultas if linhas_consultas else "<tr><td colspan='6'>Sem registros</td></tr>"}
             </table>
         </div>
 
-        <!-- FATURADO -->
-        <div class="card">
+        <!-- CONVÊNIOS -->
+        <div class="card mb-3">
             <div class="card-header bg-warning">Convênios</div>
             <table class="table table-sm">
-                <tr>
-                    <th>Data</th>
-                    <th>Paciente</th>
-                    <th>Profissional</th>
-                    <th>Convênio</th>
-                    <th>Status</th>
-                    <th>Tipo</th>
-                </tr>
-                {linhas_faturado if linhas_faturado else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
+                <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Convênio</th><th>Status</th><th>Tipo</th></tr>
+                {linhas_faturado if linhas_faturado else "<tr><td colspan='6'>Sem registros</td></tr>"}
+            </table>
+        </div>
+
+        <!-- EXAMES -->
+        <div class="card">
+            <div class="card-header bg-primary text-white">Exames</div>
+            <table class="table table-sm">
+                <tr><th>Data</th><th>Paciente</th><th>Prestador</th><th>Exame</th><th>Valor</th><th>Forma</th></tr>
+                {linhas_exames if linhas_exames else "<tr><td colspan='6'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2935,8 +2947,6 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
