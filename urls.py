@@ -2522,147 +2522,258 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA (SQL 100% CORRIGIDO E BLINDADO) ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO COM CONVÊNIO NO CAIXA ---
 @csrf_exempt
-def caixa_geral(request):
+def recepcao_geral(request):
     from django.db import connection
     from django.http import HttpResponse
+    from django.shortcuts import redirect
     import datetime
-    import re
 
-    hoje = datetime.date.today()
-    unidade_id = request.GET.get('unidade') or ""
+    data_hoje = datetime.date.today()
+
+    unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
+    agendamento_id = request.GET.get('fluxo_id')
+    etapa = request.GET.get('etapa', '1')
 
     mensagem = ""
 
     # ===============================
-    # FUNÇÃO LIMPAR NOME
+    # FINALIZAR CHECK-IN
     # ===============================
-    def limpar_nome(nome):
-        if not nome:
-            return ""
-        return re.sub(r"\(.*?\)", "", nome).strip()
+    if request.method == "POST" and "finalizar_fluxo" in request.POST:
+        try:
+            ag_id = request.POST.get('ag_id')
+            tipo = request.POST.get('tipo_pagto')
+
+            with connection.cursor() as cursor:
+
+                # 🔥 BUSCA DADOS COMPLETOS
+                cursor.execute("""
+                    SELECT pac.nome, prof.nome, u.id
+                    FROM agendamentos ag
+                    JOIN pacientes pac ON ag.paciente_id = pac.id
+                    JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                    JOIN profissionais prof ON ac.profissional_id = prof.id
+                    JOIN unidades u ON ac.unidade_id = u.id
+                    WHERE ag.id = %s
+                """, [ag_id])
+
+                info = cursor.fetchone()
+
+                if not info:
+                    raise Exception("Agendamento não encontrado")
+
+                paciente_nome = info[0]
+                profissional_nome = info[1]
+                unidade_id = info[2]
+
+                # ===============================
+                # 🔥 REGRA FINANCEIRA
+                # ===============================
+                if tipo == "avista":
+
+                    valor = float(request.POST.get('valor') or 0)
+
+                    if valor <= 0:
+                        raise Exception("Informe o valor")
+
+                    forma = request.POST.get('forma_pagamento') or "Pix"
+
+                    cursor.execute("""
+                        INSERT INTO caixa
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
+                        VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    """, [
+                        paciente_nome,
+                        profissional_nome,
+                        valor,
+                        forma,
+                        'Pago',
+                        'Consulta',
+                        unidade_id
+                    ])
+
+                else:
+                    # 🔥 CONVÊNIO AGORA VAI PARA O CAIXA
+                    cursor.execute("""
+                        INSERT INTO caixa
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
+                        VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    """, [
+                        paciente_nome,
+                        profissional_nome,
+                        0,  # valor zero
+                        'Faturado',
+                        'A Faturar',
+                        'Consulta',
+                        unidade_id
+                    ])
+
+                # ===============================
+                # ATUALIZA STATUS
+                # ===============================
+                cursor.execute("""
+                    UPDATE agendamentos
+                    SET status = 'Chegada'
+                    WHERE id = %s
+                """, [ag_id])
+
+            return redirect(f"/recepcao/?unidade={unidade_filtro}")
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # VERIFICAR SE EXISTE unidade_id
+    # BUSCAR AGENDA
     # ===============================
     with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'caixa'
-        """)
-        colunas = [c[0] for c in cursor.fetchall()]
-        tem_unidade = 'unidade_id' in colunas
 
-    # ===============================
-    # BUSCAR UNIDADES
-    # ===============================
-    with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_list = cursor.fetchall()
-
-    # ===============================
-    # BUSCAR MOVIMENTOS (SQL PERFEITO)
-    # ===============================
-    with connection.cursor() as cursor:
+        unidades = cursor.fetchall()
 
         sql = """
-            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento
-            FROM caixa
-            WHERE data_pagamento = %s
-              AND COALESCE(valor,0) > 0
+            SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
+            FROM agendamentos ag
+            LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
+            LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
+            LEFT JOIN unidades u ON ac.unidade_id = u.id
+            WHERE ag.data_agendamento = %s
         """
 
-        params = [hoje]
+        params = [data_hoje]
 
-        # 🔥 FILTRO SEGURO
-        if unidade_id and tem_unidade:
-            sql += " AND unidade_id = %s"
-            params.append(unidade_id)
+        if unidade_filtro:
+            sql += " AND u.id = %s"
+            params.append(unidade_filtro)
 
-        sql += " ORDER BY id DESC"
-
-        # 🔍 DEBUG (se quiser ativar)
-        # print(sql)
-        # print(params)
+        sql += " ORDER BY ag.horario_selecionado"
 
         cursor.execute(sql, params)
-        movimentos = cursor.fetchall()
-
-    # ===============================
-    # TOTAL + LINHAS
-    # ===============================
-    total_geral = 0
-    linhas = ""
-
-    for m in movimentos:
-        cat, pac, prof, val, forma = m
-
-        val = float(val or 0)
-        total_geral += val
-
-        linhas += f"""
-        <tr>
-            <td>{limpar_nome(pac)}</td>
-            <td>{prof or '-'}</td>
-            <td class="fw-bold text-success">R$ {val:.2f}</td>
-            <td>{forma or '-'}</td>
-        </tr>
-        """
+        agenda = cursor.fetchall()
 
     # ===============================
     # SELECT UNIDADES
     # ===============================
-    opts_uni = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades_list
+    opts_unidades = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades
     ])
+
+    # ===============================
+    # LINHAS
+    # ===============================
+    linhas = ""
+
+    for a in agenda:
+        ag_id_item = a[0]
+        nome = a[1] or "---"
+        hora = str(a[3])[:5]
+        status = a[4] or "Agendado"
+
+        if status == "Agendado":
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
+        elif status == "Chegada":
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
+        else:
+            btn = f'<span class="badge bg-secondary">{status}</span>'
+
+        linhas += f"""
+        <tr>
+            <td>{hora}</td>
+            <td>{nome}</td>
+            <td>{a[2] or '-'}</td>
+            <td>{btn}</td>
+        </tr>
+        """
+
+    # ===============================
+    # MODAL
+    # ===============================
+    modal_html = ""
+
+    if agendamento_id and etapa == '2':
+        modal_html = f"""
+        <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content p-4">
+
+                    <form method="POST">
+                        <input type="hidden" name="ag_id" value="{agendamento_id}">
+                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
+
+                        <h5 class="text-success">Financeiro</h5>
+
+                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
+                            <option value="avista">Particular</option>
+                            <option value="faturado">Convênio</option>
+                        </select>
+
+                        <div id="bloco_pagamento">
+                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
+
+                            <select name="forma_pagamento" class="form-select mb-3">
+                                <option>Pix</option>
+                                <option>Cartão</option>
+                                <option>Dinheiro</option>
+                            </select>
+                        </div>
+
+                        <button name="finalizar_fluxo" class="btn btn-success w-100">
+                            CONCLUIR CHECK-IN
+                        </button>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function togglePagamento() {{
+            var tipo = document.getElementById("tipo").value;
+            var bloco = document.getElementById("bloco_pagamento");
+            bloco.style.display = (tipo === "faturado") ? "none" : "block";
+        }}
+        togglePagamento();
+        </script>
+        """
 
     # ===============================
     # HTML FINAL
     # ===============================
     conteudo = f"""
-    <div class="container-fluid py-2">
+    <div class="mb-3 d-flex justify-content-between">
+        <h4>Recepção</h4>
 
-        <div class="d-flex justify-content-between align-items-end mb-3">
-            <h5 class="fw-bold text-success">💰 Caixa do Dia</h5>
-
-            <form method="GET">
-                <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
-                    <option value="">Todas Unidades</option>
-                    {opts_uni}
-                </select>
-            </form>
-        </div>
-
-        {mensagem}
-
-        <div class="card p-3 bg-dark text-warning mb-3 text-center shadow">
-            <small>Total Recebido</small>
-            <h3 class="m-0">R$ {total_geral:.2f}</h3>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-sm table-hover">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Paciente</th>
-                        <th>Profissional</th>
-                        <th>Valor</th>
-                        <th>Forma</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas if linhas else "<tr><td colspan='4' class='text-center text-muted'>Sem recebimentos</td></tr>"}
-                </tbody>
-            </table>
-        </div>
-
+        <form method="GET">
+            <select name="unidade" class="form-select" onchange="this.form.submit()">
+                <option value="">Todas</option>
+                {opts_unidades}
+            </select>
+        </form>
     </div>
+
+    {mensagem}
+
+    <table class="table table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Hora</th>
+                <th>Paciente</th>
+                <th>Médico</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {linhas if linhas else "<tr><td colspan='4'>Sem pacientes</td></tr>"}
+        </tbody>
+    </table>
+
+    {modal_html}
     """
 
-    return HttpResponse(base_html("Caixa", conteudo))
+    return HttpResponse(base_html("Recepção", conteudo))
 
 
 
