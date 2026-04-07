@@ -2496,12 +2496,13 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA (SEM REGISTROS ZERADOS) ---
+# --- 18. TELA 16: CAIXA (LIMPO - SEM AGENDADOR / SEM PARÊNTESES) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
     from django.http import HttpResponse
     import datetime
+    import re
 
     hoje = datetime.date.today()
 
@@ -2521,15 +2522,24 @@ def caixa_geral(request):
         tem_unidade = 'unidade_id' in colunas
 
     # ===============================
+    # FUNÇÃO LIMPAR NOME
+    # ===============================
+    def limpar_nome(nome):
+        if not nome:
+            return ""
+        # remove qualquer coisa entre parênteses
+        nome = re.sub(r"\(.*?\)", "", nome)
+        return nome.strip()
+
+    # ===============================
     # LANÇAMENTO AVULSO
     # ===============================
     if request.method == "POST" and "lancar" in request.POST:
         try:
             valor = float(request.POST.get('valor') or 0)
 
-            # 🚫 NÃO grava se valor for zero
             if valor == 0:
-                mensagem = '<div class="alert alert-warning py-1 small">⚠️ Valor zero não é lançado no caixa.</div>'
+                mensagem = '<div class="alert alert-warning py-1 small">⚠️ Valor zero não é lançado.</div>'
             else:
                 with connection.cursor() as cursor:
                     if tem_unidade:
@@ -2538,7 +2548,7 @@ def caixa_geral(request):
                             (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento, unidade_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """, [
-                            request.POST.get('paciente_nome'),
+                            limpar_nome(request.POST.get('paciente_nome')),
                             request.POST.get('profissional', '---'),
                             request.POST.get('detalhe', '---'),
                             valor,
@@ -2553,7 +2563,7 @@ def caixa_geral(request):
                             (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """, [
-                            request.POST.get('paciente_nome'),
+                            limpar_nome(request.POST.get('paciente_nome')),
                             request.POST.get('profissional', '---'),
                             request.POST.get('detalhe', '---'),
                             valor,
@@ -2562,13 +2572,13 @@ def caixa_geral(request):
                             hoje
                         ])
 
-                mensagem = '<div class="alert alert-success py-1 small">✅ Lançamento realizado!</div>'
+                mensagem = '<div class="alert alert-success py-1 small">✅ Lançado!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger py-1 small">❌ Erro: {e}</div>'
 
     # ===============================
-    # BUSCA MOVIMENTOS (🔴 FILTRO AQUI)
+    # BUSCA MOVIMENTOS (SEM ZERO)
     # ===============================
     with connection.cursor() as cursor:
 
@@ -2591,27 +2601,26 @@ def caixa_geral(request):
         movimentos = cursor.fetchall()
 
     # ===============================
-    # TOTAIS
+    # TOTAIS + LIMPEZA
     # ===============================
-    tabelas = {'Consulta': '', 'Exame': '', 'Odonto': '', 'Diverso': ''}
     total_geral = 0
+    linhas = ""
 
     for m in movimentos:
         cat, pac, prof, val, forma = m
         val = float(val or 0)
         total_geral += val
 
-        linha = f"""
+        pac_limpo = limpar_nome(pac)
+
+        linhas += f"""
         <tr>
-            <td>{pac}</td>
-            <td><small>{prof}</small></td>
-            <td class='fw-bold'>R$ {val:.2f}</td>
+            <td>{pac_limpo}</td>
+            <td>{prof}</td>
+            <td>R$ {val:.2f}</td>
             <td>{forma}</td>
         </tr>
         """
-
-        if cat in tabelas:
-            tabelas[cat] += linha
 
     # ===============================
     # SELECT UNIDADES
@@ -2628,9 +2637,9 @@ def caixa_geral(request):
     <div class="container-fluid py-2">
 
         <div class="d-flex justify-content-between align-items-end mb-3">
-            <h5 class="fw-bold m-0 text-success">Caixa (Somente Recebidos)</h5>
+            <h5 class="fw-bold text-success">Caixa (Somente Recebidos)</h5>
 
-            <form method="GET" class="d-flex gap-2">
+            <form method="GET">
                 <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">Todas Unidades</option>
                     {opts_uni}
@@ -2640,35 +2649,30 @@ def caixa_geral(request):
 
         {mensagem}
 
-        <div class="row g-2">
-            <div class="col-md-3"><div class="card p-2 bg-primary text-white"><small>Consultas</small><h6>R$ {sum([float(m[3]) for m in movimentos if m[0]=='Consulta']):.2f}</h6></div></div>
-            <div class="col-md-3"><div class="card p-2 bg-info text-white"><small>Exames</small><h6>R$ {sum([float(m[3]) for m in movimentos if m[0]=='Exame']):.2f}</h6></div></div>
-            <div class="col-md-3"><div class="card p-2 bg-success text-white"><small>Odonto</small><h6>R$ {sum([float(m[3]) for m in movimentos if m[0]=='Odonto']):.2f}</h6></div></div>
-            <div class="col-md-3"><div class="card p-2 bg-dark text-warning"><small>TOTAL</small><h6>R$ {total_geral:.2f}</h6></div></div>
+        <div class="card p-2 bg-dark text-warning mb-2">
+            <small>Total do Dia</small>
+            <h5>R$ {total_geral:.2f}</h5>
         </div>
 
-        <div class="row mt-3">
-            <div class="col-12">
-                <table class="table table-sm table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Paciente</th>
-                            <th>Profissional</th>
-                            <th>Valor</th>
-                            <th>Forma</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {''.join([f"<tr><td>{m[1]}</td><td>{m[2]}</td><td>R$ {float(m[3]):.2f}</td><td>{m[4]}</td></tr>" for m in movimentos]) or "<tr><td colspan='4'>Sem recebimentos</td></tr>"}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <table class="table table-sm table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Paciente</th>
+                    <th>Profissional</th>
+                    <th>Valor</th>
+                    <th>Forma</th>
+                </tr>
+            </thead>
+            <tbody>
+                {linhas if linhas else "<tr><td colspan='4'>Sem recebimentos</td></tr>"}
+            </tbody>
+        </table>
 
     </div>
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
 
 
 
