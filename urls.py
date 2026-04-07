@@ -2131,10 +2131,10 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM CAIXA ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO ---
 @csrf_exempt
 def recepcao_geral(request):
-    from django.db import connection
+    from django.db import connection, transaction
     from django.http import HttpResponse
     from django.shortcuts import redirect
     import datetime
@@ -2155,13 +2155,9 @@ def recepcao_geral(request):
             ag_id = request.POST.get('ag_id')
             tipo = request.POST.get('tipo_pagto')
 
-            valor = float(request.POST.get('valor') or 0) if tipo == 'avista' else 0
-            forma = request.POST.get('forma_pagamento') if tipo == 'avista' else 'Faturado'
-            status_financeiro = 'Pago' if tipo == 'avista' else 'A Faturar'
-
             with connection.cursor() as cursor:
 
-                # 🔥 BUSCA UNIDADE TAMBÉM
+                # 🔥 BUSCA COMPLETA
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
@@ -2181,34 +2177,49 @@ def recepcao_geral(request):
                 profissional_nome = info[1]
                 unidade_id = info[2]
 
-                # 🔥 INSERT CORRETO COM UNIDADE
-                cursor.execute("""
-                    INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                """, [
-                    paciente_nome,
-                    profissional_nome,
-                    valor,
-                    forma,
-                    status_financeiro,
-                    'Consulta',
-                    unidade_id
-                ])
+                # ===============================
+                # 🔥 REGRA DEFINITIVA
+                # ===============================
+                if tipo == "avista":
 
-                # Atualiza status
+                    valor = float(request.POST.get('valor') or 0)
+
+                    if valor <= 0:
+                        raise Exception("Informe o valor para pagamento à vista")
+
+                    forma = request.POST.get('forma_pagamento') or "Pix"
+
+                    cursor.execute("""
+                        INSERT INTO caixa
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
+                        VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    """, [
+                        paciente_nome,
+                        profissional_nome,
+                        valor,
+                        forma,
+                        'Pago',
+                        'Consulta',
+                        unidade_id
+                    ])
+
+                # 🔥 CONVÊNIO NÃO VAI PARA CAIXA
+                # (pois valor = 0 e sua tela ignora)
+                # apenas marca status
+
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
                     WHERE id = %s
                 """, [ag_id])
 
-            # 🔥 REDIRECT LIMPO (fecha modal)
-            url = f"/recepcao/?unidade={unidade_filtro}" if unidade_filtro else "/recepcao/"
-            return redirect(url)
+            # 🔥 GARANTE COMMIT
+            transaction.commit()
+
+            return redirect(f"/recepcao/?unidade={unidade_filtro}")
 
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
     # BUSCAR AGENDA
@@ -2233,8 +2244,6 @@ def recepcao_geral(request):
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
-
-        sql += " ORDER BY ag.horario_selecionado"
 
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
@@ -2319,12 +2328,7 @@ def recepcao_geral(request):
         function togglePagamento() {{
             var tipo = document.getElementById("tipo").value;
             var bloco = document.getElementById("bloco_pagamento");
-
-            if (tipo === "faturado") {{
-                bloco.style.display = "none";
-            }} else {{
-                bloco.style.display = "block";
-            }}
+            bloco.style.display = (tipo === "faturado") ? "none" : "block";
         }}
         togglePagamento();
         </script>
@@ -2365,7 +2369,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 
 
