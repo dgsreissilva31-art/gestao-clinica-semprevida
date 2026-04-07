@@ -2681,7 +2681,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO COM CONVÊNIO ---
+# --- 18. TELA 16: CAIXA COMPLETO (CORRIGIDO EXAMES) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2724,7 +2724,7 @@ def caixa_geral(request):
         unidades_list = cursor.fetchall()
 
     # ===============================
-    # SQL (AGORA COM DESCRICAO)
+    # SQL
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
@@ -2758,10 +2758,11 @@ def caixa_geral(request):
             profissional_nome ILIKE %s OR
             forma_pagamento ILIKE %s OR
             CAST(valor AS TEXT) ILIKE %s OR
-            descricao ILIKE %s
+            descricao ILIKE %s OR
+            categoria ILIKE %s
         )
         """
-        params.extend([f"%{busca}%"] * 5)
+        params.extend([f"%{busca}%"] * 6)
 
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
@@ -2786,24 +2787,36 @@ def caixa_geral(request):
 
         val = float(val or 0)
         pac = limpar_nome(pac)
-        convenio = desc or "-"
-
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
 
+        # 🔥 DEFINE TEXTO CONVÊNIO / EXAME
+        descricao = desc or cat or "-"
+
+        # ===============================
+        # PAGO (INCLUI EXAMES)
+        # ===============================
         if status == "Pago":
+
             total_pago += val
+
+            # 🔥 IDENTIFICA EXAME
+            if cat == "Exame":
+                descricao = f"Exame: {descricao}"
 
             linhas_pago += f"""
             <tr>
                 <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
-                <td>{convenio}</td>
+                <td>{descricao}</td>
                 <td class="fw-bold text-success">R$ {val:.2f}</td>
                 <td>{forma}</td>
             </tr>
             """
 
+        # ===============================
+        # FATURADO
+        # ===============================
         else:
             total_faturado += val
 
@@ -2812,7 +2825,7 @@ def caixa_geral(request):
                 <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
-                <td>{convenio}</td>
+                <td>{descricao}</td>
                 <td class="fw-bold text-warning">Faturado</td>
                 <td>Convênio</td>
             </tr>
@@ -2846,7 +2859,7 @@ def caixa_geral(request):
             </div>
 
             <div class="col-md-3">
-                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Convênio">
+                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Convênio / Exame">
             </div>
 
             <div class="col-md-3">
@@ -2888,13 +2901,13 @@ def caixa_geral(request):
 
         <!-- PAGO -->
         <div class="card mb-3">
-            <div class="card-header bg-success text-white">Recebidos</div>
+            <div class="card-header bg-success text-white">Recebidos (Consultas + Exames)</div>
             <table class="table table-sm">
                 <tr>
                     <th>Data</th>
                     <th>Paciente</th>
                     <th>Profissional</th>
-                    <th>Convênio</th>
+                    <th>Convênio / Exame</th>
                     <th>Valor</th>
                     <th>Forma</th>
                 </tr>
@@ -2922,6 +2935,8 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
 
 
 
