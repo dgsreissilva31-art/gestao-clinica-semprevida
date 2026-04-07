@@ -2681,7 +2681,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO COM BLOCO EXAMES ---
+# --- 18. TELA 16: CAIXA COMPLETO (3 BLOCOS: CONSULTAS / CONVÊNIOS / EXAMES) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2695,6 +2695,8 @@ def caixa_geral(request):
     data_ini = request.GET.get('data_ini') or ""
     data_fim = request.GET.get('data_fim') or ""
     busca = request.GET.get('busca') or ""
+
+    mensagem = ""
 
     # ===============================
     # FUNÇÕES
@@ -2791,26 +2793,9 @@ def caixa_geral(request):
         descricao = desc or "-"
 
         # ===============================
-        # EXAMES
-        # ===============================
-        if cat == "Exame" and status == "Pago":
-            total_exames += val
-
-            linhas_exames += f"""
-            <tr>
-                <td>{data_br}</td>
-                <td>{pac}</td>
-                <td>{prof or '-'}</td>
-                <td>{descricao}</td>
-                <td class="fw-bold text-primary">R$ {val:.2f}</td>
-                <td>{forma}</td>
-            </tr>
-            """
-
-        # ===============================
         # CONSULTAS (PAGO)
         # ===============================
-        elif status == "Pago":
+        if status == "Pago" and cat != "Exame":
             total_consultas += val
 
             linhas_consultas += f"""
@@ -2825,7 +2810,24 @@ def caixa_geral(request):
             """
 
         # ===============================
-        # CONVÊNIOS
+        # EXAMES (PAGO)
+        # ===============================
+        elif status == "Pago" and cat == "Exame":
+            total_exames += val
+
+            linhas_exames += f"""
+            <tr>
+                <td>{data_br}</td>
+                <td>{pac}</td>
+                <td>{prof or '-'}</td>
+                <td>{descricao}</td>
+                <td class="fw-bold text-primary">R$ {val:.2f}</td>
+                <td>{forma}</td>
+            </tr>
+            """
+
+        # ===============================
+        # CONVÊNIOS (FATURADO)
         # ===============================
         else:
             total_faturado += val
@@ -2855,34 +2857,28 @@ def caixa_geral(request):
     conteudo = f"""
     <div class="container-fluid py-2">
 
-        <h5 class="fw-bold text-success mb-3">💰 Caixa</h5>
+        <h5 class="fw-bold text-success mb-3">💰 Caixa Geral</h5>
 
         <!-- FILTROS -->
         <form method="GET" class="row g-2 mb-3">
-
             <div class="col-md-2">
                 <input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial">
             </div>
-
             <div class="col-md-2">
                 <input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final">
             </div>
-
             <div class="col-md-3">
-                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Busca geral">
+                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar...">
             </div>
-
             <div class="col-md-3">
                 <select name="unidade" class="form-select">
-                    <option value="">Todas Unidades</option>
+                    <option value="">Todas</option>
                     {opts_uni}
                 </select>
             </div>
-
             <div class="col-md-2">
                 <button class="btn btn-primary w-100">Filtrar</button>
             </div>
-
         </form>
 
         <!-- RESUMO -->
@@ -2893,24 +2889,21 @@ def caixa_geral(request):
                     <h5>R$ {total_consultas:.2f}</h5>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card p-2 bg-primary text-white text-center">
                     <small>Exames</small>
                     <h5>R$ {total_exames:.2f}</h5>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card p-2 bg-warning text-dark text-center">
                     <small>Convênios</small>
                     <h5>R$ {total_faturado:.2f}</h5>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card p-2 bg-dark text-warning text-center">
-                    <small>Total Geral</small>
+                    <small>Total</small>
                     <h5>R$ {(total_consultas + total_exames + total_faturado):.2f}</h5>
                 </div>
             </div>
@@ -2921,7 +2914,7 @@ def caixa_geral(request):
             <div class="card-header bg-success text-white">Consultas</div>
             <table class="table table-sm">
                 <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>
-                {linhas_consultas if linhas_consultas else "<tr><td colspan='6'>Sem registros</td></tr>"}
+                {linhas_consultas if linhas_consultas else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2930,7 +2923,7 @@ def caixa_geral(request):
             <div class="card-header bg-warning">Convênios</div>
             <table class="table table-sm">
                 <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Convênio</th><th>Status</th><th>Tipo</th></tr>
-                {linhas_faturado if linhas_faturado else "<tr><td colspan='6'>Sem registros</td></tr>"}
+                {linhas_faturado if linhas_faturado else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2939,7 +2932,7 @@ def caixa_geral(request):
             <div class="card-header bg-primary text-white">Exames</div>
             <table class="table table-sm">
                 <tr><th>Data</th><th>Paciente</th><th>Prestador</th><th>Exame</th><th>Valor</th><th>Forma</th></tr>
-                {linhas_exames if linhas_exames else "<tr><td colspan='6'>Sem registros</td></tr>"}
+                {linhas_exames if linhas_exames else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
