@@ -2543,7 +2543,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO COM FILTROS ---
+# --- 18. TELA 16: CAIXA COMPLETO COM CONVÊNIO ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2575,9 +2575,6 @@ def caixa_geral(request):
         except:
             return None
 
-    # ===============================
-    # CONVERTER DATAS
-    # ===============================
     data_ini_sql = br_to_sql(data_ini) if data_ini else None
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
@@ -2589,17 +2586,17 @@ def caixa_geral(request):
         unidades_list = cursor.fetchall()
 
     # ===============================
-    # SQL DINÂMICO (SEGURO)
+    # SQL (AGORA COM DESCRICAO)
     # ===============================
     sql = """
-        SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, status, data_pagamento, unidade_id
+        SELECT categoria, paciente_nome, profissional_nome, valor, 
+               forma_pagamento, status, data_pagamento, unidade_id, descricao
         FROM caixa
         WHERE 1=1
     """
 
     params = []
 
-    # 🔥 FILTRO DATA
     if data_ini_sql:
         sql += " AND data_pagamento::date >= %s"
         params.append(data_ini_sql)
@@ -2608,27 +2605,25 @@ def caixa_geral(request):
         sql += " AND data_pagamento::date <= %s"
         params.append(data_fim_sql)
 
-    # 🔥 PADRÃO = HOJE SE NÃO INFORMAR
     if not data_ini_sql and not data_fim_sql:
         sql += " AND data_pagamento::date = %s"
         params.append(hoje)
 
-    # 🔥 FILTRO UNIDADE
     if unidade_id:
         sql += " AND unidade_id = %s"
         params.append(unidade_id)
 
-    # 🔥 BUSCA
     if busca:
         sql += """
         AND (
             paciente_nome ILIKE %s OR
             profissional_nome ILIKE %s OR
             forma_pagamento ILIKE %s OR
-            CAST(valor AS TEXT) ILIKE %s
+            CAST(valor AS TEXT) ILIKE %s OR
+            descricao ILIKE %s
         )
         """
-        params.extend([f"%{busca}%"] * 4)
+        params.extend([f"%{busca}%"] * 5)
 
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
@@ -2649,10 +2644,11 @@ def caixa_geral(request):
     linhas_faturado = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma, status, data_pg, uni = m
+        cat, pac, prof, val, forma, status, data_pg, uni, desc = m
 
         val = float(val or 0)
         pac = limpar_nome(pac)
+        convenio = desc or "-"
 
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
 
@@ -2664,6 +2660,7 @@ def caixa_geral(request):
                 <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
+                <td>{convenio}</td>
                 <td class="fw-bold text-success">R$ {val:.2f}</td>
                 <td>{forma}</td>
             </tr>
@@ -2677,6 +2674,7 @@ def caixa_geral(request):
                 <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
+                <td>{convenio}</td>
                 <td class="fw-bold text-warning">Faturado</td>
                 <td>Convênio</td>
             </tr>
@@ -2702,15 +2700,15 @@ def caixa_geral(request):
         <form method="GET" class="row g-2 mb-3">
 
             <div class="col-md-2">
-                <input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial (dd/mm/yyyy)">
+                <input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial">
             </div>
 
             <div class="col-md-2">
-                <input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final (dd/mm/yyyy)">
+                <input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final">
             </div>
 
             <div class="col-md-3">
-                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Forma / Valor">
+                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Convênio">
             </div>
 
             <div class="col-md-3">
@@ -2758,10 +2756,11 @@ def caixa_geral(request):
                     <th>Data</th>
                     <th>Paciente</th>
                     <th>Profissional</th>
+                    <th>Convênio</th>
                     <th>Valor</th>
                     <th>Forma</th>
                 </tr>
-                {linhas_pago if linhas_pago else "<tr><td colspan='5' class='text-center'>Sem registros</td></tr>"}
+                {linhas_pago if linhas_pago else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2773,10 +2772,11 @@ def caixa_geral(request):
                     <th>Data</th>
                     <th>Paciente</th>
                     <th>Profissional</th>
+                    <th>Convênio</th>
                     <th>Status</th>
                     <th>Tipo</th>
                 </tr>
-                {linhas_faturado if linhas_faturado else "<tr><td colspan='5' class='text-center'>Sem registros</td></tr>"}
+                {linhas_faturado if linhas_faturado else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2784,6 +2784,8 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
 
 
 
