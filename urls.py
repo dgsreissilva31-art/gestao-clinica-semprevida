@@ -2799,7 +2799,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (3 BLOCOS: CONSULTAS / CONVÊNIOS / EXAMES) ---
+# --- 18. TELA 16: CAIXA COMPLETO (4 BLOCOS) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2813,8 +2813,6 @@ def caixa_geral(request):
     data_ini = request.GET.get('data_ini') or ""
     data_fim = request.GET.get('data_fim') or ""
     busca = request.GET.get('busca') or ""
-
-    mensagem = ""
 
     # ===============================
     # FUNÇÕES
@@ -2896,10 +2894,12 @@ def caixa_geral(request):
     # ===============================
     total_consultas = 0
     total_exames = 0
+    total_odonto = 0
     total_faturado = 0
 
     linhas_consultas = ""
     linhas_exames = ""
+    linhas_odonto = ""
     linhas_faturado = ""
 
     for m in movimentos:
@@ -2911,9 +2911,9 @@ def caixa_geral(request):
         descricao = desc or "-"
 
         # ===============================
-        # CONSULTAS (PAGO)
+        # CONSULTAS
         # ===============================
-        if status == "Pago" and cat != "Exame":
+        if status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"]:
             total_consultas += val
 
             linhas_consultas += f"""
@@ -2928,7 +2928,7 @@ def caixa_geral(request):
             """
 
         # ===============================
-        # EXAMES (PAGO)
+        # EXAMES
         # ===============================
         elif status == "Pago" and cat == "Exame":
             total_exames += val
@@ -2940,6 +2940,23 @@ def caixa_geral(request):
                 <td>{prof or '-'}</td>
                 <td>{descricao}</td>
                 <td class="fw-bold text-primary">R$ {val:.2f}</td>
+                <td>{forma}</td>
+            </tr>
+            """
+
+        # ===============================
+        # ODONTOLOGIA
+        # ===============================
+        elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
+            total_odonto += val
+
+            linhas_odonto += f"""
+            <tr>
+                <td>{data_br}</td>
+                <td>{pac}</td>
+                <td>{prof or '-'}</td>
+                <td>{descricao}</td>
+                <td class="fw-bold text-dark">R$ {val:.2f}</td>
                 <td>{forma}</td>
             </tr>
             """
@@ -3001,65 +3018,40 @@ def caixa_geral(request):
 
         <!-- RESUMO -->
         <div class="row g-2 mb-3">
-            <div class="col-md-3">
-                <div class="card p-2 bg-success text-white text-center">
-                    <small>Consultas</small>
-                    <h5>R$ {total_consultas:.2f}</h5>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card p-2 bg-primary text-white text-center">
-                    <small>Exames</small>
-                    <h5>R$ {total_exames:.2f}</h5>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card p-2 bg-warning text-dark text-center">
-                    <small>Convênios</small>
-                    <h5>R$ {total_faturado:.2f}</h5>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card p-2 bg-dark text-warning text-center">
-                    <small>Total</small>
-                    <h5>R$ {(total_consultas + total_exames + total_faturado):.2f}</h5>
-                </div>
-            </div>
+            <div class="col-md-3"><div class="card p-2 bg-success text-white text-center"><small>Consultas</small><h5>R$ {total_consultas:.2f}</h5></div></div>
+            <div class="col-md-3"><div class="card p-2 bg-primary text-white text-center"><small>Exames</small><h5>R$ {total_exames:.2f}</h5></div></div>
+            <div class="col-md-3"><div class="card p-2 bg-dark text-white text-center"><small>Odontologia</small><h5>R$ {total_odonto:.2f}</h5></div></div>
+            <div class="col-md-3"><div class="card p-2 bg-warning text-dark text-center"><small>Convênios</small><h5>R$ {total_faturado:.2f}</h5></div></div>
         </div>
 
         <!-- CONSULTAS -->
         <div class="card mb-3">
             <div class="card-header bg-success text-white">Consultas</div>
-            <table class="table table-sm">
-                <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>
-                {linhas_consultas if linhas_consultas else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
-            </table>
+            <table class="table table-sm">{linhas_consultas or "<tr><td class='text-center'>Sem registros</td></tr>"}</table>
         </div>
 
         <!-- CONVÊNIOS -->
         <div class="card mb-3">
             <div class="card-header bg-warning">Convênios</div>
-            <table class="table table-sm">
-                <tr><th>Data</th><th>Paciente</th><th>Profissional</th><th>Convênio</th><th>Status</th><th>Tipo</th></tr>
-                {linhas_faturado if linhas_faturado else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
-            </table>
+            <table class="table table-sm">{linhas_faturado or "<tr><td class='text-center'>Sem registros</td></tr>"}</table>
         </div>
 
         <!-- EXAMES -->
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-header bg-primary text-white">Exames</div>
-            <table class="table table-sm">
-                <tr><th>Data</th><th>Paciente</th><th>Prestador</th><th>Exame</th><th>Valor</th><th>Forma</th></tr>
-                {linhas_exames if linhas_exames else "<tr><td colspan='6' class='text-center'>Sem registros</td></tr>"}
-            </table>
+            <table class="table table-sm">{linhas_exames or "<tr><td class='text-center'>Sem registros</td></tr>"}</table>
+        </div>
+
+        <!-- ODONTOLOGIA -->
+        <div class="card">
+            <div class="card-header bg-dark text-white">Odontologia</div>
+            <table class="table table-sm">{linhas_odonto or "<tr><td class='text-center'>Sem registros</td></tr>"}</table>
         </div>
 
     </div>
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
