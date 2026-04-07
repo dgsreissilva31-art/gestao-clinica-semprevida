@@ -2543,7 +2543,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (PAGO + FATURADO) ---
+# --- 18. TELA 16: CAIXA COMPLETO COM FILTROS ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2552,44 +2552,90 @@ def caixa_geral(request):
     import re
 
     hoje = datetime.date.today()
+
     unidade_id = request.GET.get('unidade') or ""
+    data_ini = request.GET.get('data_ini') or ""
+    data_fim = request.GET.get('data_fim') or ""
+    busca = request.GET.get('busca') or ""
 
     mensagem = ""
 
     # ===============================
-    # LIMPAR NOME
+    # FUNÇÕES
     # ===============================
     def limpar_nome(nome):
         if not nome:
             return ""
         return re.sub(r"\(.*?\)", "", nome).strip()
 
+    def br_to_sql(data_br):
+        try:
+            d, m, a = data_br.split('/')
+            return f"{a}-{m}-{d}"
+        except:
+            return None
+
     # ===============================
-    # BUSCAR UNIDADES
+    # CONVERTER DATAS
+    # ===============================
+    data_ini_sql = br_to_sql(data_ini) if data_ini else None
+    data_fim_sql = br_to_sql(data_fim) if data_fim else None
+
+    # ===============================
+    # UNIDADES
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
 
     # ===============================
-    # BUSCAR MOVIMENTOS (SEM FILTRAR ZERO)
+    # SQL DINÂMICO (SEGURO)
+    # ===============================
+    sql = """
+        SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, status, data_pagamento, unidade_id
+        FROM caixa
+        WHERE 1=1
+    """
+
+    params = []
+
+    # 🔥 FILTRO DATA
+    if data_ini_sql:
+        sql += " AND data_pagamento::date >= %s"
+        params.append(data_ini_sql)
+
+    if data_fim_sql:
+        sql += " AND data_pagamento::date <= %s"
+        params.append(data_fim_sql)
+
+    # 🔥 PADRÃO = HOJE SE NÃO INFORMAR
+    if not data_ini_sql and not data_fim_sql:
+        sql += " AND data_pagamento::date = %s"
+        params.append(hoje)
+
+    # 🔥 FILTRO UNIDADE
+    if unidade_id:
+        sql += " AND unidade_id = %s"
+        params.append(unidade_id)
+
+    # 🔥 BUSCA
+    if busca:
+        sql += """
+        AND (
+            paciente_nome ILIKE %s OR
+            profissional_nome ILIKE %s OR
+            forma_pagamento ILIKE %s OR
+            CAST(valor AS TEXT) ILIKE %s
+        )
+        """
+        params.extend([f"%{busca}%"] * 4)
+
+    sql += " ORDER BY data_pagamento DESC, id DESC"
+
+    # ===============================
+    # EXECUTAR
     # ===============================
     with connection.cursor() as cursor:
-
-        sql = """
-            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, status, unidade_id
-            FROM caixa
-            WHERE data_pagamento::date = %s
-        """
-
-        params = [hoje]
-
-        if unidade_id:
-            sql += " AND unidade_id = %s"
-            params.append(unidade_id)
-
-        sql += " ORDER BY id DESC"
-
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
 
@@ -2603,17 +2649,19 @@ def caixa_geral(request):
     linhas_faturado = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma, status, uni = m
+        cat, pac, prof, val, forma, status, data_pg, uni = m
 
         val = float(val or 0)
         pac = limpar_nome(pac)
 
-        # 🔥 PAGO
+        data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
+
         if status == "Pago":
             total_pago += val
 
             linhas_pago += f"""
             <tr>
+                <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
                 <td class="fw-bold text-success">R$ {val:.2f}</td>
@@ -2621,12 +2669,12 @@ def caixa_geral(request):
             </tr>
             """
 
-        # 🔥 FATURADO (CONVÊNIO)
         else:
             total_faturado += val
 
             linhas_faturado += f"""
             <tr>
+                <td>{data_br}</td>
                 <td>{pac}</td>
                 <td>{prof or '-'}</td>
                 <td class="fw-bold text-warning">Faturado</td>
@@ -2648,80 +2696,87 @@ def caixa_geral(request):
     conteudo = f"""
     <div class="container-fluid py-2">
 
-        <div class="d-flex justify-content-between align-items-end mb-3">
-            <h5 class="fw-bold text-success">💰 Caixa do Dia</h5>
+        <h5 class="fw-bold text-success mb-3">💰 Caixa</h5>
 
-            <form method="GET">
-                <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
+        <!-- FILTROS -->
+        <form method="GET" class="row g-2 mb-3">
+
+            <div class="col-md-2">
+                <input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial (dd/mm/yyyy)">
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final (dd/mm/yyyy)">
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente / Profissional / Forma / Valor">
+            </div>
+
+            <div class="col-md-3">
+                <select name="unidade" class="form-select">
                     <option value="">Todas Unidades</option>
                     {opts_uni}
                 </select>
-            </form>
-        </div>
+            </div>
 
-        {mensagem}
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100">Filtrar</button>
+            </div>
+
+        </form>
 
         <!-- RESUMO -->
         <div class="row g-2 mb-3">
             <div class="col-md-4">
                 <div class="card p-2 bg-success text-white text-center">
-                    <small>Recebido (Pago)</small>
+                    <small>Recebido</small>
                     <h5>R$ {total_pago:.2f}</h5>
                 </div>
             </div>
 
             <div class="col-md-4">
                 <div class="card p-2 bg-warning text-dark text-center">
-                    <small>Faturado (Convênios)</small>
+                    <small>Faturado</small>
                     <h5>R$ {total_faturado:.2f}</h5>
                 </div>
             </div>
 
             <div class="col-md-4">
                 <div class="card p-2 bg-dark text-warning text-center">
-                    <small>Total Geral</small>
+                    <small>Total</small>
                     <h5>R$ {(total_pago + total_faturado):.2f}</h5>
                 </div>
             </div>
         </div>
 
         <!-- PAGO -->
-        <div class="card mb-3 shadow-sm">
-            <div class="card-header bg-success text-white py-1">
-                💰 Recebimentos do Dia
-            </div>
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Paciente</th>
-                        <th>Profissional</th>
-                        <th>Valor</th>
-                        <th>Forma</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas_pago if linhas_pago else "<tr><td colspan='4' class='text-center'>Sem recebimentos</td></tr>"}
-                </tbody>
+        <div class="card mb-3">
+            <div class="card-header bg-success text-white">Recebidos</div>
+            <table class="table table-sm">
+                <tr>
+                    <th>Data</th>
+                    <th>Paciente</th>
+                    <th>Profissional</th>
+                    <th>Valor</th>
+                    <th>Forma</th>
+                </tr>
+                {linhas_pago if linhas_pago else "<tr><td colspan='5' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
         <!-- FATURADO -->
-        <div class="card shadow-sm">
-            <div class="card-header bg-warning py-1">
-                🧾 Convênios (Faturado)
-            </div>
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Paciente</th>
-                        <th>Profissional</th>
-                        <th>Status</th>
-                        <th>Tipo</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {linhas_faturado if linhas_faturado else "<tr><td colspan='4' class='text-center'>Sem convênios</td></tr>"}
-                </tbody>
+        <div class="card">
+            <div class="card-header bg-warning">Convênios</div>
+            <table class="table table-sm">
+                <tr>
+                    <th>Data</th>
+                    <th>Paciente</th>
+                    <th>Profissional</th>
+                    <th>Status</th>
+                    <th>Tipo</th>
+                </tr>
+                {linhas_faturado if linhas_faturado else "<tr><td colspan='5' class='text-center'>Sem registros</td></tr>"}
             </table>
         </div>
 
@@ -2729,6 +2784,8 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
 
 
 
