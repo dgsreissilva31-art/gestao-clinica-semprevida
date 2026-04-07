@@ -1006,20 +1006,89 @@ def exames_geral(request):
 
 
 # --- 8. TELA 6: ODONTOLOGIA ---
+# --- 8. TELA 6: ODONTOLOGIA + CAIXA ODONTO ---
 @csrf_exempt
 def odonto_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse, HttpResponseRedirect
+    import datetime
+
     mensagem = ""
-    
-    # 1. Lógica de Exclusão
+
+    # ===============================
+    # EXCLUIR PROCEDIMENTO
+    # ===============================
     if request.GET.get('delete_odonto'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM odontologia WHERE id = %s", [request.GET.get('delete_odonto')])
         return HttpResponseRedirect('/odontologia/')
 
-    # 2. Lógica para Carregar Dados de Edição (Modo Alterar)
+    # ===============================
+    # CADASTRAR PRESTADOR
+    # ===============================
+    if request.method == "POST" and "novo_prestador" in request.POST:
+        try:
+            nome = request.POST.get('nome_prestador')
+
+            if nome:
+                with connection.cursor() as cursor:
+                    cursor.execute("INSERT INTO prestadores (nome) VALUES (%s)", [nome])
+
+                mensagem = '<div class="alert alert-success">✅ Prestador cadastrado!</div>'
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
+    # ===============================
+    # LANÇAMENTO CAIXA ODONTO 🔥
+    # ===============================
+    if request.method == "POST" and "lancar_odonto" in request.POST:
+        try:
+            paciente = request.POST.get('paciente')
+            odonto_id = request.POST.get('odonto_id')
+            prestador = request.POST.get('prestador')
+            valor = float(request.POST.get('valor') or 0)
+            forma = request.POST.get('forma')
+            unidade_id = request.POST.get('unidade_id')
+
+            if not paciente or not odonto_id:
+                raise Exception("Paciente e procedimento obrigatórios")
+
+            if not unidade_id:
+                raise Exception("Selecione a unidade")
+
+            with connection.cursor() as cursor:
+
+                cursor.execute("SELECT procedimento FROM odontologia WHERE id = %s", [odonto_id])
+                od = cursor.fetchone()
+                nome_proc = od[0] if od else "Procedimento"
+
+                cursor.execute("""
+                    INSERT INTO caixa
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                """, [
+                    paciente,
+                    prestador,
+                    valor,
+                    forma,
+                    'Pago',
+                    'Odontologia',
+                    nome_proc,
+                    unidade_id
+                ])
+
+            mensagem = '<div class="alert alert-success">✅ Procedimento lançado no caixa!</div>'
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
+    # ===============================
+    # CADASTRO / EDIÇÃO ODONTO
+    # ===============================
     edit_id = request.GET.get('edit_odonto')
-    o_dados = ["", "", 0.00, ""] # procedimento, grupo, valor, observacoes
-    
+    o_dados = ["", "", 0.00, ""]
+
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -1030,112 +1099,174 @@ def odonto_geral(request):
             if res:
                 o_dados = res
 
-    # 3. Lógica de Salvar (Novo ou Alteração)
-    if request.method == "POST":
-        id_post = request.POST.get('id_odonto')
-        proc = request.POST.get('procedimento')
-        grupo = request.POST.get('grupo')
-        valor = request.POST.get('valor')
-        obs = request.POST.get('observacoes')
-        
+    if request.method == "POST" and "salvar_odonto" in request.POST:
         try:
+            id_post = request.POST.get('id_odonto')
+
+            proc = request.POST.get('procedimento')
+            grupo = request.POST.get('grupo')
+            valor = request.POST.get('valor') or 0
+            obs = request.POST.get('observacoes')
+
             with connection.cursor() as cursor:
-                if id_post: # UPDATE
+                if id_post:
                     cursor.execute("""
                         UPDATE odontologia 
                         SET procedimento=%s, grupo=%s, valor_particular=%s, observacoes=%s
                         WHERE id=%s
-                    """, [proc, grupo, valor if valor else 0, obs, id_post])
-                    mensagem = '<div class="alert alert-success">✅ Procedimento atualizado com sucesso!</div>'
-                else: # INSERT
+                    """, [proc, grupo, valor, obs, id_post])
+                else:
                     cursor.execute("""
-                        INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes) 
-                        VALUES (%s, %s, %s, %s)
-                    """, [proc, grupo, valor if valor else 0, obs])
-                    mensagem = '<div class="alert alert-success">✅ Procedimento salvo com sucesso!</div>'
-            return HttpResponseRedirect('/odontologia/')
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+                        INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes)
+                        VALUES (%s,%s,%s,%s)
+                    """, [proc, grupo, valor, obs])
 
-    # 4. Busca Lista
+            return HttpResponseRedirect('/odontologia/')
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
+    # ===============================
+    # BUSCAR DADOS
+    # ===============================
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, procedimento, grupo, valor_particular, observacoes FROM odontologia ORDER BY grupo, procedimento")
+        cursor.execute("SELECT id, procedimento FROM odontologia ORDER BY procedimento")
+        procedimentos = cursor.fetchall()
+
+        cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
+        prestadores = cursor.fetchall()
+
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT id, procedimento, grupo, valor_particular, observacoes 
+            FROM odontologia ORDER BY procedimento
+        """)
         lista_odonto = cursor.fetchall()
 
-    # 5. Montagem das Linhas com Botão Alterar
+    # ===============================
+    # SELECTS
+    # ===============================
+    opts_proc = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in procedimentos])
+    opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
+    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
+
+    # ===============================
+    # LISTA
+    # ===============================
     linhas = ""
     for o in lista_odonto:
         linhas += f"""
         <tr>
-            <td><b>{o[1]}</b><br><span class="badge bg-light text-dark border">{o[2] if o[2] else 'Geral'}</span></td>
-            <td>R$ {o[3]}</td>
-            <td><small>{o[4] if o[4] else '---'}</small></td>
-            <td>
-                <div class="btn-group">
-                    <a href="/odontologia/?edit_odonto={o[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
-                        <i class="bi bi-pencil"></i>
-                    </a>
-                    <a href="/odontologia/?delete_odonto={o[0]}" class="btn btn-sm btn-danger" 
-                       onclick="return confirm('Excluir este procedimento?')" title="Excluir">
-                        <i class="bi bi-trash"></i>
-                    </a>
-                </div>
-            </td>
-        </tr>"""
+            <td>{o[1]}</td>
+            <td>{o[2] or '-'}</td>
+            <td>R$ {float(o[3] or 0):.2f}</td>
+            <td>{o[4] or '-'}</td>
+        </tr>
+        """
 
-    # 6. HTML da Página
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
-        <div class="d-flex justify-content-between align-items-center">
-            <h4><i class="bi bi-mask"></i> Procedimentos Odontológicos</h4>
-            <a href="/admin-painel/" class="btn btn-sm btn-outline-secondary">Voltar ao Dashboard</a>
-        </div>
-        <hr>
-        
-        {mensagem}
-        
-        <form method="POST" class="row g-3 mb-4 bg-light p-3 rounded border shadow-sm">
+    <h4>🦷 Odontologia</h4>
+
+    {mensagem}
+
+    <!-- CADASTRO -->
+    <div class="card p-3 mb-3">
+        <form method="POST" class="row g-2">
             <input type="hidden" name="id_odonto" value="{edit_id or ''}">
-            
-            <div class="col-md-5">
-                <label class="form-label fw-bold small">Procedimento</label>
-                <input type="text" name="procedimento" class="form-control" value="{o_dados[0]}" placeholder="Ex: Extração de Siso" required>
-            </div>
-            
+
             <div class="col-md-4">
-                <label class="form-label fw-bold small">Grupo</label>
-                <input type="text" name="grupo" class="form-control" value="{o_dados[1]}" placeholder="Ex: Cirurgia, Estética...">
+                <input type="text" name="procedimento" class="form-control" placeholder="Procedimento" required>
             </div>
 
             <div class="col-md-3">
-                <label class="form-label fw-bold small">Valor Particular (R$)</label>
-                <input type="number" step="0.01" name="valor" class="form-control" value="{o_dados[2]}" placeholder="0.00">
+                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-3">
+                <button name="salvar_odonto" class="btn btn-primary w-100">Salvar</button>
             </div>
 
             <div class="col-12">
-                <label class="form-label fw-bold small">Observações Técnicas</label>
-                <textarea name="observacoes" class="form-control" rows="2" placeholder="Notas sobre o procedimento...">{o_dados[3]}</textarea>
+                <textarea name="observacoes" class="form-control" placeholder="Observações"></textarea>
+            </div>
+        </form>
+    </div>
+
+    <!-- CAIXA ODONTO -->
+    <div class="card p-3 mb-3 border-success">
+        <h5>💰 Caixa Odontológico</h5>
+
+        <form method="POST" class="row g-2">
+
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
             </div>
 
-            <div class="col-12">
-                <button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm" style="background-color: #555;">
-                    { '<i class="bi bi-check-lg"></i> ATUALIZAR PROCEDIMENTO' if edit_id else '<i class="bi bi-plus-lg"></i> SALVAR PROCEDIMENTO' }
-                </button>
+            <div class="col-md-2">
+                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
             </div>
-            { f'<div class="col-12 text-center mt-2"><a href="/odontologia/" class="text-danger small text-decoration-none">Cancelar Edição</a></div>' if edit_id else '' }
+
+            <div class="col-md-2">
+                <select name="odonto_id" class="form-select" required>
+                    <option value="">Procedimento</option>
+                    {opts_proc}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="prestador" class="form-select">
+                    <option value="">Prestador</option>
+                    {opts_prest}
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-2">
+                <select name="forma" class="form-select">
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                    <option>Dinheiro</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_odonto" class="btn btn-success w-100">OK</button>
+            </div>
+
         </form>
 
-        <hr>
-        <h5>Lista de Procedimentos</h5>
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mt-2">
-                <thead class="table-dark">
-                    <tr><th>Procedimento / Grupo</th><th>Valor</th><th>Obs.</th><th>Ações</th></tr>
-                </thead>
-                <tbody>{linhas if lista_odonto else '<tr><td colspan="4" class="text-center text-muted py-4">Nenhum procedimento cadastrado.</td></tr>'}</tbody>
-            </table>
-        </div>
+        <!-- PRESTADOR -->
+        <form method="POST" class="mt-2 d-flex gap-2">
+            <input type="text" name="nome_prestador" class="form-control" placeholder="Novo prestador">
+            <button name="novo_prestador" class="btn btn-secondary">Cadastrar</button>
+        </form>
+    </div>
+
+    <!-- LISTA -->
+    <table class="table table-sm">
+        <tr><th>Procedimento</th><th>Grupo</th><th>Valor</th><th>Obs</th></tr>
+        {linhas}
+    </table>
     """
+
     return HttpResponse(base_html("Odontologia", conteudo))
+
+
 
 
 
