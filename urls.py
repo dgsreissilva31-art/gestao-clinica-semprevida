@@ -2131,10 +2131,10 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO (100% INTEGRADO COM CAIXA) ---
 @csrf_exempt
 def recepcao_geral(request):
-    from django.db import connection, transaction
+    from django.db import connection
     from django.http import HttpResponse
     from django.shortcuts import redirect
     import datetime
@@ -2157,7 +2157,7 @@ def recepcao_geral(request):
 
             with connection.cursor() as cursor:
 
-                # 🔥 BUSCA COMPLETA
+                # 🔥 BUSCA COMPLETA (COM UNIDADE)
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
@@ -2178,14 +2178,14 @@ def recepcao_geral(request):
                 unidade_id = info[2]
 
                 # ===============================
-                # 🔥 REGRA DEFINITIVA
+                # 💰 SE FOR PARTICULAR → VAI PARA CAIXA
                 # ===============================
                 if tipo == "avista":
 
                     valor = float(request.POST.get('valor') or 0)
 
                     if valor <= 0:
-                        raise Exception("Informe o valor para pagamento à vista")
+                        raise Exception("Informe o valor")
 
                     forma = request.POST.get('forma_pagamento') or "Pix"
 
@@ -2203,20 +2203,20 @@ def recepcao_geral(request):
                         unidade_id
                     ])
 
-                # 🔥 CONVÊNIO NÃO VAI PARA CAIXA
-                # (pois valor = 0 e sua tela ignora)
-                # apenas marca status
-
+                # ===============================
+                # 🏥 ATUALIZA STATUS
+                # ===============================
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
                     WHERE id = %s
                 """, [ag_id])
 
-            # 🔥 GARANTE COMMIT
-            transaction.commit()
-
-            return redirect(f"/recepcao/?unidade={unidade_filtro}")
+            # 🔥 REDIRECT (FECHA MODAL)
+            if unidade_filtro:
+                return redirect(f"/recepcao/?unidade={unidade_filtro}")
+            else:
+                return redirect("/recepcao/")
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
@@ -2244,6 +2244,8 @@ def recepcao_geral(request):
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
+
+        sql += " ORDER BY ag.horario_selecionado"
 
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
@@ -2284,7 +2286,7 @@ def recepcao_geral(request):
         """
 
     # ===============================
-    # MODAL
+    # MODAL (FINANCEIRO)
     # ===============================
     modal_html = ""
 
@@ -2315,7 +2317,7 @@ def recepcao_geral(request):
                             </select>
                         </div>
 
-                        <button name="finalizar_fluxo" class="btn btn-success w-100">
+                        <button name="finalizar_fluxo" class="btn btn-success w-100 fw-bold">
                             CONCLUIR CHECK-IN
                         </button>
                     </form>
@@ -2328,7 +2330,12 @@ def recepcao_geral(request):
         function togglePagamento() {{
             var tipo = document.getElementById("tipo").value;
             var bloco = document.getElementById("bloco_pagamento");
-            bloco.style.display = (tipo === "faturado") ? "none" : "block";
+
+            if (tipo === "faturado") {{
+                bloco.style.display = "none";
+            }} else {{
+                bloco.style.display = "block";
+            }}
         }}
         togglePagamento();
         </script>
@@ -2369,6 +2376,7 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
 
 
 
@@ -2514,7 +2522,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA (SEM ERRO SQL - DEFINITIVO) ---
+# --- 18. TELA 16: CAIXA (SQL 100% CORRIGIDO E BLINDADO) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2528,12 +2536,24 @@ def caixa_geral(request):
     mensagem = ""
 
     # ===============================
-    # LIMPAR NOME
+    # FUNÇÃO LIMPAR NOME
     # ===============================
     def limpar_nome(nome):
         if not nome:
             return ""
         return re.sub(r"\(.*?\)", "", nome).strip()
+
+    # ===============================
+    # VERIFICAR SE EXISTE unidade_id
+    # ===============================
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'caixa'
+        """)
+        colunas = [c[0] for c in cursor.fetchall()]
+        tem_unidade = 'unidade_id' in colunas
 
     # ===============================
     # BUSCAR UNIDADES
@@ -2543,25 +2563,29 @@ def caixa_geral(request):
         unidades_list = cursor.fetchall()
 
     # ===============================
-    # BUSCAR MOVIMENTOS (CORRIGIDO)
+    # BUSCAR MOVIMENTOS (SQL PERFEITO)
     # ===============================
     with connection.cursor() as cursor:
 
         sql = """
-            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, unidade_id
+            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento
             FROM caixa
-            WHERE data_pagamento::date = %s
-            AND COALESCE(valor,0) > 0
+            WHERE data_pagamento = %s
+              AND COALESCE(valor,0) > 0
         """
 
         params = [hoje]
 
         # 🔥 FILTRO SEGURO
-        if unidade_id:
-            sql += " AND (unidade_id = %s OR unidade_id IS NULL)"
+        if unidade_id and tem_unidade:
+            sql += " AND unidade_id = %s"
             params.append(unidade_id)
 
         sql += " ORDER BY id DESC"
+
+        # 🔍 DEBUG (se quiser ativar)
+        # print(sql)
+        # print(params)
 
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
@@ -2573,16 +2597,16 @@ def caixa_geral(request):
     linhas = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma, uni = m
-        val = float(val or 0)
+        cat, pac, prof, val, forma = m
 
+        val = float(val or 0)
         total_geral += val
 
         linhas += f"""
         <tr>
             <td>{limpar_nome(pac)}</td>
             <td>{prof or '-'}</td>
-            <td class="fw-bold">R$ {val:.2f}</td>
+            <td class="fw-bold text-success">R$ {val:.2f}</td>
             <td>{forma or '-'}</td>
         </tr>
         """
@@ -2596,7 +2620,7 @@ def caixa_geral(request):
     ])
 
     # ===============================
-    # HTML
+    # HTML FINAL
     # ===============================
     conteudo = f"""
     <div class="container-fluid py-2">
@@ -2614,29 +2638,32 @@ def caixa_geral(request):
 
         {mensagem}
 
-        <div class="card p-2 bg-dark text-warning mb-2 text-center">
-            <small>Total do Dia</small>
-            <h4 class="m-0">R$ {total_geral:.2f}</h4>
+        <div class="card p-3 bg-dark text-warning mb-3 text-center shadow">
+            <small>Total Recebido</small>
+            <h3 class="m-0">R$ {total_geral:.2f}</h3>
         </div>
 
-        <table class="table table-sm table-hover">
-            <thead class="table-dark">
-                <tr>
-                    <th>Paciente</th>
-                    <th>Profissional</th>
-                    <th>Valor</th>
-                    <th>Forma</th>
-                </tr>
-            </thead>
-            <tbody>
-                {linhas if linhas else "<tr><td colspan='4' class='text-center'>Sem recebimentos</td></tr>"}
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Paciente</th>
+                        <th>Profissional</th>
+                        <th>Valor</th>
+                        <th>Forma</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas if linhas else "<tr><td colspan='4' class='text-center text-muted'>Sem recebimentos</td></tr>"}
+                </tbody>
+            </table>
+        </div>
 
     </div>
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
 
 
 
