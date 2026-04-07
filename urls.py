@@ -2131,7 +2131,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO COMPLETA (3 TIPOS: PARTICULAR / CONVÊNIO / CARTÃO DESCONTO) ---
+# --- 16. TELA 14: RECEPÇÃO BLINDADA (ANTI DUPLICIDADE + FINANCEIRO COMPLETO) ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2148,7 +2148,7 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN
+    # FINALIZAR CHECK-IN (BLINDADO)
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
@@ -2158,7 +2158,7 @@ def recepcao_geral(request):
 
             with connection.cursor() as cursor:
 
-                # 🔥 DADOS
+                # 🔥 BUSCA DADOS
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
@@ -2175,7 +2175,17 @@ def recepcao_geral(request):
 
                 paciente_nome, profissional_nome, unidade_id = info
 
-                # 🔥 BUSCA NOME CONVÊNIO
+                # 🔒 BLOQUEIO DUPLICIDADE
+                cursor.execute("""
+                    SELECT id FROM caixa
+                    WHERE descricao = %s
+                    LIMIT 1
+                """, [f"AG:{ag_id}"])
+
+                if cursor.fetchone():
+                    raise Exception("⚠️ Check-in já realizado")
+
+                # 🔥 BUSCA CONVÊNIO
                 convenio_nome = ""
                 if convenio_id:
                     cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
@@ -2205,12 +2215,12 @@ def recepcao_geral(request):
                         forma,
                         'Pago',
                         'Consulta',
-                        'Particular',
+                        f"AG:{ag_id}",
                         unidade_id
                     ])
 
                 # ===============================
-                # CONVÊNIO (FATURADO)
+                # CONVÊNIO
                 # ===============================
                 elif tipo == "convenio":
 
@@ -2225,7 +2235,7 @@ def recepcao_geral(request):
                         'Faturado',
                         'A Faturar',
                         'Consulta',
-                        convenio_nome or 'Convênio',
+                        f"AG:{ag_id} - {convenio_nome}",
                         unidade_id
                     ])
 
@@ -2251,13 +2261,11 @@ def recepcao_geral(request):
                         forma,
                         'Pago',
                         'Consulta',
-                        f"Cartão: {convenio_nome}",
+                        f"AG:{ag_id} - Cartão {convenio_nome}",
                         unidade_id
                     ])
 
-                # ===============================
-                # STATUS
-                # ===============================
+                # 🔥 ATUALIZA STATUS
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
@@ -2341,7 +2349,7 @@ def recepcao_geral(request):
             <div class="modal-dialog">
                 <div class="modal-content p-4">
 
-                    <form method="POST">
+                    <form method="POST" onsubmit="bloquearBotao()">
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
@@ -2368,7 +2376,7 @@ def recepcao_geral(request):
                             </select>
                         </div>
 
-                        <button name="finalizar_fluxo" class="btn btn-success w-100">
+                        <button id="btnFinalizar" name="finalizar_fluxo" class="btn btn-success w-100">
                             FINALIZAR
                         </button>
                     </form>
@@ -2394,6 +2402,13 @@ def recepcao_geral(request):
                 conv.style.display = "none";
             }}
         }}
+
+        function bloquearBotao() {{
+            var btn = document.getElementById("btnFinalizar");
+            btn.disabled = true;
+            btn.innerText = "Processando...";
+        }}
+
         toggle();
         </script>
         """
@@ -2419,6 +2434,8 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
