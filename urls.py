@@ -2387,7 +2387,6 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO COMPLETA CORRIGIDA (FILTRO UNIDADE OK) ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2502,7 +2501,6 @@ def recepcao_geral(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
-        # 🔥 AQUI ESTAVA O ERRO → FALTAVA FILTRO
         sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
@@ -2538,7 +2536,7 @@ def recepcao_geral(request):
     ])
 
     # ===============================
-    # LINHAS
+    # LINHAS (COM BOTÃO CADASTRO 🔥)
     # ===============================
     linhas = ""
 
@@ -2546,18 +2544,23 @@ def recepcao_geral(request):
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
+            btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
-            btn = f'<span class="badge bg-secondary">{status}</span>'
+            btn_acao = f'<span class="badge bg-secondary">{status}</span>'
+
+        btn_cadastro = '<a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-dark btn-sm me-1">Cadastro</a>'
 
         linhas += f"""
         <tr>
             <td>{str(a[3])[:5]}</td>
             <td>{a[1]}</td>
             <td>{a[2]}</td>
-            <td>{btn}</td>
+            <td>
+                {btn_cadastro}
+                {btn_acao}
+            </td>
         </tr>
         """
 
