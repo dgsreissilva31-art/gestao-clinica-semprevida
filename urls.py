@@ -2131,10 +2131,10 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO BLINDADA (ANTI DUPLICIDADE + FINANCEIRO COMPLETO) ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN FINAL COM FECHAMENTO AUTOMÁTICO ---
 @csrf_exempt
 def recepcao_geral(request):
-    from django.db import connection
+    from django.db import connection, transaction
     from django.http import HttpResponse
     from django.shortcuts import redirect
     import datetime
@@ -2148,145 +2148,103 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN (BLINDADO)
+    # FINALIZAR CHECK-IN
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
             ag_id = request.POST.get('ag_id')
             tipo = request.POST.get('tipo_pagto')
-            convenio_id = request.POST.get('convenio_id')
 
-            with connection.cursor() as cursor:
+            with transaction.atomic():
+                with connection.cursor() as cursor:
 
-                # 🔥 BUSCA DADOS
-                cursor.execute("""
-                    SELECT pac.nome, prof.nome, u.id
-                    FROM agendamentos ag
-                    JOIN pacientes pac ON ag.paciente_id = pac.id
-                    JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-                    JOIN profissionais prof ON ac.profissional_id = prof.id
-                    JOIN unidades u ON ac.unidade_id = u.id
-                    WHERE ag.id = %s
-                """, [ag_id])
+                    # 🔒 EVITA DUPLICIDADE (já chegou?)
+                    cursor.execute("SELECT status FROM agendamentos WHERE id=%s", [ag_id])
+                    status_atual = cursor.fetchone()
 
-                info = cursor.fetchone()
-                if not info:
-                    raise Exception("Agendamento não encontrado")
+                    if status_atual and status_atual[0] == "Chegada":
+                        return redirect(f"/recepcao/?unidade={unidade_filtro}")
 
-                paciente_nome, profissional_nome, unidade_id = info
+                    # 🔎 BUSCA DADOS
+                    cursor.execute("""
+                        SELECT pac.nome, prof.nome, u.id
+                        FROM agendamentos ag
+                        JOIN pacientes pac ON ag.paciente_id = pac.id
+                        JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                        JOIN profissionais prof ON ac.profissional_id = prof.id
+                        JOIN unidades u ON ac.unidade_id = u.id
+                        WHERE ag.id = %s
+                    """, [ag_id])
 
-                # 🔒 BLOQUEIO DUPLICIDADE
-                cursor.execute("""
-                    SELECT id FROM caixa
-                    WHERE descricao = %s
-                    LIMIT 1
-                """, [f"AG:{ag_id}"])
+                    info = cursor.fetchone()
+                    if not info:
+                        raise Exception("Agendamento não encontrado")
 
-                if cursor.fetchone():
-                    raise Exception("⚠️ Check-in já realizado")
+                    paciente, profissional, unidade_id = info
 
-                # 🔥 BUSCA CONVÊNIO
-                convenio_nome = ""
-                if convenio_id:
-                    cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
-                    c = cursor.fetchone()
-                    if c:
-                        convenio_nome = c[0]
+                    valor = 0
+                    forma = ""
+                    status_financeiro = ""
 
-                # ===============================
-                # PARTICULAR
-                # ===============================
-                if tipo == "avista":
+                    # ===============================
+                    # REGRAS
+                    # ===============================
+                    if tipo == "avista":
+                        valor = float(request.POST.get('valor') or 0)
+                        if valor <= 0:
+                            raise Exception("Informe o valor")
 
-                    valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
+                        forma = request.POST.get('forma_pagamento') or "Pix"
+                        status_financeiro = "Pago"
 
-                    forma = request.POST.get('forma_pagamento') or "Pix"
+                    elif tipo == "desconto":
+                        valor = float(request.POST.get('valor') or 0)
+                        forma = request.POST.get('forma_pagamento') or "Pix"
+                        status_financeiro = "Pago"
 
+                    else:  # CONVÊNIO
+                        valor = 0
+                        forma = "Faturado"
+                        status_financeiro = "A Faturar"
+
+                    # ===============================
+                    # INSERIR NO CAIXA
+                    # ===============================
                     cursor.execute("""
                         INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
+                        VALUES (%s,%s,%s,%s,%s,'Consulta',CURRENT_DATE,%s)
                     """, [
-                        paciente_nome,
-                        profissional_nome,
+                        paciente,
+                        profissional,
                         valor,
                         forma,
-                        'Pago',
-                        'Consulta',
-                        f"AG:{ag_id}",
+                        status_financeiro,
                         unidade_id
                     ])
 
-                # ===============================
-                # CONVÊNIO
-                # ===============================
-                elif tipo == "convenio":
-
+                    # ===============================
+                    # ATUALIZA STATUS
+                    # ===============================
                     cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        0,
-                        'Faturado',
-                        'A Faturar',
-                        'Consulta',
-                        f"AG:{ag_id} - {convenio_nome}",
-                        unidade_id
-                    ])
+                        UPDATE agendamentos
+                        SET status = 'Chegada'
+                        WHERE id = %s
+                    """, [ag_id])
 
-                # ===============================
-                # CARTÃO DESCONTO
-                # ===============================
-                elif tipo == "cartao":
-
-                    valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-
-                    forma = request.POST.get('forma_pagamento') or "Pix"
-
-                    cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        valor,
-                        forma,
-                        'Pago',
-                        'Consulta',
-                        f"AG:{ag_id} - Cartão {convenio_nome}",
-                        unidade_id
-                    ])
-
-                # 🔥 ATUALIZA STATUS
-                cursor.execute("""
-                    UPDATE agendamentos
-                    SET status = 'Chegada'
-                    WHERE id = %s
-                """, [ag_id])
-
+            # 🔥 REDIRECT (FECHA TELA AUTOMATICAMENTE)
             return redirect(f"/recepcao/?unidade={unidade_filtro}")
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCAS
+    # BUSCAR DADOS
     # ===============================
     with connection.cursor() as cursor:
 
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-
-        cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        convenios = cursor.fetchall()
 
         cursor.execute("""
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
@@ -2302,38 +2260,28 @@ def recepcao_geral(request):
         agenda = cursor.fetchall()
 
     # ===============================
-    # SELECTS
-    # ===============================
-    opts_unidades = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
-
-    opts_conv = "".join([
-        f'<option value="{c[0]}">{c[1]}</option>'
-        for c in convenios
-    ])
-
-    # ===============================
     # LINHAS
     # ===============================
     linhas = ""
 
     for a in agenda:
+        ag_id_item = a[0]
+        nome = a[1] or "---"
+        hora = str(a[3])[:5]
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
         else:
             btn = f'<span class="badge bg-secondary">{status}</span>'
 
         linhas += f"""
         <tr>
-            <td>{str(a[3])[:5]}</td>
-            <td>{a[1]}</td>
-            <td>{a[2]}</td>
+            <td>{hora}</td>
+            <td>{nome}</td>
+            <td>{a[2] or '-'}</td>
             <td>{btn}</td>
         </tr>
         """
@@ -2346,27 +2294,22 @@ def recepcao_geral(request):
     if agendamento_id and etapa == '2':
         modal_html = f"""
         <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content p-4">
 
                     <form method="POST" onsubmit="bloquearBotao()">
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
-                        <h5>Financeiro</h5>
+                        <h5 class="text-success">Financeiro</h5>
 
-                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="toggle()">
+                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
                             <option value="avista">Particular</option>
-                            <option value="convenio">Convênio</option>
-                            <option value="cartao">Cartão Desconto</option>
+                            <option value="faturado">Convênio</option>
+                            <option value="desconto">Cartão Desconto</option>
                         </select>
 
-                        <select name="convenio_id" id="convenio" class="form-select mb-2">
-                            <option value="">Selecione Convênio</option>
-                            {opts_conv}
-                        </select>
-
-                        <div id="pagamento">
+                        <div id="bloco_pagamento">
                             <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
 
                             <select name="forma_pagamento" class="form-select mb-3">
@@ -2376,8 +2319,8 @@ def recepcao_geral(request):
                             </select>
                         </div>
 
-                        <button id="btnFinalizar" name="finalizar_fluxo" class="btn btn-success w-100">
-                            FINALIZAR
+                        <button id="btnConfirmar" name="finalizar_fluxo" class="btn btn-success w-100">
+                            CONFIRMAR
                         </button>
                     </form>
 
@@ -2386,54 +2329,49 @@ def recepcao_geral(request):
         </div>
 
         <script>
-        function toggle() {{
+        function togglePagamento() {{
             var tipo = document.getElementById("tipo").value;
-            var pag = document.getElementById("pagamento");
-            var conv = document.getElementById("convenio");
-
-            if (tipo === "convenio") {{
-                pag.style.display = "none";
-                conv.style.display = "block";
-            }} else if (tipo === "cartao") {{
-                pag.style.display = "block";
-                conv.style.display = "block";
-            }} else {{
-                pag.style.display = "block";
-                conv.style.display = "none";
-            }}
+            var bloco = document.getElementById("bloco_pagamento");
+            bloco.style.display = (tipo === "faturado") ? "none" : "block";
         }}
 
         function bloquearBotao() {{
-            var btn = document.getElementById("btnFinalizar");
+            var btn = document.getElementById("btnConfirmar");
             btn.disabled = true;
             btn.innerText = "Processando...";
         }}
 
-        toggle();
+        togglePagamento();
         </script>
         """
 
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
     <h4>Recepção</h4>
-
-    <form method="GET">
-        <select name="unidade" onchange="this.form.submit()">
-            <option value="">Todas</option>
-            {opts_unidades}
-        </select>
-    </form>
-
     {mensagem}
 
-    <table class="table">
-        <tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr>
-        {linhas}
+    <table class="table table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Hora</th>
+                <th>Paciente</th>
+                <th>Médico</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {linhas}
+        </tbody>
     </table>
 
     {modal_html}
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
