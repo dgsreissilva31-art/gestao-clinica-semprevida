@@ -741,7 +741,7 @@ def convenios_geral(request):
 
 
 # --- 7. TELA 5: EXAMES ---
-# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COMPLETO E CORRIGIDO) ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
@@ -775,7 +775,7 @@ def exames_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # LANÇAMENTO CAIXA EXAMES
+    # LANÇAMENTO CAIXA EXAMES (COM UNIDADE)
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -784,9 +784,13 @@ def exames_geral(request):
             prestador = request.POST.get('prestador')
             valor = float(request.POST.get('valor') or 0)
             forma = request.POST.get('forma')
+            unidade_id = request.POST.get('unidade_id')
 
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
+
+            if not unidade_id:
+                raise Exception("Selecione a unidade")
 
             with connection.cursor() as cursor:
 
@@ -796,8 +800,8 @@ def exames_geral(request):
 
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
                 """, [
                     paciente,
                     prestador,
@@ -805,7 +809,8 @@ def exames_geral(request):
                     forma,
                     'Pago',
                     'Exame',
-                    nome_exame
+                    nome_exame,
+                    unidade_id
                 ])
 
             mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
@@ -838,9 +843,6 @@ def exames_geral(request):
             preparo = request.POST.get('preparo')
             valor = request.POST.get('valor') or 0
 
-            if not nome:
-                raise Exception("Nome do exame obrigatório")
-
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
@@ -869,6 +871,9 @@ def exames_geral(request):
         cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
         prestadores = cursor.fetchall()
 
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+
         cursor.execute("""
             SELECT id, nome, grupo, valor_particular 
             FROM exames ORDER BY nome
@@ -880,6 +885,7 @@ def exames_geral(request):
     # ===============================
     opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames])
     opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
+    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
     # ===============================
     # LISTA EXAMES
@@ -902,48 +908,47 @@ def exames_geral(request):
 
     {mensagem}
 
-    <!-- 🔥 CADASTRO EXAME -->
-    <div class="card p-3 mb-3 shadow-sm">
-        <h5>Cadastro de Exame</h5>
-
+    <!-- CADASTRO EXAME -->
+    <div class="card p-3 mb-3">
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_exame" value="{edit_id or ''}">
 
             <div class="col-md-4">
-                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" value="{e_dados[0]}" required>
+                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" required>
             </div>
 
             <div class="col-md-3">
-                <input type="text" name="grupo" class="form-control" placeholder="Grupo" value="{e_dados[1]}">
+                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
             </div>
 
             <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor" value="{e_dados[3]}">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
             </div>
 
             <div class="col-md-3">
-                <button name="salvar_exame" class="btn btn-primary w-100">
-                    Salvar Exame
-                </button>
-            </div>
-
-            <div class="col-12">
-                <textarea name="preparo" class="form-control" placeholder="Preparo">{e_dados[2]}</textarea>
+                <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
             </div>
         </form>
     </div>
 
-    <!-- 🔥 CAIXA EXAMES -->
-    <div class="card p-3 mb-3 border-success shadow-sm">
+    <!-- CAIXA EXAMES -->
+    <div class="card p-3 mb-3 border-success">
         <h5>💰 Caixa de Exames</h5>
 
         <form method="POST" class="row g-2">
 
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
                 <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select name="exame_id" class="form-select" required>
                     <option value="">Exame</option>
                     {opts_exames}
@@ -970,38 +975,20 @@ def exames_geral(request):
             </div>
 
             <div class="col-md-1">
-                <button name="lancar_exame" class="btn btn-success w-100">
-                    OK
-                </button>
+                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
             </div>
 
-        </form>
-
-        <!-- CADASTRO PRESTADOR -->
-        <form method="POST" class="mt-2 d-flex gap-2">
-            <input type="text" name="nome_prestador" class="form-control" placeholder="Novo prestador">
-            <button name="novo_prestador" class="btn btn-secondary">Cadastrar</button>
         </form>
     </div>
 
     <!-- LISTA -->
-    <table class="table table-sm table-hover">
-        <thead class="table-dark">
-            <tr>
-                <th>Exame</th>
-                <th>Grupo</th>
-                <th>Valor</th>
-            </tr>
-        </thead>
-        <tbody>
-            {linhas if linhas else "<tr><td colspan='3'>Sem exames</td></tr>"}
-        </tbody>
+    <table class="table table-sm">
+        <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
+        {linhas}
     </table>
     """
 
     return HttpResponse(base_html("Exames", conteudo))
-
-
 
 
 
