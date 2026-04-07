@@ -2880,8 +2880,17 @@ def caixa_geral(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
 
+        # 🔥 BUSCAR CATEGORIAS EXISTENTES (DIVERSOS)
+        cursor.execute("""
+            SELECT DISTINCT categoria 
+            FROM caixa 
+            WHERE paciente_nome = '-' 
+            ORDER BY categoria
+        """)
+        categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
+
     # ===============================
-    # SQL
+    # SQL (MANTIDO)
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
@@ -2929,7 +2938,7 @@ def caixa_geral(request):
         movimentos = cursor.fetchall()
 
     # ===============================
-    # TOTAIS E BLOCOS
+    # BLOCOS
     # ===============================
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = 0
 
@@ -2963,7 +2972,15 @@ def caixa_geral(request):
             total_faturado += val
             linhas_faturado += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>Faturado</td></tr>"
 
-    opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
+    # ===============================
+    # SELECTS
+    # ===============================
+    opts_uni = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades_list
+    ])
+
+    opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
 
     # ===============================
     # HTML FINAL
@@ -2975,43 +2992,62 @@ def caixa_geral(request):
 
     {mensagem}
 
-    <!-- 🔎 FILTROS -->
+    <!-- 🔎 FILTROS (MANTIDO) -->
     <form method="GET" class="row g-2 mb-3">
-        <div class="col-md-2">
-            <input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial">
-        </div>
-        <div class="col-md-2">
-            <input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final">
-        </div>
-        <div class="col-md-3">
-            <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar...">
-        </div>
-        <div class="col-md-3">
-            <select name="unidade" class="form-select">
-                <option value="">Todas</option>
-                {opts_uni}
-            </select>
-        </div>
-        <div class="col-md-2">
-            <button class="btn btn-primary w-100">Filtrar</button>
-        </div>
+        <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial"></div>
+        <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final"></div>
+        <div class="col-md-3"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar..."></div>
+        <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas</option>{opts_uni}</select></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
 
-    <!-- (RESTANTE PERMANECE IGUAL) -->
+    <!-- 🔥 FORM DIVERSOS (MELHORADO) -->
+    <div class="card p-3 mb-3 border-dark">
+        <h5>➕ Caixa Diversos</h5>
+        <form method="POST" class="row g-2">
 
-    <!-- CONSULTAS -->
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="tipo" class="form-select">
+                    <option>Entrada</option>
+                    <option>Saída</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria">
+                <datalist id="lista_categorias">
+                    {opts_cat}
+                </datalist>
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="descricao" class="form-control" placeholder="Descrição">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_diverso" class="btn btn-dark w-100">OK</button>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- BLOCOS (INALTERADOS) -->
     <div class="card mb-3"><div class="card-header bg-success text-white">Consultas</div><table class="table">{linhas_consultas}</table></div>
-
-    <!-- CONVÊNIOS -->
     <div class="card mb-3"><div class="card-header bg-warning">Convênios</div><table class="table">{linhas_faturado}</table></div>
-
-    <!-- EXAMES -->
     <div class="card mb-3"><div class="card-header bg-primary text-white">Exames</div><table class="table">{linhas_exames}</table></div>
-
-    <!-- ODONTO -->
     <div class="card mb-3"><div class="card-header bg-dark text-white">Odontologia</div><table class="table">{linhas_odonto}</table></div>
 
-    <!-- DIVERSOS -->
     <div class="card">
         <div class="card-header bg-secondary text-white">Diversos</div>
         <table class="table">
@@ -3024,8 +3060,6 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
