@@ -2400,6 +2400,11 @@ def recepcao_geral(request):
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
 
+    # 🔥 NOVO → RECEBER DADOS DO CADASTRO
+    nome_auto = request.GET.get('nome') or ""
+    telefone_auto = request.GET.get('telefone') or ""
+    convenio_auto = request.GET.get('convenio_id') or ""
+
     mensagem = ""
 
     # ===============================
@@ -2436,7 +2441,6 @@ def recepcao_geral(request):
                     if c:
                         convenio_nome = c[0]
 
-                # PARTICULAR
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2450,7 +2454,6 @@ def recepcao_geral(request):
                         VALUES (%s,%s,%s,%s,'Pago','Consulta','Particular',CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, valor, forma, unidade_id])
 
-                # CONVÊNIO
                 elif tipo == "convenio":
                     cursor.execute("""
                         INSERT INTO caixa
@@ -2458,7 +2461,6 @@ def recepcao_geral(request):
                         VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, convenio_nome or 'Convênio', unidade_id])
 
-                # CARTÃO
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2531,12 +2533,12 @@ def recepcao_geral(request):
     ])
 
     opts_conv = "".join([
-        f'<option value="{c[0]}">{c[1]}</option>'
+        f'<option value="{c[0]}" {"selected" if str(convenio_auto)==str(c[0]) else ""}>{c[1]}</option>'
         for c in convenios
     ])
 
     # ===============================
-    # LINHAS (COM BOTÃO CADASTRO 🔥)
+    # LINHAS
     # ===============================
     linhas = ""
 
@@ -2544,13 +2546,13 @@ def recepcao_geral(request):
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}&nome={nome_auto}&telefone={telefone_auto}&convenio_id={convenio_auto}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
 
-        btn_cadastro = '<a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-dark btn-sm me-1">Cadastro</a>'
+        btn_cadastro = f'<a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/?redirect=recepcao" target="_blank" class="btn btn-dark btn-sm me-1">Cadastro</a>'
 
         linhas += f"""
         <tr>
@@ -2565,7 +2567,7 @@ def recepcao_geral(request):
         """
 
     # ===============================
-    # MODAL
+    # MODAL (🔥 COM AUTOPREENCHIMENTO)
     # ===============================
     modal_html = ""
 
@@ -2580,6 +2582,9 @@ def recepcao_geral(request):
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
                         <h5>Financeiro</h5>
+
+                        <input type="text" class="form-control mb-2" value="{nome_auto}" placeholder="Paciente" readonly>
+                        <input type="text" class="form-control mb-2" value="{telefone_auto}" placeholder="WhatsApp" readonly>
 
                         <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="toggle()">
                             <option value="avista">Particular</option>
