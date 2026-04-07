@@ -2131,7 +2131,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM CAIXA ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2148,7 +2148,7 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN (COM REDIRECT)
+    # FINALIZAR CHECK-IN
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
@@ -2161,37 +2161,49 @@ def recepcao_geral(request):
 
             with connection.cursor() as cursor:
 
+                # 🔥 BUSCA UNIDADE TAMBÉM
                 cursor.execute("""
-                    SELECT pac.nome, prof.nome
+                    SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
                     JOIN pacientes pac ON ag.paciente_id = pac.id
                     JOIN agendas_config ac ON ag.agenda_config_id = ac.id
                     JOIN profissionais prof ON ac.profissional_id = prof.id
+                    JOIN unidades u ON ac.unidade_id = u.id
                     WHERE ag.id = %s
                 """, [ag_id])
 
                 info = cursor.fetchone()
 
+                if not info:
+                    raise Exception("Agendamento não encontrado")
+
+                paciente_nome = info[0]
+                profissional_nome = info[1]
+                unidade_id = info[2]
+
+                # 🔥 INSERT CORRETO COM UNIDADE
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento)
-                    VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
                 """, [
-                    info[0],
-                    info[1],
+                    paciente_nome,
+                    profissional_nome,
                     valor,
                     forma,
                     status_financeiro,
-                    'Consulta'
+                    'Consulta',
+                    unidade_id
                 ])
 
+                # Atualiza status
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
                     WHERE id = %s
                 """, [ag_id])
 
-            # 🔥 REDIRECT (FECHA MODAL)
+            # 🔥 REDIRECT LIMPO (fecha modal)
             url = f"/recepcao/?unidade={unidade_filtro}" if unidade_filtro else "/recepcao/"
             return redirect(url)
 
@@ -2199,7 +2211,7 @@ def recepcao_geral(request):
             mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
 
     # ===============================
-    # BUSCAR DADOS
+    # BUSCAR AGENDA
     # ===============================
     with connection.cursor() as cursor:
 
@@ -2247,9 +2259,9 @@ def recepcao_geral(request):
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm">Prontuário</a>'
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
         else:
             btn = f'<span class="badge bg-secondary">{status}</span>'
 
@@ -2277,10 +2289,10 @@ def recepcao_geral(request):
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
-                        <h5 class="text-success">Lançamento de Caixa</h5>
+                        <h5 class="text-success">Financeiro</h5>
 
                         <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
-                            <option value="avista">Particular (À Vista)</option>
+                            <option value="avista">Particular</option>
                             <option value="faturado">Convênio</option>
                         </select>
 
@@ -2314,7 +2326,6 @@ def recepcao_geral(request):
                 bloco.style.display = "block";
             }}
         }}
-
         togglePagamento();
         </script>
         """
@@ -2324,7 +2335,7 @@ def recepcao_geral(request):
     # ===============================
     conteudo = f"""
     <div class="mb-3 d-flex justify-content-between">
-        <h4>Recepção Diária</h4>
+        <h4>Recepção</h4>
 
         <form method="GET">
             <select name="unidade" class="form-select" onchange="this.form.submit()">
@@ -2354,6 +2365,8 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
