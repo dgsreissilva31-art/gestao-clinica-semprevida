@@ -2131,397 +2131,6 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO (100% INTEGRADO COM CAIXA) ---
-@csrf_exempt
-def recepcao_geral(request):
-    from django.db import connection
-    from django.http import HttpResponse
-    from django.shortcuts import redirect
-    import datetime
-
-    data_hoje = datetime.date.today()
-
-    unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
-    agendamento_id = request.GET.get('fluxo_id')
-    etapa = request.GET.get('etapa', '1')
-
-    mensagem = ""
-
-    # ===============================
-    # FINALIZAR CHECK-IN
-    # ===============================
-    if request.method == "POST" and "finalizar_fluxo" in request.POST:
-        try:
-            ag_id = request.POST.get('ag_id')
-            tipo = request.POST.get('tipo_pagto')
-
-            with connection.cursor() as cursor:
-
-                # 🔥 BUSCA COMPLETA (COM UNIDADE)
-                cursor.execute("""
-                    SELECT pac.nome, prof.nome, u.id
-                    FROM agendamentos ag
-                    JOIN pacientes pac ON ag.paciente_id = pac.id
-                    JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-                    JOIN profissionais prof ON ac.profissional_id = prof.id
-                    JOIN unidades u ON ac.unidade_id = u.id
-                    WHERE ag.id = %s
-                """, [ag_id])
-
-                info = cursor.fetchone()
-
-                if not info:
-                    raise Exception("Agendamento não encontrado")
-
-                paciente_nome = info[0]
-                profissional_nome = info[1]
-                unidade_id = info[2]
-
-                # ===============================
-                # 💰 SE FOR PARTICULAR → VAI PARA CAIXA
-                # ===============================
-                if tipo == "avista":
-
-                    valor = float(request.POST.get('valor') or 0)
-
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-
-                    forma = request.POST.get('forma_pagamento') or "Pix"
-
-                    cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        valor,
-                        forma,
-                        'Pago',
-                        'Consulta',
-                        unidade_id
-                    ])
-
-                # ===============================
-                # 🏥 ATUALIZA STATUS
-                # ===============================
-                cursor.execute("""
-                    UPDATE agendamentos
-                    SET status = 'Chegada'
-                    WHERE id = %s
-                """, [ag_id])
-
-            # 🔥 REDIRECT (FECHA MODAL)
-            if unidade_filtro:
-                return redirect(f"/recepcao/?unidade={unidade_filtro}")
-            else:
-                return redirect("/recepcao/")
-
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
-    # ===============================
-    # BUSCAR AGENDA
-    # ===============================
-    with connection.cursor() as cursor:
-
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades = cursor.fetchall()
-
-        sql = """
-            SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
-            FROM agendamentos ag
-            LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
-            LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-            LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
-            LEFT JOIN unidades u ON ac.unidade_id = u.id
-            WHERE ag.data_agendamento = %s
-        """
-
-        params = [data_hoje]
-
-        if unidade_filtro:
-            sql += " AND u.id = %s"
-            params.append(unidade_filtro)
-
-        sql += " ORDER BY ag.horario_selecionado"
-
-        cursor.execute(sql, params)
-        agenda = cursor.fetchall()
-
-    # ===============================
-    # SELECT UNIDADES
-    # ===============================
-    opts_unidades = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
-
-    # ===============================
-    # LINHAS
-    # ===============================
-    linhas = ""
-
-    for a in agenda:
-        ag_id_item = a[0]
-        nome = a[1] or "---"
-        hora = str(a[3])[:5]
-        status = a[4] or "Agendado"
-
-        if status == "Agendado":
-            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
-        elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
-        else:
-            btn = f'<span class="badge bg-secondary">{status}</span>'
-
-        linhas += f"""
-        <tr>
-            <td>{hora}</td>
-            <td>{nome}</td>
-            <td>{a[2] or '-'}</td>
-            <td>{btn}</td>
-        </tr>
-        """
-
-    # ===============================
-    # MODAL (FINANCEIRO)
-    # ===============================
-    modal_html = ""
-
-    if agendamento_id and etapa == '2':
-        modal_html = f"""
-        <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content p-4">
-
-                    <form method="POST">
-                        <input type="hidden" name="ag_id" value="{agendamento_id}">
-                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
-
-                        <h5 class="text-success">Financeiro</h5>
-
-                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
-                            <option value="avista">Particular</option>
-                            <option value="faturado">Convênio</option>
-                        </select>
-
-                        <div id="bloco_pagamento">
-                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
-
-                            <select name="forma_pagamento" class="form-select mb-3">
-                                <option>Pix</option>
-                                <option>Cartão</option>
-                                <option>Dinheiro</option>
-                            </select>
-                        </div>
-
-                        <button name="finalizar_fluxo" class="btn btn-success w-100 fw-bold">
-                            CONCLUIR CHECK-IN
-                        </button>
-                    </form>
-
-                </div>
-            </div>
-        </div>
-
-        <script>
-        function togglePagamento() {{
-            var tipo = document.getElementById("tipo").value;
-            var bloco = document.getElementById("bloco_pagamento");
-
-            if (tipo === "faturado") {{
-                bloco.style.display = "none";
-            }} else {{
-                bloco.style.display = "block";
-            }}
-        }}
-        togglePagamento();
-        </script>
-        """
-
-    # ===============================
-    # HTML FINAL
-    # ===============================
-    conteudo = f"""
-    <div class="mb-3 d-flex justify-content-between">
-        <h4>Recepção</h4>
-
-        <form method="GET">
-            <select name="unidade" class="form-select" onchange="this.form.submit()">
-                <option value="">Todas</option>
-                {opts_unidades}
-            </select>
-        </form>
-    </div>
-
-    {mensagem}
-
-    <table class="table table-hover">
-        <thead class="table-dark">
-            <tr>
-                <th>Hora</th>
-                <th>Paciente</th>
-                <th>Médico</th>
-                <th>Ação</th>
-            </tr>
-        </thead>
-        <tbody>
-            {linhas if linhas else "<tr><td colspan='4'>Sem pacientes</td></tr>"}
-        </tbody>
-    </table>
-
-    {modal_html}
-    """
-
-    return HttpResponse(base_html("Recepção", conteudo))
-
-
-
-
-
-
-
-
-
-
-# --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (NOME LIMPO) ---
-@csrf_exempt
-def prontuario_geral(request):
-    agendamento_id = request.GET.get('id')
-    mensagem = ""
-
-    with connection.cursor() as cursor:
-        # 1. BUSCA DADOS DO PACIENTE E PROFISSIONAL
-        cursor.execute("""
-            SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
-            FROM agendamentos ag
-            JOIN pacientes p ON ag.paciente_id = p.id
-            LEFT JOIN convenios c ON p.convenio_id = c.id
-            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
-            JOIN profissionais pr ON ac.profissional_id = pr.id
-            WHERE ag.id = %s
-        """, [agendamento_id])
-        dados = cursor.fetchone()
-
-        if not dados:
-            return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
-
-        pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
-        
-        # --- LÓGICA PARA LIMPAR O NOME (RETIRAR QUEM AGENDOU) ---
-        pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
-
-    # 2. SALVAR ATENDIMENTO (POST)
-    if request.method == "POST":
-        queixa = request.POST.get('queixa')
-        anamnese = request.POST.get('anamnese')
-        diag = request.POST.get('diagnostico')
-        proc = request.POST.get('procedimentos')
-        obs = request.POST.get('observacoes')
-
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO prontuarios (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, [pac_id, prof_id, data, hora, queixa, anamnese, diag, proc, obs])
-
-                cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
-            
-            return HttpResponseRedirect('/recepcao/') 
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
-
-    # 3. BUSCA HISTÓRICO
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT data_atendimento, diagnostico, procedimentos, queixa FROM prontuarios WHERE paciente_id = %s ORDER BY data_atendimento DESC", [pac_id])
-        historico = cursor.fetchall()
-
-    lista_hist = ""
-    for h in historico:
-        lista_hist += f"""
-            <div class="card mb-2 border-start border-primary border-4 shadow-sm">
-                <div class="card-body py-2">
-                    <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
-                    <b>Queixa:</b> {h[3]}<br>
-                    <b>Diagnóstico:</b> {h[1]}
-                </div>
-            </div>"""
-
-    conteudo = f"""
-        <div class="container py-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
-                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair sem salvar</a>
-            </div>
-            
-            {mensagem}
-
-            <div class="row">
-                <div class="col-md-8">
-                    <div class="card shadow-sm p-3 mb-4 border-0">
-                        <div class="row mb-3 bg-light p-3 rounded shadow-sm">
-                            <div class="col-md-6"><span class="text-muted small">Paciente:</span><br><b class="fs-5">{pac_nome}</b></div>
-                            <div class="col-md-6 text-end"><span class="text-muted small">Convênio:</span><br><b>{conv_nome or 'Particular'}</b></div>
-                        </div>
-
-                        <form method="POST">
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Queixa Principal</label>
-                                <textarea name="queixa" class="form-control" rows="2" required></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Anamnese / Evolução Clínica</label>
-                                <textarea name="anamnese" class="form-control" rows="5"></textarea>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="fw-bold small text-secondary">Diagnóstico / Hipótese</label>
-                                    <textarea name="diagnostico" class="form-control" rows="2"></textarea>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="fw-bold small text-secondary">Procedimentos / Conduta</label>
-                                    <textarea name="procedimentos" class="form-control" rows="2"></textarea>
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Observações Internas</label>
-                                <textarea name="observacoes" class="form-control" rows="1"></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary w-100 fw-bold py-3 shadow-sm text-uppercase">
-                                <i class="bi bi-save"></i> Finalizar e Salvar Prontuário
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="card shadow-sm p-3 border-0 bg-light" style="min-height: 100%;">
-                        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-clock-history"></i> Histórico de Consultas</h6>
-                        <div style="max-height: 600px; overflow-y: auto;">
-                            {lista_hist if historico else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    """
-    return HttpResponse(base_html("Prontuário", conteudo))
-
-
-
-
-
-
-
-# --- 18. TELA 16: CAIXA ---
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN DEFINITIVO COM CONVÊNIO NO CAIXA ---
 @csrf_exempt
 def recepcao_geral(request):
@@ -2774,6 +2383,339 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
+
+
+
+
+
+
+# --- 17. TELA 15: PRONTUÁRIO ---
+# --- 17. TELA 15: PRONTUÁRIO (NOME LIMPO) ---
+@csrf_exempt
+def prontuario_geral(request):
+    agendamento_id = request.GET.get('id')
+    mensagem = ""
+
+    with connection.cursor() as cursor:
+        # 1. BUSCA DADOS DO PACIENTE E PROFISSIONAL
+        cursor.execute("""
+            SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
+            FROM agendamentos ag
+            JOIN pacientes p ON ag.paciente_id = p.id
+            LEFT JOIN convenios c ON p.convenio_id = c.id
+            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            JOIN profissionais pr ON ac.profissional_id = pr.id
+            WHERE ag.id = %s
+        """, [agendamento_id])
+        dados = cursor.fetchone()
+
+        if not dados:
+            return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
+
+        pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
+        
+        # --- LÓGICA PARA LIMPAR O NOME (RETIRAR QUEM AGENDOU) ---
+        pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
+
+    # 2. SALVAR ATENDIMENTO (POST)
+    if request.method == "POST":
+        queixa = request.POST.get('queixa')
+        anamnese = request.POST.get('anamnese')
+        diag = request.POST.get('diagnostico')
+        proc = request.POST.get('procedimentos')
+        obs = request.POST.get('observacoes')
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO prontuarios (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, [pac_id, prof_id, data, hora, queixa, anamnese, diag, proc, obs])
+
+                cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
+            
+            return HttpResponseRedirect('/recepcao/') 
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+
+    # 3. BUSCA HISTÓRICO
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT data_atendimento, diagnostico, procedimentos, queixa FROM prontuarios WHERE paciente_id = %s ORDER BY data_atendimento DESC", [pac_id])
+        historico = cursor.fetchall()
+
+    lista_hist = ""
+    for h in historico:
+        lista_hist += f"""
+            <div class="card mb-2 border-start border-primary border-4 shadow-sm">
+                <div class="card-body py-2">
+                    <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
+                    <b>Queixa:</b> {h[3]}<br>
+                    <b>Diagnóstico:</b> {h[1]}
+                </div>
+            </div>"""
+
+    conteudo = f"""
+        <div class="container py-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
+                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair sem salvar</a>
+            </div>
+            
+            {mensagem}
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card shadow-sm p-3 mb-4 border-0">
+                        <div class="row mb-3 bg-light p-3 rounded shadow-sm">
+                            <div class="col-md-6"><span class="text-muted small">Paciente:</span><br><b class="fs-5">{pac_nome}</b></div>
+                            <div class="col-md-6 text-end"><span class="text-muted small">Convênio:</span><br><b>{conv_nome or 'Particular'}</b></div>
+                        </div>
+
+                        <form method="POST">
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Queixa Principal</label>
+                                <textarea name="queixa" class="form-control" rows="2" required></textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Anamnese / Evolução Clínica</label>
+                                <textarea name="anamnese" class="form-control" rows="5"></textarea>
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="fw-bold small text-secondary">Diagnóstico / Hipótese</label>
+                                    <textarea name="diagnostico" class="form-control" rows="2"></textarea>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="fw-bold small text-secondary">Procedimentos / Conduta</label>
+                                    <textarea name="procedimentos" class="form-control" rows="2"></textarea>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="fw-bold small text-secondary">Observações Internas</label>
+                                <textarea name="observacoes" class="form-control" rows="1"></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 fw-bold py-3 shadow-sm text-uppercase">
+                                <i class="bi bi-save"></i> Finalizar e Salvar Prontuário
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card shadow-sm p-3 border-0 bg-light" style="min-height: 100%;">
+                        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-clock-history"></i> Histórico de Consultas</h6>
+                        <div style="max-height: 600px; overflow-y: auto;">
+                            {lista_hist if historico else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    """
+    return HttpResponse(base_html("Prontuário", conteudo))
+
+
+
+
+
+
+
+# --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA COMPLETO (PAGO + FATURADO) ---
+@csrf_exempt
+def caixa_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse
+    import datetime
+    import re
+
+    hoje = datetime.date.today()
+    unidade_id = request.GET.get('unidade') or ""
+
+    mensagem = ""
+
+    # ===============================
+    # LIMPAR NOME
+    # ===============================
+    def limpar_nome(nome):
+        if not nome:
+            return ""
+        return re.sub(r"\(.*?\)", "", nome).strip()
+
+    # ===============================
+    # BUSCAR UNIDADES
+    # ===============================
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades_list = cursor.fetchall()
+
+    # ===============================
+    # BUSCAR MOVIMENTOS (SEM FILTRAR ZERO)
+    # ===============================
+    with connection.cursor() as cursor:
+
+        sql = """
+            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, status, unidade_id
+            FROM caixa
+            WHERE data_pagamento::date = %s
+        """
+
+        params = [hoje]
+
+        if unidade_id:
+            sql += " AND unidade_id = %s"
+            params.append(unidade_id)
+
+        sql += " ORDER BY id DESC"
+
+        cursor.execute(sql, params)
+        movimentos = cursor.fetchall()
+
+    # ===============================
+    # TOTAIS
+    # ===============================
+    total_pago = 0
+    total_faturado = 0
+
+    linhas_pago = ""
+    linhas_faturado = ""
+
+    for m in movimentos:
+        cat, pac, prof, val, forma, status, uni = m
+
+        val = float(val or 0)
+        pac = limpar_nome(pac)
+
+        # 🔥 PAGO
+        if status == "Pago":
+            total_pago += val
+
+            linhas_pago += f"""
+            <tr>
+                <td>{pac}</td>
+                <td>{prof or '-'}</td>
+                <td class="fw-bold text-success">R$ {val:.2f}</td>
+                <td>{forma}</td>
+            </tr>
+            """
+
+        # 🔥 FATURADO (CONVÊNIO)
+        else:
+            total_faturado += val
+
+            linhas_faturado += f"""
+            <tr>
+                <td>{pac}</td>
+                <td>{prof or '-'}</td>
+                <td class="fw-bold text-warning">Faturado</td>
+                <td>Convênio</td>
+            </tr>
+            """
+
+    # ===============================
+    # SELECT UNIDADES
+    # ===============================
+    opts_uni = "".join([
+        f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
+        for u in unidades_list
+    ])
+
+    # ===============================
+    # HTML
+    # ===============================
+    conteudo = f"""
+    <div class="container-fluid py-2">
+
+        <div class="d-flex justify-content-between align-items-end mb-3">
+            <h5 class="fw-bold text-success">💰 Caixa do Dia</h5>
+
+            <form method="GET">
+                <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Todas Unidades</option>
+                    {opts_uni}
+                </select>
+            </form>
+        </div>
+
+        {mensagem}
+
+        <!-- RESUMO -->
+        <div class="row g-2 mb-3">
+            <div class="col-md-4">
+                <div class="card p-2 bg-success text-white text-center">
+                    <small>Recebido (Pago)</small>
+                    <h5>R$ {total_pago:.2f}</h5>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card p-2 bg-warning text-dark text-center">
+                    <small>Faturado (Convênios)</small>
+                    <h5>R$ {total_faturado:.2f}</h5>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card p-2 bg-dark text-warning text-center">
+                    <small>Total Geral</small>
+                    <h5>R$ {(total_pago + total_faturado):.2f}</h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGO -->
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-success text-white py-1">
+                💰 Recebimentos do Dia
+            </div>
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Paciente</th>
+                        <th>Profissional</th>
+                        <th>Valor</th>
+                        <th>Forma</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas_pago if linhas_pago else "<tr><td colspan='4' class='text-center'>Sem recebimentos</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- FATURADO -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-warning py-1">
+                🧾 Convênios (Faturado)
+            </div>
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Paciente</th>
+                        <th>Profissional</th>
+                        <th>Status</th>
+                        <th>Tipo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {linhas_faturado if linhas_faturado else "<tr><td colspan='4' class='text-center'>Sem convênios</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+    """
+
+    return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
