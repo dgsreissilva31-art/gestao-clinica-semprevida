@@ -2131,7 +2131,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO COMPLETA (3 TIPOS: PARTICULAR / CONVÊNIO / CARTÃO DESCONTO) ---
+# --- 16. TELA 14: RECEPÇÃO COMPLETA CORRIGIDA (FILTRO UNIDADE OK) ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2158,7 +2158,6 @@ def recepcao_geral(request):
 
             with connection.cursor() as cursor:
 
-                # 🔥 DADOS
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
@@ -2175,7 +2174,6 @@ def recepcao_geral(request):
 
                 paciente_nome, profissional_nome, unidade_id = info
 
-                # 🔥 BUSCA NOME CONVÊNIO
                 convenio_nome = ""
                 if convenio_id:
                     cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
@@ -2183,11 +2181,8 @@ def recepcao_geral(request):
                     if c:
                         convenio_nome = c[0]
 
-                # ===============================
                 # PARTICULAR
-                # ===============================
                 if tipo == "avista":
-
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
                         raise Exception("Informe o valor")
@@ -2197,43 +2192,19 @@ def recepcao_geral(request):
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        valor,
-                        forma,
-                        'Pago',
-                        'Consulta',
-                        'Particular',
-                        unidade_id
-                    ])
+                        VALUES (%s,%s,%s,%s,'Pago','Consulta','Particular',CURRENT_DATE,%s)
+                    """, [paciente_nome, profissional_nome, valor, forma, unidade_id])
 
-                # ===============================
-                # CONVÊNIO (FATURADO)
-                # ===============================
+                # CONVÊNIO
                 elif tipo == "convenio":
-
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        0,
-                        'Faturado',
-                        'A Faturar',
-                        'Consulta',
-                        convenio_nome or 'Convênio',
-                        unidade_id
-                    ])
+                        VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
+                    """, [paciente_nome, profissional_nome, convenio_nome or 'Convênio', unidade_id])
 
-                # ===============================
-                # CARTÃO DESCONTO
-                # ===============================
+                # CARTÃO
                 elif tipo == "cartao":
-
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
                         raise Exception("Informe o valor")
@@ -2243,21 +2214,16 @@ def recepcao_geral(request):
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
                     """, [
                         paciente_nome,
                         profissional_nome,
                         valor,
                         forma,
-                        'Pago',
-                        'Consulta',
                         f"Cartão: {convenio_nome}",
                         unidade_id
                     ])
 
-                # ===============================
-                # STATUS
-                # ===============================
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
@@ -2280,7 +2246,8 @@ def recepcao_geral(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
-        cursor.execute("""
+        # 🔥 AQUI ESTAVA O ERRO → FALTAVA FILTRO
+        sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
             LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
@@ -2288,9 +2255,17 @@ def recepcao_geral(request):
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
             LEFT JOIN unidades u ON ac.unidade_id = u.id
             WHERE ag.data_agendamento = %s
-            ORDER BY ag.horario_selecionado
-        """, [data_hoje])
+        """
 
+        params = [data_hoje]
+
+        if unidade_filtro:
+            sql += " AND u.id = %s"
+            params.append(unidade_filtro)
+
+        sql += " ORDER BY ag.horario_selecionado"
+
+        cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
     # ===============================
@@ -2402,7 +2377,7 @@ def recepcao_geral(request):
     <h4>Recepção</h4>
 
     <form method="GET">
-        <select name="unidade" onchange="this.form.submit()">
+        <select name="unidade" class="form-select mb-2" onchange="this.form.submit()">
             <option value="">Todas</option>
             {opts_unidades}
         </select>
