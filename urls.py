@@ -2131,7 +2131,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO FLUXO COMPLETO ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2143,12 +2143,12 @@ def recepcao_geral(request):
 
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
     agendamento_id = request.GET.get('fluxo_id')
-    etapa = request.GET.get('etapa')
+    etapa = request.GET.get('etapa', '1')
 
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN
+    # FINALIZAR CHECK-IN (COM REDIRECT)
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
@@ -2191,7 +2191,7 @@ def recepcao_geral(request):
                     WHERE id = %s
                 """, [ag_id])
 
-            # 🔥 REDIRECIONA PARA RECEPÇÃO (FECHA MODAL)
+            # 🔥 REDIRECT (FECHA MODAL)
             url = f"/recepcao/?unidade={unidade_filtro}" if unidade_filtro else "/recepcao/"
             return redirect(url)
 
@@ -2199,7 +2199,7 @@ def recepcao_geral(request):
             mensagem = f'<div class="alert alert-danger">Erro: {e}</div>'
 
     # ===============================
-    # BUSCAR AGENDA
+    # BUSCAR DADOS
     # ===============================
     with connection.cursor() as cursor:
 
@@ -2236,7 +2236,7 @@ def recepcao_geral(request):
     ])
 
     # ===============================
-    # LINHAS COM NOVO FLUXO
+    # LINHAS
     # ===============================
     linhas = ""
 
@@ -2247,12 +2247,9 @@ def recepcao_geral(request):
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            # 🔥 VAI PARA CADASTRO PACIENTE
-            btn = f'<a href="/pacientes/?ag_id={ag_id_item}&unidade={unidade_filtro}" class="btn btn-warning btn-sm fw-bold">CHECK-IN</a>'
-
+            btn = f'<a href="?fluxo_id={ag_id_item}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
-            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm fw-bold">PRONTUÁRIO</a>'
-
+            btn = f'<a href="/prontuario/?id={ag_id_item}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
             btn = f'<span class="badge bg-secondary">{status}</span>'
 
@@ -2266,7 +2263,7 @@ def recepcao_geral(request):
         """
 
     # ===============================
-    # MODAL ETAPA 2 (FINANCEIRO)
+    # MODAL
     # ===============================
     modal_html = ""
 
@@ -2280,10 +2277,10 @@ def recepcao_geral(request):
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
-                        <h5 class="text-success">Financeiro</h5>
+                        <h5 class="text-success">Lançamento de Caixa</h5>
 
                         <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="togglePagamento()">
-                            <option value="avista">Particular</option>
+                            <option value="avista">Particular (À Vista)</option>
                             <option value="faturado">Convênio</option>
                         </select>
 
@@ -2327,7 +2324,7 @@ def recepcao_geral(request):
     # ===============================
     conteudo = f"""
     <div class="mb-3 d-flex justify-content-between">
-        <h4>Recepção</h4>
+        <h4>Recepção Diária</h4>
 
         <form method="GET">
             <select name="unidade" class="form-select" onchange="this.form.submit()">
@@ -2357,8 +2354,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
