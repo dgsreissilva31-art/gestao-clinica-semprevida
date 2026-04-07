@@ -2514,7 +2514,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA (LIMPO - SEM AGENDADOR / SEM PARÊNTESES) ---
+# --- 18. TELA 16: CAIXA (SEM ERRO SQL - DEFINITIVO) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2523,120 +2523,67 @@ def caixa_geral(request):
     import re
 
     hoje = datetime.date.today()
+    unidade_id = request.GET.get('unidade') or ""
 
-    unidade_id = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
     mensagem = ""
 
     # ===============================
-    # VERIFICA COLUNA unidade_id
-    # ===============================
-    with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'caixa'
-        """)
-        colunas = [c[0] for c in cursor.fetchall()]
-        tem_unidade = 'unidade_id' in colunas
-
-    # ===============================
-    # FUNÇÃO LIMPAR NOME
+    # LIMPAR NOME
     # ===============================
     def limpar_nome(nome):
         if not nome:
             return ""
-        # remove qualquer coisa entre parênteses
-        nome = re.sub(r"\(.*?\)", "", nome)
-        return nome.strip()
+        return re.sub(r"\(.*?\)", "", nome).strip()
 
     # ===============================
-    # LANÇAMENTO AVULSO
-    # ===============================
-    if request.method == "POST" and "lancar" in request.POST:
-        try:
-            valor = float(request.POST.get('valor') or 0)
-
-            if valor == 0:
-                mensagem = '<div class="alert alert-warning py-1 small">⚠️ Valor zero não é lançado.</div>'
-            else:
-                with connection.cursor() as cursor:
-                    if tem_unidade:
-                        cursor.execute("""
-                            INSERT INTO caixa 
-                            (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento, unidade_id)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """, [
-                            limpar_nome(request.POST.get('paciente_nome')),
-                            request.POST.get('profissional', '---'),
-                            request.POST.get('detalhe', '---'),
-                            valor,
-                            request.POST.get('forma_pagamento'),
-                            request.POST.get('categoria'),
-                            hoje,
-                            unidade_id if unidade_id else None
-                        ])
-                    else:
-                        cursor.execute("""
-                            INSERT INTO caixa 
-                            (paciente_nome, profissional_nome, descricao, valor, forma_pagamento, categoria, data_pagamento)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, [
-                            limpar_nome(request.POST.get('paciente_nome')),
-                            request.POST.get('profissional', '---'),
-                            request.POST.get('detalhe', '---'),
-                            valor,
-                            request.POST.get('forma_pagamento'),
-                            request.POST.get('categoria'),
-                            hoje
-                        ])
-
-                mensagem = '<div class="alert alert-success py-1 small">✅ Lançado!</div>'
-
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger py-1 small">❌ Erro: {e}</div>'
-
-    # ===============================
-    # BUSCA MOVIMENTOS (SEM ZERO)
+    # BUSCAR UNIDADES
     # ===============================
     with connection.cursor() as cursor:
-
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
 
-        sql_mov = """
-            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento 
-            FROM caixa 
-            WHERE data_pagamento = %s
+    # ===============================
+    # BUSCAR MOVIMENTOS (CORRIGIDO)
+    # ===============================
+    with connection.cursor() as cursor:
+
+        sql = """
+            SELECT categoria, paciente_nome, profissional_nome, valor, forma_pagamento, unidade_id
+            FROM caixa
+            WHERE data_pagamento::date = %s
             AND COALESCE(valor,0) > 0
         """
+
         params = [hoje]
 
-        if unidade_id and tem_unidade:
-            sql_mov += " AND unidade_id = %s"
+        # 🔥 FILTRO SEGURO
+        if unidade_id:
+            sql += " AND (unidade_id = %s OR unidade_id IS NULL)"
             params.append(unidade_id)
 
-        cursor.execute(sql_mov, params)
+        sql += " ORDER BY id DESC"
+
+        cursor.execute(sql, params)
         movimentos = cursor.fetchall()
 
     # ===============================
-    # TOTAIS + LIMPEZA
+    # TOTAL + LINHAS
     # ===============================
     total_geral = 0
     linhas = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma = m
+        cat, pac, prof, val, forma, uni = m
         val = float(val or 0)
-        total_geral += val
 
-        pac_limpo = limpar_nome(pac)
+        total_geral += val
 
         linhas += f"""
         <tr>
-            <td>{pac_limpo}</td>
-            <td>{prof}</td>
-            <td>R$ {val:.2f}</td>
-            <td>{forma}</td>
+            <td>{limpar_nome(pac)}</td>
+            <td>{prof or '-'}</td>
+            <td class="fw-bold">R$ {val:.2f}</td>
+            <td>{forma or '-'}</td>
         </tr>
         """
 
@@ -2655,7 +2602,7 @@ def caixa_geral(request):
     <div class="container-fluid py-2">
 
         <div class="d-flex justify-content-between align-items-end mb-3">
-            <h5 class="fw-bold text-success">Caixa (Somente Recebidos)</h5>
+            <h5 class="fw-bold text-success">💰 Caixa do Dia</h5>
 
             <form method="GET">
                 <select name="unidade" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -2667,9 +2614,9 @@ def caixa_geral(request):
 
         {mensagem}
 
-        <div class="card p-2 bg-dark text-warning mb-2">
+        <div class="card p-2 bg-dark text-warning mb-2 text-center">
             <small>Total do Dia</small>
-            <h5>R$ {total_geral:.2f}</h5>
+            <h4 class="m-0">R$ {total_geral:.2f}</h4>
         </div>
 
         <table class="table table-sm table-hover">
@@ -2682,7 +2629,7 @@ def caixa_geral(request):
                 </tr>
             </thead>
             <tbody>
-                {linhas if linhas else "<tr><td colspan='4'>Sem recebimentos</td></tr>"}
+                {linhas if linhas else "<tr><td colspan='4' class='text-center'>Sem recebimentos</td></tr>"}
             </tbody>
         </table>
 
@@ -2690,6 +2637,9 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
