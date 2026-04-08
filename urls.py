@@ -1286,7 +1286,7 @@ def odonto_geral(request):
 def pacientes_geral(request):
     mensagem = ""
     
-    # 1. AÇÕES
+    # 1. LÓGICAS DE AÇÃO (BLOQUEIO E EXCLUSÃO)
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
@@ -1297,7 +1297,7 @@ def pacientes_geral(request):
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. EDIÇÃO
+    # 2. CARREGAR DADOS PARA EDIÇÃO
     edit_id = request.GET.get('edit_pac')
     p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""] 
     
@@ -1313,11 +1313,13 @@ def pacientes_geral(request):
                 p_dados = list(res)
                 if p_dados[3]: p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 3. SALVAR
+    # 3. SALVAR OU ATUALIZAR (POST)
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        cpf = request.POST.get('cpf') or None  # 🔥 CORREÇÃO AQUI
+        # ✅ CORREÇÃO DO CPF (EVITA NULL)
+        cpf = request.POST.get('cpf')
+        cpf = cpf.strip() if cpf else ""  # nunca será None
 
         campos = [
             request.POST.get('nome'),
@@ -1356,7 +1358,7 @@ def pacientes_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 4. BUSCA
+    # 4. LÓGICA DE PESQUISA
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1386,7 +1388,7 @@ def pacientes_geral(request):
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 5. HTML
+    # 5. HTML (INALTERADO)
     opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
     
     linhas = ""
@@ -1411,6 +1413,8 @@ def pacientes_geral(request):
     conteudo = f""" ... (restante do HTML permanece exatamente igual) ... """
 
     return HttpResponse(base_html("Pacientes", conteudo))
+
+
 
 
 
