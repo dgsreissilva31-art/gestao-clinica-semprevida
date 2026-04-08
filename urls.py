@@ -16,11 +16,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
-from django.views.decorators.csrf import csrf_exempt
-import datetime, re, urllib.parse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from io import BytesIO
 
 
 
@@ -2825,6 +2820,14 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- TELA 16: CAIXA COMPLETO + PDF GUIA ---
+from django.views.decorators.csrf import csrf_exempt
+from django.db import connection
+from django.http import HttpResponse
+import datetime, re, urllib.parse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from io import BytesIO
+
 @csrf_exempt
 def caixa_geral(request):
     hoje = datetime.date.today()
@@ -3082,7 +3085,6 @@ def gerar_guia_pdf(request):
     response = HttpResponse(buffer, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="guia_{paciente}.pdf"'
     return response
-
 
 
 
