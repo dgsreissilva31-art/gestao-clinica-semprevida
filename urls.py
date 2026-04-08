@@ -2930,10 +2930,13 @@ def caixa_geral(request):
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
-        descricao = desc or "-"
+        descricao = (desc or "").strip()  # remover espaços e evitar None
 
         # BLOCOS
-        if status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
+        if "retorno" in descricao.lower():  # qualquer descrição que contenha "retorno"
+            total_retorno += val
+            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
             total_consultas += val
             linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat == "Exame":
@@ -2942,9 +2945,6 @@ def caixa_geral(request):
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
             linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-        elif descricao.lower() == "retorno":  # NOVO BLOCO RETORNO
-            total_retorno += val
-            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif pac == "-":
             total_diversos += val
             linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
@@ -2955,7 +2955,7 @@ def caixa_geral(request):
         # SOMA POR FORMA DE PAGAMENTO
         if forma.lower() == "pix":
             pix_total += val
-        elif forma.lower() == "cartão" or forma.lower() == "cartao":
+        elif forma.lower() in ["cartão", "cartao"]:
             cartao_total += val
         elif forma.lower() == "dinheiro":
             dinheiro_total += val
@@ -3043,6 +3043,9 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
