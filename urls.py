@@ -2673,14 +2673,16 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (NOME LIMPO) ---
+# --- 17. TELA 15: PRONTUÁRIO (CAMPOS SIMPLIFICADOS) ---
 @csrf_exempt
 def prontuario_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse, HttpResponseRedirect
+
     agendamento_id = request.GET.get('id')
     mensagem = ""
 
     with connection.cursor() as cursor:
-        # 1. BUSCA DADOS DO PACIENTE E PROFISSIONAL
         cursor.execute("""
             SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
             FROM agendamentos ag
@@ -2690,95 +2692,113 @@ def prontuario_geral(request):
             JOIN profissionais pr ON ac.profissional_id = pr.id
             WHERE ag.id = %s
         """, [agendamento_id])
+
         dados = cursor.fetchone()
 
         if not dados:
             return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
         pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
-        
-        # --- LÓGICA PARA LIMPAR O NOME (RETIRAR QUEM AGENDOU) ---
         pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
 
-    # 2. SALVAR ATENDIMENTO (POST)
+    # ===============================
+    # SALVAR
+    # ===============================
     if request.method == "POST":
-        queixa = request.POST.get('queixa')
-        anamnese = request.POST.get('anamnese')
-        diag = request.POST.get('diagnostico')
-        proc = request.POST.get('procedimentos')
-        obs = request.POST.get('observacoes')
+        historico = request.POST.get('historico')
+        diagnostico = request.POST.get('diagnostico')
+        tratamento = request.POST.get('tratamento')
 
         try:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO prontuarios (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
+                    INSERT INTO prontuarios 
+                    (paciente_id, profissional_id, data_atendimento, hora, queixa, anamnese, diagnostico, procedimentos, observacoes)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, [pac_id, prof_id, data, hora, queixa, anamnese, diag, proc, obs])
+                """, [
+                    pac_id,
+                    prof_id,
+                    data,
+                    hora,
+                    historico,          # queixa
+                    historico,          # anamnese (mesmo conteúdo)
+                    diagnostico,
+                    tratamento,         # procedimentos
+                    ""                  # observações vazio
+                ])
 
                 cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
-            
-            return HttpResponseRedirect('/recepcao/') 
+
+            return HttpResponseRedirect('/recepcao/')
+
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 3. BUSCA HISTÓRICO
+    # ===============================
+    # HISTÓRICO
+    # ===============================
     with connection.cursor() as cursor:
-        cursor.execute("SELECT data_atendimento, diagnostico, procedimentos, queixa FROM prontuarios WHERE paciente_id = %s ORDER BY data_atendimento DESC", [pac_id])
-        historico = cursor.fetchall()
+        cursor.execute("""
+            SELECT data_atendimento, diagnostico, procedimentos, queixa 
+            FROM prontuarios 
+            WHERE paciente_id = %s 
+            ORDER BY data_atendimento DESC
+        """, [pac_id])
+
+        historico_lista = cursor.fetchall()
 
     lista_hist = ""
-    for h in historico:
+    for h in historico_lista:
         lista_hist += f"""
             <div class="card mb-2 border-start border-primary border-4 shadow-sm">
                 <div class="card-body py-2">
                     <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
-                    <b>Queixa:</b> {h[3]}<br>
+                    <b>Histórico:</b> {h[3]}<br>
                     <b>Diagnóstico:</b> {h[1]}
                 </div>
-            </div>"""
+            </div>
+        """
 
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
         <div class="container py-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
                 <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair sem salvar</a>
             </div>
-            
+
             {mensagem}
 
             <div class="row">
                 <div class="col-md-8">
                     <div class="card shadow-sm p-3 mb-4 border-0">
                         <div class="row mb-3 bg-light p-3 rounded shadow-sm">
-                            <div class="col-md-6"><span class="text-muted small">Paciente:</span><br><b class="fs-5">{pac_nome}</b></div>
-                            <div class="col-md-6 text-end"><span class="text-muted small">Convênio:</span><br><b>{conv_nome or 'Particular'}</b></div>
+                            <div class="col-md-6">
+                                <span class="text-muted small">Paciente:</span><br>
+                                <b class="fs-5">{pac_nome}</b>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <span class="text-muted small">Convênio:</span><br>
+                                <b>{conv_nome or 'Particular'}</b>
+                            </div>
                         </div>
 
                         <form method="POST">
                             <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Queixa Principal</label>
-                                <textarea name="queixa" class="form-control" rows="2" required></textarea>
+                                <label class="fw-bold small text-secondary">Histórico</label>
+                                <textarea name="historico" class="form-control" rows="5" required></textarea>
                             </div>
 
                             <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Anamnese / Evolução Clínica</label>
-                                <textarea name="anamnese" class="form-control" rows="5"></textarea>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="fw-bold small text-secondary">Diagnóstico / Hipótese</label>
-                                    <textarea name="diagnostico" class="form-control" rows="2"></textarea>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="fw-bold small text-secondary">Procedimentos / Conduta</label>
-                                    <textarea name="procedimentos" class="form-control" rows="2"></textarea>
-                                </div>
+                                <label class="fw-bold small text-secondary">Diagnóstico</label>
+                                <textarea name="diagnostico" class="form-control" rows="2"></textarea>
                             </div>
 
                             <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Observações Internas</label>
-                                <textarea name="observacoes" class="form-control" rows="1"></textarea>
+                                <label class="fw-bold small text-secondary">Tratamento</label>
+                                <textarea name="tratamento" class="form-control" rows="2"></textarea>
                             </div>
 
                             <button type="submit" class="btn btn-primary w-100 fw-bold py-3 shadow-sm text-uppercase">
@@ -2790,16 +2810,26 @@ def prontuario_geral(request):
 
                 <div class="col-md-4">
                     <div class="card shadow-sm p-3 border-0 bg-light" style="min-height: 100%;">
-                        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-clock-history"></i> Histórico de Consultas</h6>
+                        <h6 class="fw-bold text-dark mb-3">
+                            <i class="bi bi-clock-history"></i> Histórico de Consultas
+                        </h6>
                         <div style="max-height: 600px; overflow-y: auto;">
-                            {lista_hist if historico else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
+                            {lista_hist if historico_lista else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     """
+
     return HttpResponse(base_html("Prontuário", conteudo))
+
+
+
+
+
+
+
 
 
 
