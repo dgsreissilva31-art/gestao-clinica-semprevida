@@ -2,13 +2,6 @@ import datetime, urllib.parse
 from django.urls import path
 
 
-from .views import caixa_geral, gerar_guia_pdf
-
-urlpatterns = [
-    path('caixa/', caixa_geral, name='caixa_geral'),
-    path('gerar_guia_pdf/', gerar_guia_pdf, name='gerar_guia_pdf'),
-]
-
 
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
@@ -16,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
-from django.urls import path
+
 from . import views
 
 urlpatterns = [
