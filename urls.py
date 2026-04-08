@@ -2675,7 +2675,7 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA INTERNA SEM 404) ---
+# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA INTERNA + BUSCA + ORDEM ALFABÉTICA) ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
@@ -2683,14 +2683,16 @@ def prontuario_geral(request):
 
     agendamento_id = request.GET.get('id')
     consultar = request.GET.get('consultar')
+    busca = request.GET.get('busca') or ""
     mensagem = ""
 
     # ===============================
-    # 🔎 CONSULTA DE PRONTUÁRIOS (INTERNO - SEM URL)
+    # 🔎 CONSULTA DE PRONTUÁRIOS
     # ===============================
     if consultar:
         with connection.cursor() as cursor:
-            cursor.execute("""
+
+            sql = """
                 SELECT 
                     p.nome,
                     pr.data_atendimento,
@@ -2701,8 +2703,20 @@ def prontuario_geral(request):
                 FROM prontuarios pr
                 JOIN pacientes p ON pr.paciente_id = p.id
                 JOIN profissionais prof ON pr.profissional_id = prof.id
-                ORDER BY pr.data_atendimento DESC
-            """)
+                WHERE 1=1
+            """
+
+            params = []
+
+            # 🔍 FILTRO POR NOME
+            if busca:
+                sql += " AND p.nome ILIKE %s"
+                params.append(f"%{busca}%")
+
+            # 🔤 ORDEM ALFABÉTICA
+            sql += " ORDER BY p.nome ASC"
+
+            cursor.execute(sql, params)
             dados = cursor.fetchall()
 
         linhas = ""
@@ -2723,6 +2737,16 @@ def prontuario_geral(request):
         <div class="container py-3">
             <h4>📋 Prontuários</h4>
 
+            <form method="GET" class="row mb-3">
+                <input type="hidden" name="consultar" value="1">
+                <div class="col-md-10">
+                    <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar por paciente...">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100">Buscar</button>
+                </div>
+            </form>
+
             <a href="/recepcao/" class="btn btn-secondary mb-3">Voltar</a>
 
             <table class="table table-bordered">
@@ -2741,7 +2765,7 @@ def prontuario_geral(request):
         return HttpResponse(base_html("Consulta Prontuários", conteudo))
 
     # ===============================
-    # 🔒 VALIDAÇÃO (EVITA ERRO 500)
+    # 🔒 VALIDAÇÃO
     # ===============================
     if not agendamento_id:
         return HttpResponse(base_html("Erro", "ID do agendamento não informado."))
@@ -2878,8 +2902,6 @@ def prontuario_geral(request):
     """
 
     return HttpResponse(base_html("Prontuário", conteudo))
-
-
 
 
 
