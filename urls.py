@@ -7,9 +7,6 @@ from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
 
-from . import views
-
-
 
     
  
@@ -3227,12 +3224,7 @@ urlpatterns = [
     path('caixa/', caixa_geral),
     path('admin-painel/', painel_controle, name='painel'),
     
-    path('consultar_prontuarios/', views.consultar_prontuarios, name='consultar_prontuarios'),
-    path('caixa/', views.caixa_geral, name='caixa_geral'),
-    path('recepcao/', views.recepcao_geral, name='recepcao_geral'),
-    path('prontuario/', views.prontuario_geral, name='prontuario_geral'),
-
-
-   
+  
+  
    
 ]
