@@ -2675,7 +2675,7 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA INTERNA + BUSCA + ORDEM ALFABÉTICA) ---
+# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA INTERNA + MELHOR VISUAL) ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
@@ -2708,12 +2708,10 @@ def prontuario_geral(request):
 
             params = []
 
-            # 🔍 FILTRO POR NOME
             if busca:
                 sql += " AND p.nome ILIKE %s"
                 params.append(f"%{busca}%")
 
-            # 🔤 ORDEM ALFABÉTICA
             sql += " ORDER BY p.nome ASC"
 
             cursor.execute(sql, params)
@@ -2722,14 +2720,30 @@ def prontuario_geral(request):
         linhas = ""
         for d in dados:
             data = d[1].strftime('%d/%m/%Y') if d[1] else ""
+
             linhas += f"""
             <tr>
-                <td>{d[0]}</td>
+                <td><b>{d[0]}</b></td>
                 <td>{data}</td>
                 <td>{d[2]}</td>
-                <td>{d[3]}</td>
-                <td>{d[4]}</td>
-                <td>{d[5]}</td>
+
+                <td>
+                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
+                        {d[3]}
+                    </div>
+                </td>
+
+                <td>
+                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
+                        {d[4]}
+                    </div>
+                </td>
+
+                <td>
+                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
+                        {d[5]}
+                    </div>
+                </td>
             </tr>
             """
 
@@ -2739,9 +2753,12 @@ def prontuario_geral(request):
 
             <form method="GET" class="row mb-3">
                 <input type="hidden" name="consultar" value="1">
+
                 <div class="col-md-10">
-                    <input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar por paciente...">
+                    <input type="text" name="busca" value="{busca}" 
+                        class="form-control" placeholder="Buscar por paciente...">
                 </div>
+
                 <div class="col-md-2">
                     <button class="btn btn-primary w-100">Buscar</button>
                 </div>
@@ -2749,19 +2766,27 @@ def prontuario_geral(request):
 
             <a href="/recepcao/" class="btn btn-secondary mb-3">Voltar</a>
 
-            <table class="table table-bordered">
-                <tr>
-                    <th>Paciente</th>
-                    <th>Data</th>
-                    <th>Médico</th>
-                    <th>Histórico</th>
-                    <th>Diagnóstico</th>
-                    <th>Tratamento</th>
-                </tr>
-                {linhas or '<tr><td colspan="6">Sem registros</td></tr>'}
-            </table>
+            <div style="overflow-x:auto;">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Paciente</th>
+                            <th>Data</th>
+                            <th>Médico</th>
+                            <th>Histórico</th>
+                            <th>Diagnóstico</th>
+                            <th>Tratamento</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {linhas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
         </div>
         """
+
         return HttpResponse(base_html("Consulta Prontuários", conteudo))
 
     # ===============================
@@ -2902,6 +2927,8 @@ def prontuario_geral(request):
     """
 
     return HttpResponse(base_html("Prontuário", conteudo))
+
+
 
 
 
