@@ -16,6 +16,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
+from django.views.decorators.csrf import csrf_exempt
+import datetime, re, urllib.parse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from io import BytesIO
+
+
 
 
 
@@ -2817,15 +2824,9 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO COM PDF HTML (5 BLOCOS + DIVERSOS + RETORNO + FILTROS + SOMAS + GUIA EXAME) ---
+# --- TELA 16: CAIXA COMPLETO + PDF GUIA ---
 @csrf_exempt
 def caixa_geral(request):
-    from django.db import connection
-    from django.http import HttpResponse
-    import datetime
-    import re
-    import urllib.parse
-
     hoje = datetime.date.today()
     unidade_id = request.GET.get('unidade') or ""
     data_ini = request.GET.get('data_ini') or ""
@@ -2856,7 +2857,7 @@ def caixa_geral(request):
     # ===============================
     if request.method == "POST" and "lancar_diverso" in request.POST:
         try:
-            unidade = request.POST.get('unidade_id')
+            unidade = int(request.POST.get('unidade_id') or 0)
             tipo = request.POST.get('tipo')
             categoria = request.POST.get('categoria')
             descricao = request.POST.get('descricao')
@@ -2967,7 +2968,7 @@ def caixa_geral(request):
             btn_guia = f'<a href="/gerar_guia_pdf/?{params_pdf}" target="_blank" class="btn btn-sm btn-primary">Gerar Guia</a>'
 
         # BLOCOS
-        if "retorno" in descricao.lower():  # qualquer descrição que contenha "retorno"
+        if "retorno" in descricao.lower():
             total_retorno += val
             linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -2996,22 +2997,16 @@ def caixa_geral(request):
 
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
-    # ===============================
     # SELECTS
-    # ===============================
     opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
 
-    # ===============================
-    # HTML FINAL COM SOMAS
-    # ===============================
+    # HTML FINAL
     conteudo = f"""
     <div class="container-fluid">
-
     <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
     {mensagem}
 
-    <!-- 🔎 FILTROS -->
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial"></div>
         <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final"></div>
@@ -3020,7 +3015,6 @@ def caixa_geral(request):
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
 
-    <!-- 🔥 FORM DIVERSOS -->
     <div class="card p-3 mb-3 border-dark">
         <h5>➕ Caixa Diversos</h5>
         <form method="POST" class="row g-2">
@@ -3033,50 +3027,61 @@ def caixa_geral(request):
         </form>
     </div>
 
-    <!-- BLOCOS -->
-    <div class="card mb-3">
-        <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
-        <table class="table">{linhas_consultas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
+    <div class="card mb-3"><div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
+    <table class="table">{linhas_consultas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table></div>
 
-    <div class="card mb-3">
-        <div class="card-header bg-warning">Convênios - Total: R$ {total_faturado:.2f}</div>
-        <table class="table">{linhas_faturado or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
+    <div class="card mb-3"><div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
+    <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table></div>
 
-    <div class="card mb-3">
-        <div class="card-header bg-info text-white">Retorno - Total: R$ {total_retorno:.2f}</div>
-        <table class="table">{linhas_retorno or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
+    <div class="card mb-3"><div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
+    <table class="table">{linhas_odonto or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table></div>
 
-    <div class="card mb-3">
-        <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
-        <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
+    <div class="card mb-3"><div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
+    <table class="table">
+        <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
+        {linhas_diversos or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}
+    </table></div>
 
-    <div class="card mb-3">
-        <div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
-        <table class="table">{linhas_odonto or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
-        <table class="table">
-            <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
-            {linhas_diversos or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}
-        </table>
-    </div>
-
-    <!-- RODAPÉ COM TOTAL GERAL E FORMAS DE PAGAMENTO -->
     <div class="card mt-3 p-3">
         <h5>Total Geral: R$ {total_geral:.2f}</h5>
         <p>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
-    </div>
-
-    </div>
+    </div></div>
     """
 
-    return HttpResponse(base_html("Caixa", conteudo))
+    return HttpResponse(conteudo)
+
+
+# ===============================
+# GERAR GUIA PDF
+# ===============================
+@csrf_exempt
+def gerar_guia_pdf(request):
+    paciente = request.GET.get("paciente", "")
+    exame = request.GET.get("exame", "")
+    prestador = request.GET.get("prestador", "")
+    data = request.GET.get("data", "")
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, height-50, "Guia de Exame")
+    c.setFont("Helvetica", 12)
+    c.drawString(50, height-100, f"Paciente: {paciente}")
+    c.drawString(50, height-120, f"Exame: {exame}")
+    c.drawString(50, height-140, f"Prestador: {prestador}")
+    c.drawString(50, height-160, f"Data: {data}")
+    c.drawString(50, height-200, "Assinatura do Paciente: ____________________")
+    c.drawString(50, height-230, "Assinatura da Clínica: ____________________")
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="guia_{paciente}.pdf"'
+    return response
 
 
 
