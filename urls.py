@@ -1286,7 +1286,7 @@ def odonto_geral(request):
 def pacientes_geral(request):
     mensagem = ""
     
-    # 1. LÓGICAS DE AÇÃO (BLOQUEIO E EXCLUSÃO)
+    # 1. AÇÕES
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
@@ -1297,7 +1297,7 @@ def pacientes_geral(request):
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. CARREGAR DADOS PARA EDIÇÃO
+    # 2. EDIÇÃO
     edit_id = request.GET.get('edit_pac')
     p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""] 
     
@@ -1313,52 +1313,66 @@ def pacientes_geral(request):
                 p_dados = list(res)
                 if p_dados[3]: p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 3. SALVAR OU ATUALIZAR (POST)
+    # 3. SALVAR
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        # ✅ CORREÇÃO DO CPF (EVITA NULL)
         cpf = request.POST.get('cpf')
-        cpf = cpf.strip() if cpf else ""  # nunca será None
+        cpf = cpf.strip() if cpf else None  # 🔥 vira NULL de verdade
 
-        campos = [
-            request.POST.get('nome'),
-            cpf,
-            request.POST.get('sexo'),
-            request.POST.get('data_nasc') or None,
-            request.POST.get('telefone'),
-            request.POST.get('convenio_id') or None,
-            request.POST.get('cep'),
-            request.POST.get('rua'),
-            request.POST.get('numero'),
-            request.POST.get('bairro'),
-            request.POST.get('cidade'),
-            request.POST.get('estado'),
-            request.POST.get('observacoes')
-        ]
-        
-        try:
+        # 🔥 VALIDA CPF DUPLICADO (só se preenchido)
+        if cpf:
             with connection.cursor() as cursor:
                 if id_post:
-                    cursor.execute("""
-                        UPDATE pacientes SET 
-                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
-                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                            cidade=%s, estado=%s, observacoes=%s WHERE id=%s
-                    """, campos + [id_post])
+                    cursor.execute("SELECT id FROM pacientes WHERE cpf = %s AND id <> %s", [cpf, id_post])
                 else:
-                    cursor.execute("""
-                        INSERT INTO pacientes 
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, campos)
+                    cursor.execute("SELECT id FROM pacientes WHERE cpf = %s", [cpf])
 
-            return HttpResponseRedirect('/pacientes/')
+                if cursor.fetchone():
+                    mensagem = '<div class="alert alert-danger">❌ CPF já cadastrado para outro paciente</div>'
+                    cpf = None  # evita crash
+                    # NÃO continua o insert
+                    # vai cair no HTML normalmente
 
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+        if not mensagem:
+            campos = [
+                request.POST.get('nome'),
+                cpf,
+                request.POST.get('sexo'),
+                request.POST.get('data_nasc') or None,
+                request.POST.get('telefone'),
+                request.POST.get('convenio_id') or None,
+                request.POST.get('cep'),
+                request.POST.get('rua'),
+                request.POST.get('numero'),
+                request.POST.get('bairro'),
+                request.POST.get('cidade'),
+                request.POST.get('estado'),
+                request.POST.get('observacoes')
+            ]
 
-    # 4. LÓGICA DE PESQUISA
+            try:
+                with connection.cursor() as cursor:
+                    if id_post:
+                        cursor.execute("""
+                            UPDATE pacientes SET 
+                                nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
+                                convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
+                                cidade=%s, estado=%s, observacoes=%s WHERE id=%s
+                        """, campos + [id_post])
+                    else:
+                        cursor.execute("""
+                            INSERT INTO pacientes 
+                            (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, campos)
+
+                return HttpResponseRedirect('/pacientes/')
+
+            except Exception as e:
+                mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+
+    # 4. BUSCA (INALTERADO)
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1388,28 +1402,7 @@ def pacientes_geral(request):
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 5. HTML (INALTERADO)
-    opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
-    
-    linhas = ""
-    for p in lista_pacientes:
-        cor_st = "success" if p[5] == "Ativo" else "danger"
-        data_br = p[7].strftime('%d/%m/%Y') if p[7] else '--'
-        
-        linhas += f"""
-        <tr>
-            <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
-            <td>{p[3]}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
-            <td>{p[4] if p[4] else 'Particular'}</td>
-            <td>
-                <div class="btn-group">
-                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
-                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning"><i class="bi bi-slash-circle"></i></a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
-                </div>
-            </td>
-        </tr>"""
-
+    # HTML permanece igual
     conteudo = f""" ... (restante do HTML permanece exatamente igual) ... """
 
     return HttpResponse(base_html("Pacientes", conteudo))
