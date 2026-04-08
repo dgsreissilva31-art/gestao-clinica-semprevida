@@ -7,12 +7,6 @@ from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
 
-from . import views
-
-urlpatterns = [
-    path('caixa/', views.caixa_geral, name='caixa_geral'),
-]
-
 
 
 
