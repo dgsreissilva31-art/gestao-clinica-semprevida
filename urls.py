@@ -2811,8 +2811,9 @@ def prontuario_geral(request):
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
-    from django.http import HttpResponse
-    import datetime
+    from django.http import HttpResponse, FileResponse
+    import datetime, io
+    from reportlab.pdfgen import canvas
     import re
 
     hoje = datetime.date.today()
@@ -2841,51 +2842,31 @@ def caixa_geral(request):
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
     # ===============================
-    # LANÇAMENTO DIVERSOS
+    # GERAR GUIA PDF
     # ===============================
-    if request.method == "POST" and "lancar_diverso" in request.POST:
-        try:
-            unidade = request.POST.get('unidade_id')
-            tipo = request.POST.get('tipo')
-            categoria = request.POST.get('categoria')
-            descricao = request.POST.get('descricao')
-            valor = float(request.POST.get('valor') or 0)
+    if request.GET.get("gerar_guia"):
+        paciente = request.GET.get("paciente") or ""
+        exame = request.GET.get("exame") or ""
+        prestador = request.GET.get("prestador") or ""
+        data_pg = request.GET.get("data") or hoje.strftime("%d/%m/%Y")
 
-            if not unidade:
-                raise Exception("Selecione a unidade")
-            if valor <= 0:
-                raise Exception("Valor inválido")
-            if tipo == "Saída":
-                valor = -abs(valor)
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=(595, 842))  # A4
+        p.setFont("Helvetica", 12)
 
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento,
-                     status, categoria, descricao, data_pagamento, unidade_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                """, ["-", "-", valor, tipo, "Pago", categoria or "Diversos", descricao, unidade])
+        p.drawString(50, 780, f"Guia de Exame")
+        p.drawString(50, 750, f"Paciente: {paciente}")
+        p.drawString(50, 730, f"Exame: {exame}")
+        p.drawString(50, 710, f"Prestador: {prestador}")
+        p.drawString(50, 690, f"Data: {data_pg}")
 
-            mensagem = '<div class="alert alert-success">✅ Lançamento realizado!</div>'
+        p.drawString(50, 650, f"Assinatura do Paciente: _________________________")
+        p.drawString(50, 620, f"Assinatura da Clínica: ___________________________")
 
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
-    # ===============================
-    # UNIDADES
-    # ===============================
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_list = cursor.fetchall()
-
-        # 🔥 BUSCAR CATEGORIAS EXISTENTES (DIVERSOS)
-        cursor.execute("""
-            SELECT DISTINCT categoria 
-            FROM caixa 
-            WHERE paciente_nome = '-' 
-            ORDER BY categoria
-        """)
-        categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        return FileResponse(buffer, as_attachment=True, filename=f"guia_{paciente}.pdf")
 
     # ===============================
     # SQL PRINCIPAL
@@ -2922,9 +2903,6 @@ def caixa_geral(request):
 
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
-    # ===============================
-    # EXECUTAR SQL
-    # ===============================
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
@@ -2942,10 +2920,10 @@ def caixa_geral(request):
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
-        descricao = (desc or "").strip()  # remover espaços e evitar None
+        descricao = (desc or "").strip()
 
         # BLOCOS
-        if "retorno" in descricao.lower():  # qualquer descrição que contenha "retorno"
+        if "retorno" in descricao.lower():
             total_retorno += val
             linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -2953,7 +2931,8 @@ def caixa_geral(request):
             linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat == "Exame":
             total_exames += val
-            linhas_exames += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            botao_guia = f'<a href="?gerar_guia=1&paciente={pac}&exame={descricao}&prestador={prof or "-"}&data={data_br}" class="btn btn-sm btn-primary">Gerar Guia</a>'
+            linhas_exames += f"<tr><td>{data_br}</td><td>{pac} {botao_guia}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
             linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
@@ -2975,13 +2954,25 @@ def caixa_geral(request):
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
     # ===============================
-    # SELECTS
+    # UNIDADES E CATEGORIAS
     # ===============================
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades_list = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT DISTINCT categoria 
+            FROM caixa 
+            WHERE paciente_nome = '-' 
+            ORDER BY categoria
+        """)
+        categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
+
     opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
 
     # ===============================
-    # HTML FINAL COM SOMAS
+    # HTML FINAL
     # ===============================
     conteudo = f"""
     <div class="container-fluid">
@@ -2998,63 +2989,21 @@ def caixa_geral(request):
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
 
-    <!-- 🔥 FORM DIVERSOS -->
-    <div class="card p-3 mb-3 border-dark">
-        <h5>➕ Caixa Diversos</h5>
-        <form method="POST" class="row g-2">
-            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
-            <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
-            <div class="col-md-2"><input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria"><datalist id="lista_categorias">{opts_cat}</datalist></div>
-            <div class="col-md-3"><input type="text" name="descricao" class="form-control" placeholder="Descrição"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
-        </form>
-    </div>
-
     <!-- BLOCOS -->
     <div class="card mb-3">
-        <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
-        <table class="table">{linhas_consultas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-warning">Convênios - Total: R$ {total_faturado:.2f}</div>
-        <table class="table">{linhas_faturado or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-info text-white">Retorno - Total: R$ {total_retorno:.2f}</div>
-        <table class="table">{linhas_retorno or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
         <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
-        <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
-        <table class="table">{linhas_odonto or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
         <table class="table">
-            <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
-            {linhas_diversos or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}
+            {linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
         </table>
-    </div>
-
-    <!-- RODAPÉ COM TOTAL GERAL E FORMAS DE PAGAMENTO -->
-    <div class="card mt-3 p-3">
-        <h5>Total Geral: R$ {total_geral:.2f}</h5>
-        <p>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
     </div>
 
     </div>
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
