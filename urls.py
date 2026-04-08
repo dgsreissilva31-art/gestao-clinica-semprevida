@@ -2390,7 +2390,7 @@ def agendar_consulta(request):
 
 
 # --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUARIO ---
-# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUÁRIO ---
+# --- 16. TELA 14: RECEPÇÃO CHECK-IN INTEGRADA COM PRONTUÁRIO (Corrigida) ---
 @csrf_exempt
 def recepcao_geral(request):
     from django.db import connection
@@ -2399,11 +2399,9 @@ def recepcao_geral(request):
     import datetime
 
     data_hoje = datetime.date.today()
-
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
-
     mensagem = ""
 
     # ===============================
@@ -2414,7 +2412,6 @@ def recepcao_geral(request):
             ag_id = request.POST.get('ag_id')
             tipo = request.POST.get('tipo_pagto')
             convenio_id = request.POST.get('convenio_id')
-            retorno = request.POST.get('retorno')  # Mantemos a marcação, mas só para descrição
 
             with connection.cursor() as cursor:
                 # Buscar informações do agendamento
@@ -2427,76 +2424,27 @@ def recepcao_geral(request):
                     JOIN unidades u ON ac.unidade_id = u.id
                     WHERE ag.id = %s
                 """, [ag_id])
-
                 info = cursor.fetchone()
                 if not info:
                     raise Exception("Agendamento não encontrado")
 
                 paciente_nome, profissional_nome, unidade_id = info
 
-                # Se marcou retorno, adiciona apenas na descrição
-                descricao = "Retorno" if retorno else None
-
                 # ==========================
-                # PARTICULAR
+                # CONVÊNIO (Único tipo permitido agora)
                 # ==========================
-                if tipo == "avista":
-                    valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-                    forma = request.POST.get('forma_pagamento') or "Pix"
+                convenio_nome = ""
+                if convenio_id:
+                    cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
+                    c = cursor.fetchone()
+                    if c:
+                        convenio_nome = c[0]
 
-                    cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, valor, forma, descricao or "Particular", unidade_id])
-
-                # ==========================
-                # CONVÊNIO
-                # ==========================
-                elif tipo == "convenio":
-                    convenio_nome = ""
-                    if convenio_id:
-                        cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
-                        c = cursor.fetchone()
-                        if c:
-                            convenio_nome = c[0]
-
-                    cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, descricao or convenio_nome or "Convênio", unidade_id])
-
-                # ==========================
-                # CARTÃO DESCONTO
-                # ==========================
-                elif tipo == "cartao":
-                    valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-                    forma = request.POST.get('forma_pagamento') or "Pix"
-
-                    convenio_nome = ""
-                    if convenio_id:
-                        cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
-                        c = cursor.fetchone()
-                        if c:
-                            convenio_nome = c[0]
-
-                    cursor.execute("""
-                        INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
-                    """, [
-                        paciente_nome,
-                        profissional_nome,
-                        valor,
-                        forma,
-                        descricao or (f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto"),
-                        unidade_id
-                    ])
+                cursor.execute("""
+                    INSERT INTO caixa
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
+                """, [paciente_nome, profissional_nome, convenio_nome or "Convênio", unidade_id])
 
                 # Atualizar status do agendamento
                 cursor.execute("""
@@ -2516,7 +2464,6 @@ def recepcao_geral(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
@@ -2530,11 +2477,9 @@ def recepcao_geral(request):
             WHERE ag.data_agendamento = %s
         """
         params = [data_hoje]
-
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
-
         sql += " ORDER BY ag.horario_selecionado"
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
@@ -2573,7 +2518,7 @@ def recepcao_geral(request):
         """
 
     # ===============================
-    # MODAL CHECK-IN
+    # MODAL CHECK-IN (somente Convênio)
     # ===============================
     modal_html = ""
     if agendamento_id and etapa == '2':
@@ -2588,9 +2533,7 @@ def recepcao_geral(request):
                         <h5>Financeiro</h5>
 
                         <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="toggle()">
-                            <option value="avista">Particular</option>
                             <option value="convenio">Convênio</option>
-                            <option value="cartao">Cartão Desconto</option>
                         </select>
 
                         <select name="convenio_id" id="convenio" class="form-select mb-2">
@@ -2598,41 +2541,16 @@ def recepcao_geral(request):
                             {opts_conv}
                         </select>
 
-                        <div class="mb-2">
-                            <input type="checkbox" name="retorno" value="1"> Retorno
-                        </div>
-
-                        <div id="pagamento">
-                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
-                            <select name="forma_pagamento" class="form-select mb-3">
-                                <option>Pix</option>
-                                <option>Cartão</option>
-                                <option>Dinheiro</option>
-                            </select>
-                        </div>
-
                         <button name="finalizar_fluxo" class="btn btn-success w-100">FINALIZAR</button>
                     </form>
                 </div>
             </div>
         </div>
-
         <script>
         function toggle() {{
             var tipo = document.getElementById("tipo").value;
-            var pag = document.getElementById("pagamento");
             var conv = document.getElementById("convenio");
-
-            if (tipo === "convenio") {{
-                pag.style.display = "none";
-                conv.style.display = "block";
-            }} else if (tipo === "cartao") {{
-                pag.style.display = "block";
-                conv.style.display = "block";
-            }} else {{
-                pag.style.display = "block";
-                conv.style.display = "none";
-            }}
+            conv.style.display = (tipo === "convenio") ? "block" : "none";
         }}
         toggle();
         </script>
@@ -2662,8 +2580,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
