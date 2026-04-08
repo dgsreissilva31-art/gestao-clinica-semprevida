@@ -2393,7 +2393,6 @@ def recepcao_geral(request):
     from django.http import HttpResponse
     from django.shortcuts import redirect
     import datetime
-    import urllib.parse
 
     data_hoje = datetime.date.today()
 
@@ -2404,7 +2403,7 @@ def recepcao_geral(request):
     mensagem = ""
 
     # ===============================
-    # FINALIZAR CHECK-IN (INALTERADO)
+    # FINALIZAR CHECK-IN
     # ===============================
     if request.method == "POST" and "finalizar_fluxo" in request.POST:
         try:
@@ -2437,6 +2436,7 @@ def recepcao_geral(request):
                     if c:
                         convenio_nome = c[0]
 
+                # PARTICULAR
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2450,6 +2450,7 @@ def recepcao_geral(request):
                         VALUES (%s,%s,%s,%s,'Pago','Consulta','Particular',CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, valor, forma, unidade_id])
 
+                # CONVÊNIO
                 elif tipo == "convenio":
                     cursor.execute("""
                         INSERT INTO caixa
@@ -2457,6 +2458,7 @@ def recepcao_geral(request):
                         VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, convenio_nome or 'Convênio', unidade_id])
 
+                # CARTÃO
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2489,7 +2491,7 @@ def recepcao_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCAS (INALTERADO)
+    # BUSCAS
     # ===============================
     with connection.cursor() as cursor:
 
@@ -2521,7 +2523,7 @@ def recepcao_geral(request):
         agenda = cursor.fetchall()
 
     # ===============================
-    # SELECTS (INALTERADO)
+    # SELECTS
     # ===============================
     opts_unidades = "".join([
         f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
@@ -2534,7 +2536,7 @@ def recepcao_geral(request):
     ])
 
     # ===============================
-    # LINHAS (AJUSTADO 🔥)
+    # LINHAS (COM BOTÃO CADASTRO 🔥)
     # ===============================
     linhas = ""
 
@@ -2548,16 +2550,7 @@ def recepcao_geral(request):
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
 
-        # 🔥 CADASTRO COM PREENCHIMENTO (NOME)
-        nome = urllib.parse.quote(a[1] or "")
-
-        btn_cadastro = f'''
-        <a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/?nome={nome}"
-        target="_blank"
-        class="btn btn-dark btn-sm me-1">
-        Cadastro
-        </a>
-        '''
+        btn_cadastro = '<a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-dark btn-sm me-1">Cadastro</a>'
 
         linhas += f"""
         <tr>
@@ -2572,11 +2565,72 @@ def recepcao_geral(request):
         """
 
     # ===============================
-    # MODAL (INALTERADO)
+    # MODAL
     # ===============================
     modal_html = ""
+
     if agendamento_id and etapa == '2':
-        modal_html = f""" ... """  # mantido igual
+        modal_html = f"""
+        <div class="modal fade show d-block" style="background:rgba(0,0,0,0.6)">
+            <div class="modal-dialog">
+                <div class="modal-content p-4">
+
+                    <form method="POST">
+                        <input type="hidden" name="ag_id" value="{agendamento_id}">
+                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
+
+                        <h5>Financeiro</h5>
+
+                        <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="toggle()">
+                            <option value="avista">Particular</option>
+                            <option value="convenio">Convênio</option>
+                            <option value="cartao">Cartão Desconto</option>
+                        </select>
+
+                        <select name="convenio_id" id="convenio" class="form-select mb-2">
+                            <option value="">Selecione Convênio</option>
+                            {opts_conv}
+                        </select>
+
+                        <div id="pagamento">
+                            <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
+
+                            <select name="forma_pagamento" class="form-select mb-3">
+                                <option>Pix</option>
+                                <option>Cartão</option>
+                                <option>Dinheiro</option>
+                            </select>
+                        </div>
+
+                        <button name="finalizar_fluxo" class="btn btn-success w-100">
+                            FINALIZAR
+                        </button>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function toggle() {{
+            var tipo = document.getElementById("tipo").value;
+            var pag = document.getElementById("pagamento");
+            var conv = document.getElementById("convenio");
+
+            if (tipo === "convenio") {{
+                pag.style.display = "none";
+                conv.style.display = "block";
+            }} else if (tipo === "cartao") {{
+                pag.style.display = "block";
+                conv.style.display = "block";
+            }} else {{
+                pag.style.display = "block";
+                conv.style.display = "none";
+            }}
+        }}
+        toggle();
+        </script>
+        """
 
     conteudo = f"""
     <h4>Recepção</h4>
@@ -2599,6 +2653,7 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
 
 
 
