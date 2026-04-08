@@ -2416,10 +2416,9 @@ def recepcao_geral(request):
             ag_id = request.POST.get('ag_id')
             tipo = request.POST.get('tipo_pagto')
             convenio_id = request.POST.get('convenio_id')
-            retorno = request.POST.get('retorno')  # Mantemos a marcação, mas só para descrição
+            retorno = request.POST.get('retorno')
 
             with connection.cursor() as cursor:
-                # Buscar informações do agendamento
                 cursor.execute("""
                     SELECT pac.nome, prof.nome, u.id
                     FROM agendamentos ag
@@ -2436,27 +2435,23 @@ def recepcao_geral(request):
 
                 paciente_nome, profissional_nome, unidade_id = info
 
-                # Se marcou retorno, adiciona apenas na descrição
                 descricao = "Retorno" if retorno else None
 
-                # ==========================
                 # PARTICULAR
-                # ==========================
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
                         raise Exception("Informe o valor")
+
                     forma = request.POST.get('forma_pagamento') or "Pix"
 
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
                         VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, valor, forma, descricao or "Particular", unidade_id])
+                    """, [paciente_nome, profissional_nome, valor, forma, "Particular", unidade_id])
 
-                # ==========================
                 # CONVÊNIO
-                # ==========================
                 elif tipo == "convenio":
                     convenio_nome = ""
                     if convenio_id:
@@ -2471,13 +2466,12 @@ def recepcao_geral(request):
                         VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, descricao or convenio_nome or "Convênio", unidade_id])
 
-                # ==========================
-                # CARTÃO DESCONTO
-                # ==========================
+                # CARTÃO
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
                         raise Exception("Informe o valor")
+
                     forma = request.POST.get('forma_pagamento') or "Pix"
 
                     convenio_nome = ""
@@ -2496,11 +2490,10 @@ def recepcao_geral(request):
                         profissional_nome,
                         valor,
                         forma,
-                        descricao or (f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto"),
+                        f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto",
                         unidade_id
                     ])
 
-                # Atualizar status do agendamento
                 cursor.execute("""
                     UPDATE agendamentos
                     SET status = 'Chegada'
@@ -2522,7 +2515,7 @@ def recepcao_geral(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
-        sql = """
+        cursor.execute("""
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
             LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
@@ -2530,52 +2523,40 @@ def recepcao_geral(request):
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
             LEFT JOIN unidades u ON ac.unidade_id = u.id
             WHERE ag.data_agendamento = %s
-        """
-        params = [data_hoje]
+            ORDER BY ag.horario_selecionado
+        """, [data_hoje])
 
-        if unidade_filtro:
-            sql += " AND u.id = %s"
-            params.append(unidade_filtro)
-
-        sql += " ORDER BY ag.horario_selecionado"
-        cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    # ===============================
-    # SELECTS
-    # ===============================
     opts_unidades = "".join([
         f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
         for u in unidades
     ])
+
     opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
 
-    # ===============================
-    # LINHAS AGENDA
-    # ===============================
     linhas = ""
     for a in agenda:
         status = a[4] or "Agendado"
+
         if status == "Agendado":
-            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
-
-        btn_cadastro = '<a href="https://gestao-clinica-semprevida-production.up.railway.app/pacientes/" target="_blank" class="btn btn-dark btn-sm me-1">Cadastro</a>'
 
         linhas += f"""
         <tr>
             <td>{str(a[3])[:5]}</td>
             <td>{a[1]}</td>
             <td>{a[2]}</td>
-            <td>{btn_cadastro}{btn_acao}</td>
+            <td>{btn_acao}</td>
         </tr>
         """
 
     # ===============================
-    # MODAL CHECK-IN
+    # MODAL
     # ===============================
     modal_html = ""
     if agendamento_id and etapa == '2':
@@ -2584,8 +2565,8 @@ def recepcao_geral(request):
             <div class="modal-dialog">
                 <div class="modal-content p-4">
                     <form method="POST">
+
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
-                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
                         <h5>Financeiro</h5>
 
@@ -2600,7 +2581,7 @@ def recepcao_geral(request):
                             {opts_conv}
                         </select>
 
-                        <div class="mb-2">
+                        <div class="mb-2" id="div_retorno" style="display:none;">
                             <input type="checkbox" name="retorno" value="1"> Retorno
                         </div>
 
@@ -2624,30 +2605,31 @@ def recepcao_geral(request):
             var tipo = document.getElementById("tipo").value;
             var pag = document.getElementById("pagamento");
             var conv = document.getElementById("convenio");
+            var ret = document.getElementById("div_retorno");
 
             if (tipo === "convenio") {{
                 pag.style.display = "none";
                 conv.style.display = "block";
+                ret.style.display = "block";
             }} else if (tipo === "cartao") {{
                 pag.style.display = "block";
                 conv.style.display = "block";
+                ret.style.display = "none";
             }} else {{
                 pag.style.display = "block";
                 conv.style.display = "none";
+                ret.style.display = "none";
             }}
         }}
         toggle();
         </script>
         """
 
-    # ===============================
-    # HTML FINAL
-    # ===============================
     conteudo = f"""
     <h4>Recepção</h4>
 
     <form method="GET">
-        <select name="unidade" class="form-select mb-2" onchange="this.form.submit()">
+        <select name="unidade" class="form-select mb-2">
             <option value="">Todas</option>
             {opts_unidades}
         </select>
@@ -2664,7 +2646,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
 
 
 
