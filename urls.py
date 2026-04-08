@@ -2675,7 +2675,7 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA INTERNA + MELHOR VISUAL) ---
+# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA + VISUAL COMPLETO) ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
@@ -2684,7 +2684,61 @@ def prontuario_geral(request):
     agendamento_id = request.GET.get('id')
     consultar = request.GET.get('consultar')
     busca = request.GET.get('busca') or ""
+    ver = request.GET.get('ver')  # 👈 NOVO (abrir completo)
     mensagem = ""
+
+    # ===============================
+    # 👁️ VISUALIZAÇÃO COMPLETA
+    # ===============================
+    if ver:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    p.nome,
+                    pr.data_atendimento,
+                    prof.nome,
+                    pr.queixa,
+                    pr.diagnostico,
+                    pr.procedimentos
+                FROM prontuarios pr
+                JOIN pacientes p ON pr.paciente_id = p.id
+                JOIN profissionais prof ON pr.profissional_id = prof.id
+                WHERE pr.id = %s
+            """, [ver])
+
+            d = cursor.fetchone()
+
+        if not d:
+            return HttpResponse(base_html("Erro", "Prontuário não encontrado."))
+
+        data = d[1].strftime('%d/%m/%Y') if d[1] else ""
+
+        conteudo = f"""
+        <div class="container py-4">
+            <h4>📄 Prontuário Completo</h4>
+
+            <a href="?consultar=1" class="btn btn-secondary mb-3">⬅ Voltar</a>
+
+            <div class="card p-4 shadow-sm">
+                <p><b>Paciente:</b> {d[0]}</p>
+                <p><b>Data:</b> {data}</p>
+                <p><b>Médico:</b> {d[2]}</p>
+
+                <hr>
+
+                <p><b>Histórico:</b><br>
+                <div style="white-space:pre-wrap;">{d[3]}</div></p>
+
+                <p><b>Diagnóstico:</b><br>
+                <div style="white-space:pre-wrap;">{d[4]}</div></p>
+
+                <p><b>Tratamento:</b><br>
+                <div style="white-space:pre-wrap;">{d[5]}</div></p>
+            </div>
+        </div>
+        """
+
+        return HttpResponse(base_html("Prontuário Completo", conteudo))
 
     # ===============================
     # 🔎 CONSULTA DE PRONTUÁRIOS
@@ -2694,6 +2748,7 @@ def prontuario_geral(request):
 
             sql = """
                 SELECT 
+                    pr.id,
                     p.nome,
                     pr.data_atendimento,
                     prof.nome,
@@ -2719,30 +2774,23 @@ def prontuario_geral(request):
 
         linhas = ""
         for d in dados:
-            data = d[1].strftime('%d/%m/%Y') if d[1] else ""
+            data = d[2].strftime('%d/%m/%Y') if d[2] else ""
 
             linhas += f"""
             <tr>
-                <td><b>{d[0]}</b></td>
+                <td><b>{d[1]}</b></td>
                 <td>{data}</td>
-                <td>{d[2]}</td>
+                <td>{d[3]}</td>
+
+                <td><div style="max-height:100px; overflow:auto;">{d[4]}</div></td>
+                <td><div style="max-height:100px; overflow:auto;">{d[5]}</div></td>
+                <td><div style="max-height:100px; overflow:auto;">{d[6]}</div></td>
 
                 <td>
-                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
-                        {d[3]}
-                    </div>
-                </td>
-
-                <td>
-                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
-                        {d[4]}
-                    </div>
-                </td>
-
-                <td>
-                    <div style="max-height:120px; overflow:auto; white-space:pre-wrap;">
-                        {d[5]}
-                    </div>
+                    <a href="?consultar=1&ver={d[0]}" 
+                       class="btn btn-sm btn-primary">
+                       Abrir Completo
+                    </a>
                 </td>
             </tr>
             """
@@ -2776,11 +2824,12 @@ def prontuario_geral(request):
                             <th>Histórico</th>
                             <th>Diagnóstico</th>
                             <th>Tratamento</th>
+                            <th>Ação</th>
                         </tr>
                     </thead>
 
                     <tbody>
-                        {linhas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
+                        {linhas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}
                     </tbody>
                 </table>
             </div>
