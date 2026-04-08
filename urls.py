@@ -2795,7 +2795,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (5 BLOCOS + DIVERSOS + FILTROS + SOMAS) ---
+# --- 18. TELA 16: CAIXA COMPLETO (5 BLOCOS + DIVERSOS + RETORNO + FILTROS + SOMAS) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2811,7 +2811,7 @@ def caixa_geral(request):
     mensagem = ""
 
     # ===============================
-    # FUNÇÕES
+    # FUNÇÕES AUXILIARES
     # ===============================
     def limpar_nome(nome):
         if not nome:
@@ -2911,7 +2911,7 @@ def caixa_geral(request):
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
     # ===============================
-    # EXECUTAR
+    # EXECUTAR SQL
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
@@ -2920,10 +2920,10 @@ def caixa_geral(request):
     # ===============================
     # BLOCOS E SOMAS
     # ===============================
-    total_consultas = total_exames = total_odonto = total_faturado = total_diversos = 0
+    total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
 
-    linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = ""
+    linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
 
     for m in movimentos:
         cat, pac, prof, val, forma, status, data_pg, uni, desc = m
@@ -2942,6 +2942,9 @@ def caixa_geral(request):
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
             linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        elif descricao.lower() == "retorno":  # NOVO BLOCO RETORNO
+            total_retorno += val
+            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif pac == "-":
             total_diversos += val
             linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
@@ -2957,7 +2960,7 @@ def caixa_geral(request):
         elif forma.lower() == "dinheiro":
             dinheiro_total += val
 
-    total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos
+    total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
     # ===============================
     # SELECTS
@@ -3008,6 +3011,11 @@ def caixa_geral(request):
     </div>
 
     <div class="card mb-3">
+        <div class="card-header bg-info text-white">Retorno - Total: R$ {total_retorno:.2f}</div>
+        <table class="table">{linhas_retorno or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
         <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
         <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
     </div>
@@ -3035,6 +3043,8 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
 
 
 
