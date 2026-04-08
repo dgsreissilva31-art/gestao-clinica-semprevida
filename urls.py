@@ -2801,7 +2801,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (5 BLOCOS + DIVERSOS + FILTROS) ---
+# --- 18. TELA 16: CAIXA COMPLETO (5 BLOCOS + DIVERSOS + FILTROS + SOMAS) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -2810,12 +2810,10 @@ def caixa_geral(request):
     import re
 
     hoje = datetime.date.today()
-
     unidade_id = request.GET.get('unidade') or ""
     data_ini = request.GET.get('data_ini') or ""
     data_fim = request.GET.get('data_fim') or ""
     busca = request.GET.get('busca') or ""
-
     mensagem = ""
 
     # ===============================
@@ -2849,10 +2847,8 @@ def caixa_geral(request):
 
             if not unidade:
                 raise Exception("Selecione a unidade")
-
             if valor <= 0:
                 raise Exception("Valor inválido")
-
             if tipo == "Saída":
                 valor = -abs(valor)
 
@@ -2862,13 +2858,7 @@ def caixa_geral(request):
                     (paciente_nome, profissional_nome, valor, forma_pagamento,
                      status, categoria, descricao, data_pagamento, unidade_id)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
-                """, [
-                    "-", "-", valor, tipo,
-                    "Pago",
-                    categoria or "Diversos",
-                    descricao,
-                    unidade
-                ])
+                """, ["-", "-", valor, tipo, "Pago", categoria or "Diversos", descricao, unidade])
 
             mensagem = '<div class="alert alert-success">✅ Lançamento realizado!</div>'
 
@@ -2892,7 +2882,7 @@ def caixa_geral(request):
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
     # ===============================
-    # SQL (MANTIDO)
+    # SQL PRINCIPAL
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
@@ -2900,25 +2890,19 @@ def caixa_geral(request):
         FROM caixa
         WHERE 1=1
     """
-
     params = []
-
     if data_ini_sql:
         sql += " AND data_pagamento::date >= %s"
         params.append(data_ini_sql)
-
     if data_fim_sql:
         sql += " AND data_pagamento::date <= %s"
         params.append(data_fim_sql)
-
     if not data_ini_sql and not data_fim_sql:
         sql += " AND data_pagamento::date = %s"
         params.append(hoje)
-
     if unidade_id:
         sql += " AND unidade_id = %s"
         params.append(unidade_id)
-
     if busca:
         sql += """
         AND (
@@ -2940,61 +2924,63 @@ def caixa_geral(request):
         movimentos = cursor.fetchall()
 
     # ===============================
-    # BLOCOS
+    # BLOCOS E SOMAS
     # ===============================
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = 0
+    pix_total = cartao_total = dinheiro_total = 0
 
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = ""
 
     for m in movimentos:
         cat, pac, prof, val, forma, status, data_pg, uni, desc = m
-
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = desc or "-"
 
+        # BLOCOS
         if status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
             total_consultas += val
             linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
         elif status == "Pago" and cat == "Exame":
             total_exames += val
             linhas_exames += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
             linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
         elif pac == "-":
             total_diversos += val
             linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
-
         else:
             total_faturado += val
             linhas_faturado += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>Faturado</td></tr>"
 
+        # SOMA POR FORMA DE PAGAMENTO
+        if forma.lower() == "pix":
+            pix_total += val
+        elif forma.lower() == "cartão" or forma.lower() == "cartao":
+            cartao_total += val
+        elif forma.lower() == "dinheiro":
+            dinheiro_total += val
+
+    total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos
+
     # ===============================
     # SELECTS
     # ===============================
-    opts_uni = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades_list
-    ])
-
+    opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
 
     # ===============================
-    # HTML FINAL
+    # HTML FINAL COM SOMAS
     # ===============================
     conteudo = f"""
     <div class="container-fluid">
 
     <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
-
     {mensagem}
 
-    <!-- 🔎 FILTROS (MANTIDO) -->
+    <!-- 🔎 FILTROS -->
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial"></div>
         <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final"></div>
@@ -3003,67 +2989,58 @@ def caixa_geral(request):
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
 
-    <!-- 🔥 FORM DIVERSOS (MELHORADO) -->
+    <!-- 🔥 FORM DIVERSOS -->
     <div class="card p-3 mb-3 border-dark">
         <h5>➕ Caixa Diversos</h5>
         <form method="POST" class="row g-2">
-
-            <div class="col-md-2">
-                <select name="unidade_id" class="form-select" required>
-                    <option value="">Unidade</option>
-                    {opts_uni}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <select name="tipo" class="form-select">
-                    <option>Entrada</option>
-                    <option>Saída</option>
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria">
-                <datalist id="lista_categorias">
-                    {opts_cat}
-                </datalist>
-            </div>
-
-            <div class="col-md-3">
-                <input type="text" name="descricao" class="form-control" placeholder="Descrição">
-            </div>
-
-            <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
-            </div>
-
-            <div class="col-md-1">
-                <button name="lancar_diverso" class="btn btn-dark w-100">OK</button>
-            </div>
-
+            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
+            <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
+            <div class="col-md-2"><input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria"><datalist id="lista_categorias">{opts_cat}</datalist></div>
+            <div class="col-md-3"><input type="text" name="descricao" class="form-control" placeholder="Descrição"></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
         </form>
     </div>
 
-    <!-- BLOCOS (INALTERADOS) -->
-    <div class="card mb-3"><div class="card-header bg-success text-white">Consultas</div><table class="table">{linhas_consultas}</table></div>
-    <div class="card mb-3"><div class="card-header bg-warning">Convênios</div><table class="table">{linhas_faturado}</table></div>
-    <div class="card mb-3"><div class="card-header bg-primary text-white">Exames</div><table class="table">{linhas_exames}</table></div>
-    <div class="card mb-3"><div class="card-header bg-dark text-white">Odontologia</div><table class="table">{linhas_odonto}</table></div>
+    <!-- BLOCOS -->
+    <div class="card mb-3">
+        <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
+        <table class="table">{linhas_consultas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
 
-    <div class="card">
-        <div class="card-header bg-secondary text-white">Diversos</div>
+    <div class="card mb-3">
+        <div class="card-header bg-warning">Convênios - Total: R$ {total_faturado:.2f}</div>
+        <table class="table">{linhas_faturado or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
+        <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
+        <table class="table">{linhas_odonto or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
         <table class="table">
             <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
-            {linhas_diversos or "<tr><td colspan='5' class='text-center'>Sem registros</td></tr>"}
+            {linhas_diversos or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}
         </table>
+    </div>
+
+    <!-- RODAPÉ COM TOTAL GERAL E FORMAS DE PAGAMENTO -->
+    <div class="card mt-3 p-3">
+        <h5>Total Geral: R$ {total_geral:.2f}</h5>
+        <p>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
     </div>
 
     </div>
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
