@@ -16,6 +16,17 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # Tela principal do Caixa
+    path('caixa/', views.caixa_geral, name='caixa_geral'),
+
+    # Botão Gerar Guia PDF para exames
+    path('gerar_guia_pdf/', views.gerar_guia_pdf, name='gerar_guia_pdf'),
+]
+
 
 
 
