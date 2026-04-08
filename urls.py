@@ -2673,7 +2673,7 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO (CAMPOS SIMPLIFICADOS) ---
+# --- 17. TELA 15: PRONTUÁRIO COMPLETO COM CONSULTA ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
@@ -2720,11 +2720,11 @@ def prontuario_geral(request):
                     prof_id,
                     data,
                     hora,
-                    historico,          # queixa
-                    historico,          # anamnese (mesmo conteúdo)
+                    historico,
+                    historico,
                     diagnostico,
-                    tratamento,         # procedimentos
-                    ""                  # observações vazio
+                    tratamento,
+                    ""
                 ])
 
                 cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
@@ -2735,7 +2735,7 @@ def prontuario_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
     # ===============================
-    # HISTÓRICO
+    # HISTÓRICO LATERAL
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -2760,13 +2760,22 @@ def prontuario_geral(request):
         """
 
     # ===============================
-    # HTML
+    # HTML PRINCIPAL
     # ===============================
     conteudo = f"""
         <div class="container py-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
-                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair sem salvar</a>
+                <div>
+                    <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
+                </div>
+                <div>
+                    <a href="/consultar_prontuarios/" class="btn btn-info btn-sm me-2">
+                        📋 Consultar Prontuário
+                    </a>
+                    <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">
+                        Sair sem salvar
+                    </a>
+                </div>
             </div>
 
             {mensagem}
@@ -2825,6 +2834,70 @@ def prontuario_geral(request):
     return HttpResponse(base_html("Prontuário", conteudo))
 
 
+# --- CONSULTAR PRONTUÁRIOS ---
+@csrf_exempt
+def consultar_prontuarios(request):
+    from django.db import connection
+    from django.http import HttpResponse
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT 
+                p.nome,
+                u.nome,
+                pr.data_atendimento,
+                prof.nome,
+                pr.queixa,
+                pr.diagnostico,
+                pr.procedimentos
+            FROM prontuarios pr
+            JOIN pacientes p ON pr.paciente_id = p.id
+            JOIN profissionais prof ON pr.profissional_id = prof.id
+            LEFT JOIN agendas_config ac ON prof.id = ac.profissional_id
+            LEFT JOIN unidades u ON ac.unidade_id = u.id
+            ORDER BY pr.data_atendimento DESC
+        """)
+
+        dados = cursor.fetchall()
+
+    linhas = ""
+    for d in dados:
+        data = d[2].strftime('%d/%m/%Y') if d[2] else ""
+
+        linhas += f"""
+        <tr>
+            <td>{d[0]}</td>
+            <td>{d[1] or '-'}</td>
+            <td>{data}</td>
+            <td>{d[3]}</td>
+            <td>{d[4]}</td>
+            <td>{d[5]}</td>
+            <td>{d[6]}</td>
+        </tr>
+        """
+
+    conteudo = f"""
+    <div class="container mt-4">
+        <h4 class="mb-3">📋 Consulta de Prontuários</h4>
+
+        <table class="table table-bordered table-sm">
+            <tr class="table-dark">
+                <th>Paciente</th>
+                <th>Unidade</th>
+                <th>Data</th>
+                <th>Médico</th>
+                <th>Histórico</th>
+                <th>Diagnóstico</th>
+                <th>Tratamento</th>
+            </tr>
+            {linhas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}
+        </table>
+
+        <a href="/recepcao/" class="btn btn-secondary mt-2">Voltar</a>
+    </div>
+    """
+
+    return HttpResponse(base_html("Consulta Prontuários", conteudo))
 
 
 
