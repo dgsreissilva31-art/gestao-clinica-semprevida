@@ -1,15 +1,17 @@
 import datetime, urllib.parse
 from django.urls import path
-
-
-
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
+from django.urls import path
+from . import views
 
+urlpatterns = [
+    path('caixa/', views.caixa_geral, name='caixa_geral'),
+]
 
 
 
@@ -2814,13 +2816,13 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA COMPLETO (5 BLOCOS + DIVERSOS + RETORNO + FILTROS + SOMAS) ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
     from django.http import HttpResponse
     import datetime
     import re
+    import urllib.parse
 
     hoje = datetime.date.today()
     unidade_id = request.GET.get('unidade') or ""
@@ -2884,8 +2886,6 @@ def caixa_geral(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
-
-        # 🔥 BUSCAR CATEGORIAS EXISTENTES (DIVERSOS)
         cursor.execute("""
             SELECT DISTINCT categoria 
             FROM caixa 
@@ -2929,9 +2929,6 @@ def caixa_geral(request):
 
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
-    # ===============================
-    # EXECUTAR SQL
-    # ===============================
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
@@ -2949,10 +2946,21 @@ def caixa_geral(request):
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
-        descricao = (desc or "").strip()  # remover espaços e evitar None
+        descricao = (desc or "").strip()
+
+        # BOTÃO GUIA DE EXAME
+        btn_guia = ""
+        if cat == "Exame" and pac != "-":
+            params_form = urllib.parse.urlencode({
+                "paciente": pac,
+                "exame": descricao,
+                "prestador": prof or "-",
+                "data": data_br
+            })
+            btn_guia = f'<a href="/caixa/?abrir_guia=1&{params_form}" target="_blank" class="btn btn-sm btn-primary">Abrir Guia</a>'
 
         # BLOCOS
-        if "retorno" in descricao.lower():  # qualquer descrição que contenha "retorno"
+        if "retorno" in descricao.lower():
             total_retorno += val
             linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -2960,7 +2968,7 @@ def caixa_geral(request):
             linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat == "Exame":
             total_exames += val
-            linhas_exames += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            linhas_exames += f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
             linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
@@ -2980,6 +2988,29 @@ def caixa_geral(request):
             dinheiro_total += val
 
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
+
+    # ===============================
+    # GUIA DE EXAME (ABRIR TELA)
+    # ===============================
+    if request.GET.get("abrir_guia"):
+        paciente = request.GET.get("paciente") or ""
+        exame = request.GET.get("exame") or ""
+        prestador = request.GET.get("prestador") or ""
+        data = request.GET.get("data") or ""
+        html_guia = f"""
+        <div class="container p-3">
+            <h5 class="text-primary">Guia de Exame</h5>
+            <table class="table table-bordered w-50">
+                <tr><th>Paciente</th><td>{paciente}</td></tr>
+                <tr><th>Exame</th><td>{exame}</td></tr>
+                <tr><th>Prestador</th><td>{prestador}</td></tr>
+                <tr><th>Data</th><td>{data}</td></tr>
+                <tr><th>Assinatura Clínica</th><td>_____________________</td></tr>
+                <tr><th>Assinatura Paciente</th><td>_____________________</td></tr>
+            </table>
+        </div>
+        """
+        return HttpResponse(base_html("Guia de Exame", html_guia))
 
     # ===============================
     # SELECTS
@@ -3062,8 +3093,6 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
