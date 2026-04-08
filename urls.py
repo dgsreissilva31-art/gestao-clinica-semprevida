@@ -2673,18 +2673,84 @@ def recepcao_geral(request):
 
 
 # --- 17. TELA 15: PRONTUÁRIO ---
-# --- 17. TELA 15: PRONTUÁRIO COMPLETO COM CONSULTA ---
+# --- 17. TELA 15: PRONTUÁRIO (COM CONSULTA DE PRONTUÁRIOS) ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
 
     agendamento_id = request.GET.get('id')
+    ver_prontuarios = request.GET.get('ver')
     mensagem = ""
 
+    # ===============================
+    # 🔎 TELA DE CONSULTA DE PRONTUÁRIOS
+    # ===============================
+    if ver_prontuarios:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    p.nome,
+                    pr.nome,
+                    prt.data_atendimento,
+                    prt.queixa,
+                    prt.diagnostico,
+                    prt.procedimentos
+                FROM prontuarios prt
+                JOIN pacientes p ON prt.paciente_id = p.id
+                JOIN profissionais pr ON prt.profissional_id = pr.id
+                ORDER BY prt.data_atendimento DESC
+            """)
+            dados = cursor.fetchall()
+
+        linhas = ""
+        for d in dados:
+            linhas += f"""
+            <tr>
+                <td>{d[0]}</td>
+                <td>-</td>
+                <td>{d[2].strftime('%d/%m/%Y')}</td>
+                <td>{d[1]}</td>
+                <td>{d[3]}</td>
+                <td>{d[4]}</td>
+                <td>{d[5]}</td>
+            </tr>
+            """
+
+        conteudo = f"""
+        <div class="container py-3">
+            <h4>📋 Prontuários</h4>
+
+            <a href="/recepcao/" class="btn btn-secondary mb-3">Voltar</a>
+
+            <table class="table table-bordered">
+                <tr>
+                    <th>Paciente</th>
+                    <th>Unidade</th>
+                    <th>Data</th>
+                    <th>Médico</th>
+                    <th>Histórico</th>
+                    <th>Diagnóstico</th>
+                    <th>Tratamento</th>
+                </tr>
+                {linhas or '<tr><td colspan="7">Sem registros</td></tr>'}
+            </table>
+        </div>
+        """
+        return HttpResponse(base_html("Prontuários", conteudo))
+
+    # ===============================
+    # 🔒 VALIDAÇÃO (EVITA ERRO 500)
+    # ===============================
+    if not agendamento_id:
+        return HttpResponse(base_html("Erro", "ID não informado."))
+
+    # ===============================
+    # DADOS DO ATENDIMENTO
+    # ===============================
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT p.id, p.nome, p.telefone, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
+            SELECT p.id, p.nome, c.nome, pr.id, pr.nome, ag.data_agendamento, ag.horario_selecionado
             FROM agendamentos ag
             JOIN pacientes p ON ag.paciente_id = p.id
             LEFT JOIN convenios c ON p.convenio_id = c.id
@@ -2698,11 +2764,11 @@ def prontuario_geral(request):
         if not dados:
             return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
-        pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
+        pac_id, pac_nome_bruto, conv_nome, prof_id, prof_nome, data, hora = dados
         pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
 
     # ===============================
-    # SALVAR
+    # 💾 SALVAR
     # ===============================
     if request.method == "POST":
         historico = request.POST.get('historico')
@@ -2727,15 +2793,19 @@ def prontuario_geral(request):
                     ""
                 ])
 
-                cursor.execute("UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s", [agendamento_id])
+                cursor.execute("""
+                    UPDATE agendamentos 
+                    SET status = 'Finalizado' 
+                    WHERE id = %s
+                """, [agendamento_id])
 
             return HttpResponseRedirect('/recepcao/')
 
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # HISTÓRICO LATERAL
+    # HISTÓRICO DO PACIENTE
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -2750,154 +2820,58 @@ def prontuario_geral(request):
     lista_hist = ""
     for h in historico_lista:
         lista_hist += f"""
-            <div class="card mb-2 border-start border-primary border-4 shadow-sm">
-                <div class="card-body py-2">
-                    <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
-                    <b>Histórico:</b> {h[3]}<br>
-                    <b>Diagnóstico:</b> {h[1]}
-                </div>
+        <div class="card mb-2 border-start border-primary border-4 shadow-sm">
+            <div class="card-body py-2">
+                <small class="fw-bold text-primary">{h[0].strftime('%d/%m/%Y')}</small><br>
+                <b>Histórico:</b> {h[3]}<br>
+                <b>Diagnóstico:</b> {h[1]}
             </div>
+        </div>
         """
 
     # ===============================
-    # HTML PRINCIPAL
+    # HTML FINAL
     # ===============================
     conteudo = f"""
-        <div class="container py-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div>
-                    <h4><i class="bi bi-file-earmark-medical text-primary"></i> Atendimento Profissional</h4>
-                </div>
-                <div>
-                    <a href="/consultar_prontuarios/" class="btn btn-info btn-sm me-2">
-                        📋 Consultar Prontuário
-                    </a>
-                    <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">
-                        Sair sem salvar
-                    </a>
-                </div>
-            </div>
+    <div class="container py-3">
 
-            {mensagem}
-
-            <div class="row">
-                <div class="col-md-8">
-                    <div class="card shadow-sm p-3 mb-4 border-0">
-                        <div class="row mb-3 bg-light p-3 rounded shadow-sm">
-                            <div class="col-md-6">
-                                <span class="text-muted small">Paciente:</span><br>
-                                <b class="fs-5">{pac_nome}</b>
-                            </div>
-                            <div class="col-md-6 text-end">
-                                <span class="text-muted small">Convênio:</span><br>
-                                <b>{conv_nome or 'Particular'}</b>
-                            </div>
-                        </div>
-
-                        <form method="POST">
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Histórico</label>
-                                <textarea name="historico" class="form-control" rows="5" required></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Diagnóstico</label>
-                                <textarea name="diagnostico" class="form-control" rows="2"></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="fw-bold small text-secondary">Tratamento</label>
-                                <textarea name="tratamento" class="form-control" rows="2"></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary w-100 fw-bold py-3 shadow-sm text-uppercase">
-                                <i class="bi bi-save"></i> Finalizar e Salvar Prontuário
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="card shadow-sm p-3 border-0 bg-light" style="min-height: 100%;">
-                        <h6 class="fw-bold text-dark mb-3">
-                            <i class="bi bi-clock-history"></i> Histórico de Consultas
-                        </h6>
-                        <div style="max-height: 600px; overflow-y: auto;">
-                            {lista_hist if historico_lista else '<p class="text-muted small">Primeira consulta deste paciente.</p>'}
-                        </div>
-                    </div>
-                </div>
+        <div class="d-flex justify-content-between mb-3">
+            <h4>Atendimento Profissional</h4>
+            <div>
+                <a href="?ver=1" class="btn btn-dark btn-sm">Consultar Prontuários</a>
+                <a href="/recepcao/" class="btn btn-outline-secondary btn-sm">Sair</a>
             </div>
         </div>
+
+        {mensagem}
+
+        <div class="card p-3 mb-3">
+            <b>Paciente:</b> {pac_nome}<br>
+            <b>Convênio:</b> {conv_nome or 'Particular'}
+        </div>
+
+        <form method="POST">
+            <label>Histórico</label>
+            <textarea name="historico" class="form-control mb-2" required></textarea>
+
+            <label>Diagnóstico</label>
+            <textarea name="diagnostico" class="form-control mb-2"></textarea>
+
+            <label>Tratamento</label>
+            <textarea name="tratamento" class="form-control mb-3"></textarea>
+
+            <button class="btn btn-primary w-100">Salvar</button>
+        </form>
+
+        <hr>
+
+        <h6>Histórico do Paciente</h6>
+        {lista_hist or 'Sem histórico'}
+    </div>
     """
 
     return HttpResponse(base_html("Prontuário", conteudo))
 
-
-# --- CONSULTAR PRONTUÁRIOS ---
-@csrf_exempt
-def consultar_prontuarios(request):
-    from django.db import connection
-    from django.http import HttpResponse
-
-    with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT 
-                p.nome,
-                u.nome,
-                pr.data_atendimento,
-                prof.nome,
-                pr.queixa,
-                pr.diagnostico,
-                pr.procedimentos
-            FROM prontuarios pr
-            JOIN pacientes p ON pr.paciente_id = p.id
-            JOIN profissionais prof ON pr.profissional_id = prof.id
-            LEFT JOIN agendas_config ac ON prof.id = ac.profissional_id
-            LEFT JOIN unidades u ON ac.unidade_id = u.id
-            ORDER BY pr.data_atendimento DESC
-        """)
-
-        dados = cursor.fetchall()
-
-    linhas = ""
-    for d in dados:
-        data = d[2].strftime('%d/%m/%Y') if d[2] else ""
-
-        linhas += f"""
-        <tr>
-            <td>{d[0]}</td>
-            <td>{d[1] or '-'}</td>
-            <td>{data}</td>
-            <td>{d[3]}</td>
-            <td>{d[4]}</td>
-            <td>{d[5]}</td>
-            <td>{d[6]}</td>
-        </tr>
-        """
-
-    conteudo = f"""
-    <div class="container mt-4">
-        <h4 class="mb-3">📋 Consulta de Prontuários</h4>
-
-        <table class="table table-bordered table-sm">
-            <tr class="table-dark">
-                <th>Paciente</th>
-                <th>Unidade</th>
-                <th>Data</th>
-                <th>Médico</th>
-                <th>Histórico</th>
-                <th>Diagnóstico</th>
-                <th>Tratamento</th>
-            </tr>
-            {linhas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}
-        </table>
-
-        <a href="/recepcao/" class="btn btn-secondary mt-2">Voltar</a>
-    </div>
-    """
-
-    return HttpResponse(base_html("Consulta Prontuários", conteudo))
 
 
 
