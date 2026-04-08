@@ -2411,7 +2411,7 @@ def recepcao_geral(request):
             ag_id = request.POST.get('ag_id')
             tipo = request.POST.get('tipo_pagto')
             convenio_id = request.POST.get('convenio_id')
-            retorno = request.POST.get('retorno')  # Novo campo
+            retorno = request.POST.get('retorno')  # Mantemos a marcação, mas só para descrição
 
             with connection.cursor() as cursor:
                 # Buscar informações do agendamento
@@ -2431,16 +2431,12 @@ def recepcao_geral(request):
 
                 paciente_nome, profissional_nome, unidade_id = info
 
-                convenio_nome = ""
-                if convenio_id:
-                    cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
-                    c = cursor.fetchone()
-                    if c:
-                        convenio_nome = c[0]
-
+                # Se marcou retorno, adiciona apenas na descrição
                 descricao = "Retorno" if retorno else None
 
+                # ==========================
                 # PARTICULAR
+                # ==========================
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2453,20 +2449,38 @@ def recepcao_geral(request):
                         VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, valor, forma, descricao or "Particular", unidade_id])
 
+                # ==========================
                 # CONVÊNIO
+                # ==========================
                 elif tipo == "convenio":
+                    convenio_nome = ""
+                    if convenio_id:
+                        cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
+                        c = cursor.fetchone()
+                        if c:
+                            convenio_nome = c[0]
+
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
                         VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, convenio_nome or "Convênio", unidade_id])
+                    """, [paciente_nome, profissional_nome, descricao or convenio_nome or "Convênio", unidade_id])
 
-                # CARTÃO
+                # ==========================
+                # CARTÃO DESCONTO
+                # ==========================
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
                         raise Exception("Informe o valor")
                     forma = request.POST.get('forma_pagamento') or "Pix"
+
+                    convenio_nome = ""
+                    if convenio_id:
+                        cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
+                        c = cursor.fetchone()
+                        if c:
+                            convenio_nome = c[0]
 
                     cursor.execute("""
                         INSERT INTO caixa
@@ -2477,7 +2491,7 @@ def recepcao_geral(request):
                         profissional_nome,
                         valor,
                         forma,
-                        f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto",
+                        descricao or (f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto"),
                         unidade_id
                     ])
 
@@ -2645,8 +2659,6 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
