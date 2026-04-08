@@ -10,15 +10,6 @@ from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
 
-from . import views
-
-urlpatterns = [
-    # Tela principal do Caixa
-    path('caixa/', views.caixa_geral, name='caixa_geral'),
-
-    # Botão Gerar Guia PDF para exames
-    path('gerar_guia_pdf/', views.gerar_guia_pdf, name='gerar_guia_pdf'),
-]
 
 
 
