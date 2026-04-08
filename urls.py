@@ -2880,8 +2880,7 @@ def caixa_geral(request):
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
-               forma_pagamento, status, data_pagamento, unidade_id, descricao,
-               retorno
+               forma_pagamento, status, data_pagamento, unidade_id, descricao
         FROM caixa
         WHERE 1=1
     """
@@ -2927,14 +2926,14 @@ def caixa_geral(request):
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma, status, data_pg, uni, desc, retorno_flag = m
+        cat, pac, prof, val, forma, status, data_pg, uni, desc = m
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()  # remover espaços e evitar None
 
         # BLOCOS
-        if retorno_flag or "retorno" in descricao.lower():  # ✅ Considera flag de retorno
+        if "retorno" in descricao.lower():  # qualquer descrição que contenha "retorno"
             total_retorno += val
             linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -3044,6 +3043,9 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
