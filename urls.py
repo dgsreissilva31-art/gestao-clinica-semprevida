@@ -1295,7 +1295,7 @@ def pacientes_geral(request):
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. DESBLOQUEAR
+    # 2. DESBLOQUEAR (NOVO)
     if request.GET.get('unblock_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Ativo' WHERE id = %s", [request.GET.get('unblock_pac')])
@@ -1337,7 +1337,7 @@ def pacientes_geral(request):
             cpf,
             request.POST.get('sexo'),
             request.POST.get('data_nasc') or None,
-            request.POST.get('telefone') or None,  # 🔥 agora opcional
+            request.POST.get('telefone'),
             request.POST.get('convenio_id') or None,
             request.POST.get('cep'),
             request.POST.get('rua'),
@@ -1434,14 +1434,22 @@ def pacientes_geral(request):
         linhas += f"""
         <tr>
             <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
-            <td>{p[3] or '--'}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
+            <td>{p[3]}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
             <td>{p[4] if p[4] else 'Particular'}</td>
             <td>
                 <div class="btn-group">
-                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar Paciente"><i class="bi bi-pencil"></i></a>
-                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" title="Bloquear Paciente"><i class="bi bi-slash-circle"></i></a>
-                    <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success" title="Desbloquear Paciente"><i class="bi bi-check-circle"></i></a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')" title="Excluir Paciente"><i class="bi bi-trash"></i></a>
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar Paciente">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" title="Bloquear Paciente">
+                        <i class="bi bi-slash-circle"></i>
+                    </a>
+                    <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success" title="Desbloquear Paciente">
+                        <i class="bi bi-check-circle"></i>
+                    </a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')" title="Excluir Paciente">
+                        <i class="bi bi-trash"></i>
+                    </a>
                 </div>
             </td>
         </tr>
@@ -1457,47 +1465,32 @@ def pacientes_geral(request):
 
         <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
             <input type="hidden" name="id_pac" value="{edit_id or ''}">
-
-            <div class="col-md-5">
-                <label>Nome *</label>
-                <input type="text" name="nome" class="form-control" value="{p_dados[0]}" required>
-            </div>
-
-            <div class="col-md-3">
-                <label>CPF</label>
-                <input type="text" name="cpf" class="form-control" value="{p_dados[1]}">
-            </div>
-
-            <div class="col-md-2">
-                <label>Sexo</label>
+            <div class="col-md-5"><label>Nome</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
+            <div class="col-md-3"><label>CPF</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}"></div>
+            <div class="col-md-2"><label>Sexo</label>
                 <select name="sexo" class="form-select">
                     <option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option>
                     <option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option>
                 </select>
             </div>
+            <div class="col-md-2"><label>Nascimento</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
 
-            <div class="col-md-2">
-                <label>Nascimento *</label>
-                <input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required>
-            </div>
-
-            <div class="col-md-4">
-                <label>Telefone</label>
-                <input type="text" name="telefone" class="form-control" value="{p_dados[4]}">
-            </div>
-
-            <div class="col-md-4">
-                <label>Convênio</label>
+            <div class="col-md-4"><label>Telefone</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+            <div class="col-md-4"><label>Convênio</label>
                 <select name="convenio_id" class="form-select">
                     <option value="">Particular</option>
                     {opcoes_conv}
                 </select>
             </div>
+            <div class="col-md-4"><label>CEP</label><input type="text" name="cep" class="form-control" value="{p_dados[6]}"></div>
 
-            <div class="col-md-4">
-                <label>CEP *</label>
-                <input type="text" name="cep" class="form-control" value="{p_dados[6]}" required>
-            </div>
+            <div class="col-md-5"><label>Rua</label><input type="text" name="rua" class="form-control" value="{p_dados[7]}"></div>
+            <div class="col-md-2"><label>Nº</label><input type="text" name="numero" class="form-control" value="{p_dados[8]}"></div>
+            <div class="col-md-5"><label>Bairro</label><input type="text" name="bairro" class="form-control" value="{p_dados[9]}"></div>
+
+            <div class="col-md-4"><label>Cidade</label><input type="text" name="cidade" class="form-control" value="{p_dados[10]}"></div>
+            <div class="col-md-2"><label>UF</label><input type="text" name="estado" class="form-control" value="{p_dados[11]}" maxlength="2"></div>
+            <div class="col-md-6"><label>Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
 
             <div class="col-12 mt-3">
                 <button type="submit" class="btn btn-danger w-100">
