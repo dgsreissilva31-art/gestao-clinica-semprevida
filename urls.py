@@ -1289,19 +1289,25 @@ def pacientes_geral(request):
 
     mensagem = ""
     
-    # 1. BLOQUEIO
+    # 1. BLOQUEAR
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. EXCLUSÃO
+    # 2. DESBLOQUEAR (NOVO)
+    if request.GET.get('unblock_pac'):
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE pacientes SET status = 'Ativo' WHERE id = %s", [request.GET.get('unblock_pac')])
+        return HttpResponseRedirect('/pacientes/')
+
+    # 3. EXCLUIR
     if request.GET.get('delete_pac'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 3. EDIÇÃO
+    # 4. EDITAR
     edit_id = request.GET.get('edit_pac')
     p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""]
 
@@ -1318,11 +1324,10 @@ def pacientes_geral(request):
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 4. SALVAR (CORRIGIDO)
+    # 5. SALVAR
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        # 🔥 CORREÇÃO CPF (evita erro unique_cpf com NULL)
         cpf = request.POST.get('cpf')
         if not cpf or cpf.strip() == "":
             cpf = None
@@ -1360,7 +1365,6 @@ def pacientes_geral(request):
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
-            # ✅ ALERTA + REDIRECIONAMENTO
             return HttpResponse("""
                 <html>
                     <head>
@@ -1376,7 +1380,7 @@ def pacientes_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 5. BUSCA
+    # 6. BUSCA
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1399,14 +1403,24 @@ def pacientes_geral(request):
         
         params = []
         if termo_busca:
-            sql_busca += " WHERE p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s OR p.nome ILIKE %s"
-            params = [f'%{termo_sql}%', f'%{termo_sql}%', f'%{termo_busca}%']
+            sql_busca += """
+                WHERE p.cpf LIKE %s 
+                OR CAST(p.data_nascimento AS TEXT) LIKE %s 
+                OR p.nome ILIKE %s
+                OR p.cidade ILIKE %s
+            """
+            params = [
+                f'%{termo_sql}%',
+                f'%{termo_sql}%',
+                f'%{termo_busca}%',
+                f'%{termo_busca}%'
+            ]
         
         sql_busca += " ORDER BY p.id DESC"
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 6. HTML COMPLETO ORIGINAL
+    # 7. HTML
     opcoes_conv = "".join([
         f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
         for c in convenios
@@ -1424,9 +1438,18 @@ def pacientes_geral(request):
             <td>{p[4] if p[4] else 'Particular'}</td>
             <td>
                 <div class="btn-group">
-                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
-                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning"><i class="bi bi-slash-circle"></i></a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar Paciente">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" title="Bloquear Paciente">
+                        <i class="bi bi-slash-circle"></i>
+                    </a>
+                    <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success" title="Desbloquear Paciente">
+                        <i class="bi bi-check-circle"></i>
+                    </a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')" title="Excluir Paciente">
+                        <i class="bi bi-trash"></i>
+                    </a>
                 </div>
             </td>
         </tr>
@@ -1477,7 +1500,7 @@ def pacientes_geral(request):
         </form>
 
         <form method="GET" class="mb-3">
-            <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF ou Data">
+            <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF, Data ou Cidade">
         </form>
 
         <table class="table table-hover">
@@ -1489,6 +1512,7 @@ def pacientes_geral(request):
     """
 
     return HttpResponse(base_html("Pacientes", conteudo))
+
 
 
 
