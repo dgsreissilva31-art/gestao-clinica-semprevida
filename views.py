@@ -24,30 +24,35 @@ def dashboard_clinica(request):
 
 
 
-    from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login
+from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse, HttpResponseRedirect
 
+@csrf_exempt
 def login_view(request):
     mensagem = ""
 
     if request.method == "POST":
-        user = authenticate(
-            username=request.POST.get("username"),
-            password=request.POST.get("senha")
-        )
+        username = request.POST.get("username", "").strip()
+        senha = request.POST.get("senha", "").strip()
+
+        user = authenticate(username=username, password=senha)
 
         if user:
             login(request, user)
-            return HttpResponseRedirect("/")
+            return HttpResponseRedirect("/admin-painel/")
         else:
-            mensagem = "Login inválido"
+            mensagem = '<div class="alert alert-danger">Login inválido</div>'
 
     return HttpResponse(f"""
         <h3>Login</h3>
         {mensagem}
         <form method="POST">
-            <input name="username" placeholder="Usuário"><br>
-            <input name="senha" type="password" placeholder="Senha"><br>
+            <input name="username" placeholder="Usuário"><br><br>
+            <input name="senha" type="password" placeholder="Senha"><br><br>
             <button>Entrar</button>
         </form>
     """)
-    return render(request, 'dashboard.html', context)
+
+
+
