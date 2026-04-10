@@ -1308,8 +1308,8 @@ def pacientes_geral(request):
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep,
-                       rua, numero, bairro, cidade, estado, observacoes
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, 
+                       rua, numero, bairro, cidade, estado, observacoes 
                 FROM pacientes WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
@@ -1322,7 +1322,7 @@ def pacientes_geral(request):
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        # 🔥 CORREÇÃO DO CPF (evita erro unique_cpf com NULL)
+        # 🔥 CORREÇÃO CPF (evita erro unique_cpf com NULL)
         cpf = request.POST.get('cpf')
         if not cpf or cpf.strip() == "":
             cpf = None
@@ -1347,29 +1347,29 @@ def pacientes_geral(request):
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
-                        UPDATE pacientes SET
-                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s,
-                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s,
-                            cidade=%s, estado=%s, observacoes=%s
+                        UPDATE pacientes SET 
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
+                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
+                            cidade=%s, estado=%s, observacoes=%s 
                         WHERE id=%s
                     """, campos + [id_post])
                 else:
                     cursor.execute("""
-                        INSERT INTO pacientes
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes)
+                        INSERT INTO pacientes 
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
-            # ✅ ALERTA + REDIRECIONAMENTO (SEM QUEBRAR TELA)
+            # ✅ ALERTA + REDIRECIONAMENTO
             return HttpResponse("""
                 <html>
-                <head>
-                    <script>
-                        alert("Paciente Atualizado");
-                        window.location.href = "/recepcao/";
-                    </script>
-                </head>
-                <body></body>
+                    <head>
+                        <script>
+                            alert("Paciente Atualizado");
+                            window.location.href = "/recepcao/";
+                        </script>
+                    </head>
+                    <body></body>
                 </html>
             """)
 
@@ -1390,33 +1390,33 @@ def pacientes_geral(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
-
+        
         sql_busca = """
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento
-            FROM pacientes p
-            LEFT JOIN convenios c ON p.convenio_id = c.id
+            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
+            FROM pacientes p 
+            LEFT JOIN convenios c ON p.convenio_id = c.id 
         """
-
+        
         params = []
         if termo_busca:
             sql_busca += " WHERE p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s OR p.nome ILIKE %s"
             params = [f'%{termo_sql}%', f'%{termo_sql}%', f'%{termo_busca}%']
-
+        
         sql_busca += " ORDER BY p.id DESC"
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 6. HTML COMPLETO (INALTERADO)
+    # 6. HTML COMPLETO ORIGINAL
     opcoes_conv = "".join([
         f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
         for c in convenios
     ])
-
+    
     linhas = ""
     for p in lista_pacientes:
         cor_st = "success" if p[5] == "Ativo" else "danger"
         data_br = p[7].strftime('%d/%m/%Y') if p[7] else '--'
-
+        
         linhas += f"""
         <tr>
             <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
@@ -1433,29 +1433,62 @@ def pacientes_geral(request):
         """
 
     conteudo = f"""
-        <h4>Gestão de Pacientes</h4>
-
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel</a>
+        </div>
+        
         {mensagem}
 
         <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
             <input type="hidden" name="id_pac" value="{edit_id or ''}">
-            <input type="text" name="nome" value="{p_dados[0]}" placeholder="Nome" required class="form-control mb-2">
-            <input type="text" name="cpf" value="{p_dados[1]}" placeholder="CPF" class="form-control mb-2">
-            <button type="submit" class="btn btn-danger w-100">SALVAR NOVO PACIENTE</button>
+            <div class="col-md-5"><label>Nome</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
+            <div class="col-md-3"><label>CPF</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}"></div>
+            <div class="col-md-2"><label>Sexo</label>
+                <select name="sexo" class="form-select">
+                    <option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option>
+                    <option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option>
+                </select>
+            </div>
+            <div class="col-md-2"><label>Nascimento</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
+
+            <div class="col-md-4"><label>Telefone</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+            <div class="col-md-4"><label>Convênio</label>
+                <select name="convenio_id" class="form-select">
+                    <option value="">Particular</option>
+                    {opcoes_conv}
+                </select>
+            </div>
+            <div class="col-md-4"><label>CEP</label><input type="text" name="cep" class="form-control" value="{p_dados[6]}"></div>
+
+            <div class="col-md-5"><label>Rua</label><input type="text" name="rua" class="form-control" value="{p_dados[7]}"></div>
+            <div class="col-md-2"><label>Nº</label><input type="text" name="numero" class="form-control" value="{p_dados[8]}"></div>
+            <div class="col-md-5"><label>Bairro</label><input type="text" name="bairro" class="form-control" value="{p_dados[9]}"></div>
+
+            <div class="col-md-4"><label>Cidade</label><input type="text" name="cidade" class="form-control" value="{p_dados[10]}"></div>
+            <div class="col-md-2"><label>UF</label><input type="text" name="estado" class="form-control" value="{p_dados[11]}" maxlength="2"></div>
+            <div class="col-md-6"><label>Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
+
+            <div class="col-12 mt-3">
+                <button type="submit" class="btn btn-danger w-100">
+                    {'ATUALIZAR DADOS' if edit_id else 'SALVAR NOVO PACIENTE'}
+                </button>
+            </div>
         </form>
 
         <form method="GET" class="mb-3">
-            <input type="text" name="busca" value="{termo_busca}" class="form-control" placeholder="Buscar">
+            <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF ou Data">
         </form>
 
-        <table class="table">
-            <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
-            {linhas}
+        <table class="table table-hover">
+            <thead class="table-dark">
+                <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
+            </thead>
+            <tbody>{linhas}</tbody>
         </table>
     """
 
     return HttpResponse(base_html("Pacientes", conteudo))
-
 
 
 
