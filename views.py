@@ -89,6 +89,10 @@ def logout_view(request):
     return HttpResponseRedirect("/login/")
 
 
+from django.contrib.auth.decorators import login_required
 
+@login_required
+def pacientes_geral(request):
+    ...
 
 
