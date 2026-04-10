@@ -16,5 +16,38 @@ def dashboard_clinica(request):
         'total_geral': total_geral,
         'data_atual': hoje.strftime('%d/%m/%Y')
     }
-    
+
+
+
+
+
+
+
+
+    from django.contrib.auth import authenticate, login
+
+def login_view(request):
+    mensagem = ""
+
+    if request.method == "POST":
+        user = authenticate(
+            username=request.POST.get("username"),
+            password=request.POST.get("senha")
+        )
+
+        if user:
+            login(request, user)
+            return HttpResponseRedirect("/")
+        else:
+            mensagem = "Login inválido"
+
+    return HttpResponse(f"""
+        <h3>Login</h3>
+        {mensagem}
+        <form method="POST">
+            <input name="username" placeholder="Usuário"><br>
+            <input name="senha" type="password" placeholder="Senha"><br>
+            <button>Entrar</button>
+        </form>
+    """)
     return render(request, 'dashboard.html', context)
