@@ -1284,63 +1284,79 @@ def odonto_geral(request):
 # --- 9. TELA 7: PACIENTES ---
 @csrf_exempt
 def pacientes_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse, HttpResponseRedirect
+
     mensagem = ""
     
-    # 1. LÓGICAS DE AÇÃO (BLOQUEIO E EXCLUSÃO)
+    # 1. BLOQUEIO
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
         return HttpResponseRedirect('/pacientes/')
 
+    # 2. EXCLUSÃO
     if request.GET.get('delete_pac'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. CARREGAR DADOS PARA EDIÇÃO
+    # 3. EDIÇÃO
     edit_id = request.GET.get('edit_pac')
-    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""] 
-    
+    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", ""]
+
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, 
-                       rua, numero, bairro, cidade, estado, observacoes 
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep,
+                       rua, numero, bairro, cidade, estado, observacoes
                 FROM pacientes WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
             if res:
                 p_dados = list(res)
-                if p_dados[3]: p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
+                if p_dados[3]:
+                    p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 3. SALVAR OU ATUALIZAR (POST)
+    # 4. SALVAR
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
+
+        cpf = request.POST.get('cpf') or None  # 🔥 evita erro unique_cpf com NULL
+
         campos = [
-            request.POST.get('nome'), request.POST.get('cpf'), request.POST.get('sexo'),
-            request.POST.get('data_nasc') or None, request.POST.get('telefone'), 
-            request.POST.get('convenio_id') or None, request.POST.get('cep'), 
-            request.POST.get('rua'), request.POST.get('numero'), request.POST.get('bairro'), 
-            request.POST.get('cidade'), request.POST.get('estado'), request.POST.get('observacoes')
+            request.POST.get('nome'),
+            cpf,
+            request.POST.get('sexo'),
+            request.POST.get('data_nasc') or None,
+            request.POST.get('telefone'),
+            request.POST.get('convenio_id') or None,
+            request.POST.get('cep'),
+            request.POST.get('rua'),
+            request.POST.get('numero'),
+            request.POST.get('bairro'),
+            request.POST.get('cidade'),
+            request.POST.get('estado'),
+            request.POST.get('observacoes')
         ]
-        
+
         try:
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
-                        UPDATE pacientes SET 
-                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
-                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                            cidade=%s, estado=%s, observacoes=%s WHERE id=%s
+                        UPDATE pacientes SET
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s,
+                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s,
+                            cidade=%s, estado=%s, observacoes=%s
+                        WHERE id=%s
                     """, campos + [id_post])
                 else:
                     cursor.execute("""
-                        INSERT INTO pacientes 
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
+                        INSERT INTO pacientes
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
-            # ✅ NOVO COMPORTAMENTO
             return HttpResponse("""
                 <script>
                     alert("Paciente Atualizado");
@@ -1351,7 +1367,7 @@ def pacientes_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 4. LÓGICA DE PESQUISA
+    # 5. BUSCA
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1365,30 +1381,33 @@ def pacientes_geral(request):
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
-        
+
         sql_busca = """
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
-            FROM pacientes p 
-            LEFT JOIN convenios c ON p.convenio_id = c.id 
+            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento
+            FROM pacientes p
+            LEFT JOIN convenios c ON p.convenio_id = c.id
         """
-        
+
         params = []
         if termo_busca:
             sql_busca += " WHERE p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s OR p.nome ILIKE %s"
             params = [f'%{termo_sql}%', f'%{termo_sql}%', f'%{termo_busca}%']
-        
+
         sql_busca += " ORDER BY p.id DESC"
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # RESTANTE INALTERADO
-    opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
-    
+    # 6. HTML ORIGINAL RESTAURADO
+    opcoes_conv = "".join([
+        f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
+        for c in convenios
+    ])
+
     linhas = ""
     for p in lista_pacientes:
         cor_st = "success" if p[5] == "Ativo" else "danger"
         data_br = p[7].strftime('%d/%m/%Y') if p[7] else '--'
-        
+
         linhas += f"""
         <tr>
             <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
@@ -1398,16 +1417,31 @@ def pacientes_geral(request):
                 <div class="btn-group">
                     <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
                     <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning"><i class="bi bi-slash-circle"></i></a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
                 </div>
             </td>
-        </tr>"""
+        </tr>
+        """
 
-    conteudo = f""" ... (restante do HTML permanece exatamente igual) ... """
+    conteudo = f"""
+    <h4>Gestão de Pacientes</h4>
+
+    {mensagem}
+
+    <form method="POST">
+        <input type="hidden" name="id_pac" value="{edit_id or ''}">
+        <input type="text" name="nome" value="{p_dados[0]}" placeholder="Nome" required>
+        <input type="text" name="cpf" value="{p_dados[1]}" placeholder="CPF">
+        <button type="submit">Salvar</button>
+    </form>
+
+    <table class="table">
+        <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
+        {linhas}
+    </table>
+    """
 
     return HttpResponse(base_html("Pacientes", conteudo))
-
-
 
 
 
