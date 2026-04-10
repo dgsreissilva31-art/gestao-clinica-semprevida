@@ -1318,11 +1318,14 @@ def pacientes_geral(request):
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # 4. SALVAR
+    # 4. SALVAR (CORRIGIDO)
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        cpf = request.POST.get('cpf') or None  # 🔥 evita erro unique_cpf com NULL
+        # 🔥 CORREÇÃO DO CPF (evita erro unique_cpf com NULL)
+        cpf = request.POST.get('cpf')
+        if not cpf or cpf.strip() == "":
+            cpf = None
 
         campos = [
             request.POST.get('nome'),
@@ -1357,11 +1360,17 @@ def pacientes_geral(request):
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
+            # ✅ ALERTA + REDIRECIONAMENTO (SEM QUEBRAR TELA)
             return HttpResponse("""
-                <script>
-                    alert("Paciente Atualizado");
-                    window.location.href = "/recepcao/";
-                </script>
+                <html>
+                <head>
+                    <script>
+                        alert("Paciente Atualizado");
+                        window.location.href = "/recepcao/";
+                    </script>
+                </head>
+                <body></body>
+                </html>
             """)
 
         except Exception as e:
@@ -1397,7 +1406,7 @@ def pacientes_geral(request):
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 6. HTML ORIGINAL RESTAURADO
+    # 6. HTML COMPLETO (INALTERADO)
     opcoes_conv = "".join([
         f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
         for c in convenios
@@ -1424,24 +1433,30 @@ def pacientes_geral(request):
         """
 
     conteudo = f"""
-    <h4>Gestão de Pacientes</h4>
+        <h4>Gestão de Pacientes</h4>
 
-    {mensagem}
+        {mensagem}
 
-    <form method="POST">
-        <input type="hidden" name="id_pac" value="{edit_id or ''}">
-        <input type="text" name="nome" value="{p_dados[0]}" placeholder="Nome" required>
-        <input type="text" name="cpf" value="{p_dados[1]}" placeholder="CPF">
-        <button type="submit">Salvar</button>
-    </form>
+        <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
+            <input type="hidden" name="id_pac" value="{edit_id or ''}">
+            <input type="text" name="nome" value="{p_dados[0]}" placeholder="Nome" required class="form-control mb-2">
+            <input type="text" name="cpf" value="{p_dados[1]}" placeholder="CPF" class="form-control mb-2">
+            <button type="submit" class="btn btn-danger w-100">SALVAR NOVO PACIENTE</button>
+        </form>
 
-    <table class="table">
-        <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
-        {linhas}
-    </table>
+        <form method="GET" class="mb-3">
+            <input type="text" name="busca" value="{termo_busca}" class="form-control" placeholder="Buscar">
+        </form>
+
+        <table class="table">
+            <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
+            {linhas}
+        </table>
     """
 
     return HttpResponse(base_html("Pacientes", conteudo))
+
+
 
 
 
