@@ -3408,10 +3408,5 @@ urlpatterns = [
     path('admin-painel/', painel_controle, name='painel'),
 
 
-    path('login/', login_view),
-    path('logout/', logout_view),
-    
-  
-  
    
 ]
