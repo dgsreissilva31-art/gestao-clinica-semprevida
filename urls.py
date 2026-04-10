@@ -1328,67 +1328,59 @@ def pacientes_geral(request):
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
 
-        nome = request.POST.get('nome')
-        data_nasc = request.POST.get('data_nasc')
-        cep = request.POST.get('cep')
+        cpf = request.POST.get('cpf')
+        if not cpf or cpf.strip() == "":
+            cpf = None
 
-        # ✅ VALIDAÇÃO OBRIGATÓRIA REAL
-        if not nome or not data_nasc or not cep:
-            mensagem = '<div class="alert alert-warning">⚠️ Nome, Data de Nascimento e CEP são obrigatórios</div>'
-        else:
-            cpf = request.POST.get('cpf')
-            if not cpf or cpf.strip() == "":
-                cpf = None
+        campos = [
+            request.POST.get('nome'),
+            cpf,
+            request.POST.get('sexo'),
+            request.POST.get('data_nasc') or None,
+            request.POST.get('telefone') or None,  # 🔥 agora opcional
+            request.POST.get('convenio_id') or None,
+            request.POST.get('cep'),
+            request.POST.get('rua'),
+            request.POST.get('numero'),
+            request.POST.get('bairro'),
+            request.POST.get('cidade'),
+            request.POST.get('estado'),
+            request.POST.get('observacoes')
+        ]
 
-            campos = [
-                nome,
-                cpf,
-                request.POST.get('sexo'),
-                data_nasc,
-                request.POST.get('telefone') or None,
-                request.POST.get('convenio_id') or None,
-                cep,
-                request.POST.get('rua') or None,
-                request.POST.get('numero') or None,
-                request.POST.get('bairro') or None,
-                request.POST.get('cidade') or None,
-                request.POST.get('estado') or None,
-                request.POST.get('observacoes') or None
-            ]
+        try:
+            with connection.cursor() as cursor:
+                if id_post:
+                    cursor.execute("""
+                        UPDATE pacientes SET 
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
+                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
+                            cidade=%s, estado=%s, observacoes=%s 
+                        WHERE id=%s
+                    """, campos + [id_post])
+                else:
+                    cursor.execute("""
+                        INSERT INTO pacientes 
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, campos)
 
-            try:
-                with connection.cursor() as cursor:
-                    if id_post:
-                        cursor.execute("""
-                            UPDATE pacientes SET 
-                                nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
-                                convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                                cidade=%s, estado=%s, observacoes=%s 
-                            WHERE id=%s
-                        """, campos + [id_post])
-                    else:
-                        cursor.execute("""
-                            INSERT INTO pacientes 
-                            (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, campos)
+            return HttpResponse("""
+                <html>
+                    <head>
+                        <script>
+                            alert("Paciente Atualizado");
+                            window.location.href = "/recepcao/";
+                        </script>
+                    </head>
+                    <body></body>
+                </html>
+            """)
 
-                return HttpResponse("""
-                    <html>
-                        <head>
-                            <script>
-                                alert("Paciente Atualizado");
-                                window.location.href = "/recepcao/";
-                            </script>
-                        </head>
-                        <body></body>
-                    </html>
-                """)
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-            except Exception as e:
-                mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
-
-    # 6. BUSCA (INALTERADO)
+    # 6. BUSCA
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1428,7 +1420,7 @@ def pacientes_geral(request):
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 7. HTML (APENAS REQUIRED AJUSTADO)
+    # 7. HTML
     opcoes_conv = "".join([
         f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
         for c in convenios
@@ -1442,7 +1434,7 @@ def pacientes_geral(request):
         linhas += f"""
         <tr>
             <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
-            <td>{p[3]}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
+            <td>{p[3] or '--'}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
             <td>{p[4] if p[4] else 'Particular'}</td>
             <td>
                 <div class="btn-group">
@@ -1456,35 +1448,78 @@ def pacientes_geral(request):
         """
 
     conteudo = f"""
-        <h4>Gestão de Pacientes</h4>
-
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
+            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel</a>
+        </div>
+        
         {mensagem}
 
-        <form method="POST">
+        <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
             <input type="hidden" name="id_pac" value="{edit_id or ''}">
-            
-            <input type="text" name="nome" value="{p_dados[0]}" placeholder="Nome *" required>
-            <input type="date" name="data_nasc" value="{p_dados[3]}" required>
-            <input type="text" name="cep" value="{p_dados[6]}" placeholder="CEP *" required>
 
-            <input type="text" name="cpf" value="{p_dados[1]}" placeholder="CPF">
-            <input type="text" name="telefone" value="{p_dados[4]}" placeholder="Telefone">
-            
-            <button type="submit">Salvar</button>
+            <div class="col-md-5">
+                <label>Nome *</label>
+                <input type="text" name="nome" class="form-control" value="{p_dados[0]}" required>
+            </div>
+
+            <div class="col-md-3">
+                <label>CPF</label>
+                <input type="text" name="cpf" class="form-control" value="{p_dados[1]}">
+            </div>
+
+            <div class="col-md-2">
+                <label>Sexo</label>
+                <select name="sexo" class="form-select">
+                    <option value="Masculino" {"selected" if p_dados[2]=="Masculino" else ""}>M</option>
+                    <option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label>Nascimento *</label>
+                <input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required>
+            </div>
+
+            <div class="col-md-4">
+                <label>Telefone</label>
+                <input type="text" name="telefone" class="form-control" value="{p_dados[4]}">
+            </div>
+
+            <div class="col-md-4">
+                <label>Convênio</label>
+                <select name="convenio_id" class="form-select">
+                    <option value="">Particular</option>
+                    {opcoes_conv}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label>CEP *</label>
+                <input type="text" name="cep" class="form-control" value="{p_dados[6]}" required>
+            </div>
+
+            <div class="col-12 mt-3">
+                <button type="submit" class="btn btn-danger w-100">
+                    {'ATUALIZAR DADOS' if edit_id else 'SALVAR NOVO PACIENTE'}
+                </button>
+            </div>
         </form>
 
-        <hr>
-
-        <form method="GET">
-            <input type="text" name="busca" value="{termo_busca}" placeholder="Buscar">
+        <form method="GET" class="mb-3">
+            <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF, Data ou Cidade">
         </form>
 
-        <table>
-            {linhas}
+        <table class="table table-hover">
+            <thead class="table-dark">
+                <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
+            </thead>
+            <tbody>{linhas}</tbody>
         </table>
     """
 
     return HttpResponse(base_html("Pacientes", conteudo))
+
 
 
 
