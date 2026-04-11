@@ -1557,23 +1557,17 @@ def pacientes_geral(request):
 
 
 # --- 10. TELA 8: ACESSOS ---
-# --- 10. TELA 8: ACESSOS (CORRIGIDA) ---
-@login_required
+# --- 10. TELA 8: ACESSOS ---
 @csrf_exempt
 def acesso_geral(request):
-    User = get_user_model()
+    from django.db import connection
+    from django.http import HttpResponse
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()  # 🔥 CORREÇÃO PRINCIPAL
+
     mensagem = ""
-    funcionarios = []
-
-    # 1. TENTA BUSCAR FUNCIONÁRIOS (Se a tabela não existir, não dá erro 500)
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
-            funcionarios = cursor.fetchall()
-    except Exception as e:
-        mensagem = f'<div class="alert alert-warning">⚠️ Aviso: Tabela "perfis_usuario" não encontrada no banco.</div>'
-
-    # 2. PROCESSA CADASTRO
+    
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
@@ -1582,44 +1576,106 @@ def acesso_geral(request):
         cpf = request.POST.get('cpf')
 
         try:
-            if not User.objects.filter(username=username).exists():
-                # Cria usuário no Django Auth (Tabela auth_user)
-                novo_user = User.objects.create_user(username=username, password=senha)
-                
-                # Tenta salvar na sua tabela customizada
-                try:
+            # 🔥 VERIFICA SE TABELA DE USUÁRIOS EXISTE
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'auth_user'
+                    )
+                """)
+                tabela_existe = cursor.fetchone()[0]
+
+            if not tabela_existe:
+                mensagem = '<div class="alert alert-danger">❌ Tabela de usuários não existe. Execute as migrations do Django (python manage.py migrate).</div>'
+            else:
+                # 1. CRIA USUÁRIO
+                if not User.objects.filter(username=username).exists():
+                    user = User.objects.create_user(username=username, password=senha)
+                    
+                    # 2. SALVA PERFIL
                     with connection.cursor() as cursor:
                         cursor.execute(
                             "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
-                            [novo_user.id, nome, cargo, cpf]
+                            [user.id, nome, cargo, cpf]
                         )
-                    mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado!</div>'
-                except:
-                    mensagem = f'<div class="alert alert-info">✅ Usuário criado no login, mas a tabela de perfis ainda não existe.</div>'
-            else:
-                mensagem = '<div class="alert alert-danger">❌ Este login já existe!</div>'
+
+                    mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado com sucesso!</div>'
+                else:
+                    mensagem = '<div class="alert alert-danger">❌ Este login já existe!</div>'
+
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro no sistema de usuários: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # 3. MONTA HTML
-    linhas = "".join([f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>" for f in funcionarios])
-    
+    # LISTA FUNCIONÁRIOS
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
+        funcionarios = cursor.fetchall()
+
+    linhas = "".join([
+        f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>"
+        for f in funcionarios
+    ])
+
     conteudo = f"""
-        <h4><i class="bi bi-shield-lock"></i> Controle de Acesso</h4><hr>
+        <h4><i class="bi bi-shield-lock"></i> Controle de Acesso e Funcionários</h4><hr>
         {mensagem}
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-6"><label class="fw-bold">Nome</label><input type="text" name="nome" class="form-control" required></div>
-            <div class="col-md-3"><label class="fw-bold">Cargo</label><select name="cargo" class="form-select"><option value="Recepção">Recepção</option><option value="Médico">Médico</option></select></div>
-            <div class="col-md-3"><label class="fw-bold">CPF</label><input type="text" name="cpf" class="form-control"></div>
-            <div class="col-md-6"><label class="fw-bold">Login</label><input type="text" name="username" class="form-control" required></div>
-            <div class="col-md-6"><label class="fw-bold">Senha</label><input type="password" name="senha" class="form-control" required></div>
-            <div class="col-12"><button type="submit" class="btn btn-dark w-100 fw-bold">CRIAR ACESSO</button></div>
-        </form>
-        <div class="table-responsive"><table class="table table-hover"><thead class="table-dark"><tr><th>Nome</th><th>Cargo</th><th>CPF</th></tr></thead><tbody>{linhas if funcionarios else '<tr><td colspan="3" class="text-center">Nenhum funcionário listado.</td></tr>'}</tbody></table></div>
-        <a href="/admin-painel/" class="btn btn-outline-secondary mt-3">Voltar</a>
-    """
-    return HttpResponse(base_html("Acessos", conteudo))
 
+        <form method="POST" class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Nome do Funcionário</label>
+                <input type="text" name="nome" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Cargo</label>
+                <select name="cargo" class="form-select">
+                    <option value="Recepção">Recepção</option>
+                    <option value="Médico">Médico</option>
+                    <option value="Dentista">Dentista</option>
+                    <option value="Administrador">Administrador</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-bold">CPF</label>
+                <input type="text" name="cpf" class="form-control" placeholder="000.000.000-00">
+            </div>
+            
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Login (Usuário)</label>
+                <input type="text" name="username" class="form-control" placeholder="Ex: douglas.silva" required>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Senha de Acesso</label>
+                <input type="password" name="senha" class="form-control" required>
+            </div>
+            
+            <div class="col-12">
+                <button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm">
+                    CRIAR ACESSO AO SISTEMA
+                </button>
+            </div>
+        </form>
+
+        <hr>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr><th>Nome</th><th>Cargo</th><th>CPF</th></tr>
+                </thead>
+                <tbody>
+                    {linhas if funcionarios else '<tr><td colspan="3" class="text-center">Nenhum funcionário cadastrado.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+
+        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
+    """
+
+    return HttpResponse(base_html("Acessos", conteudo))
 
 
 
