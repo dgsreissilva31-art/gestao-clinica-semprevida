@@ -189,9 +189,6 @@ def painel_controle(request):
 
 
 
-from django.http import HttpResponse, HttpResponseRedirect
-from django.db import connection
-from django.contrib.auth.decorators import login_required
 
 # 🔒 DECORATOR CORRIGIDO
 def cargo_required(cargo_necessario):
