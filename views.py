@@ -186,8 +186,8 @@ def painel_controle(request):
     """
     return HttpResponse(base_html("Dashboard", conteudo))
 
-@login_required
 @cargo_required('Administrador')
+@login_required
 def cadastro_unidade(request):
     mensagem = ""
     edit_id = request.GET.get('edit')
