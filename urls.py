@@ -3412,56 +3412,26 @@ def caixa_geral(request):
 
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
-
 urlpatterns = [
-    # ========================
-    # 🔐 AUTENTICAÇÃO
-    # ========================
-    # Definimos o login como a porta de entrada principal
-    path('login/', login_view, name='login'),
-    path('logout/', logout_view, name='logout'),
-
-    # ========================
-    # 🏠 PAINEL PRINCIPAL
-    # ========================
-    path('', painel_controle, name='home'),
-    path('admin-painel/', painel_controle, name='painel'),
-
-    # ========================
-    # 🏥 GESTÃO OPERACIONAL
-    # ========================
-    path('recepcao/', recepcao_geral, name='recepcao'),
-    path('prontuario/', prontuario_geral, name='prontuario'),
-    path('caixa/', caixa_geral, name='caixa'),
-    
-    # ========================
-    # 📅 AGENDAMENTOS
-    # ========================
-    path('agendar/', agendar_consulta, name='agendar'),
-    path('agenda-diaria/', agenda_diaria, name='agenda_diaria'),
-    path('agendas-config/', agendas_config_geral, name='agendas_config'),
-
-    # ========================
-    # 👤 CADASTROS BÁSICOS
-    # ========================
-    path('pacientes/', pacientes_geral, name='pacientes'),
-    path('profissionais/', profissionais_geral, name='profissionais'),
-    path('unidades/', cadastro_unidade, name='unidades'),
-    path('unidades/lista/', lista_unidades, name='lista_unidades'),
-    path('especialidades/', especialidades_geral, name='especialidades'),
-    path('convenios/', convenios_geral, name='convenios'),
-
-    # ========================
-    # 📋 SERVIÇOS E TABELAS
-    # ========================
-    path('exames/', exames_geral, name='exames'),
-    path('odontologia/', odonto_geral, name='odontologia'),
-    path('precos/', precos_geral, name='precos'),
-    path('precos-exames/', precos_exames_geral, name='precos_exames'),
-
-    # ========================
-    # 🛡️ SEGURANÇA E USUÁRIOS
-    # ========================
-    path('acessos/', acesso_geral, name='acessos'),
+    path('login/', views.login_view, name='login'),
+    path('logout/', views.logout_view, name='logout'),
+    path('', views.painel_controle, name='home'),
+    path('admin-painel/', views.painel_controle, name='painel'),
+    path('recepcao/', views.recepcao_geral, name='recepcao'),
+    path('prontuario/', views.prontuario_geral, name='prontuario'),
+    path('caixa/', views.caixa_geral, name='caixa'),
+    path('agendar/', views.agendar_consulta, name='agendar'),
+    path('agenda-diaria/', views.agenda_diaria, name='agenda_diaria'),
+    path('agendas-config/', views.agendas_config_geral, name='agendas_config'),
+    path('pacientes/', views.pacientes_geral, name='pacientes'),
+    path('profissionais/', views.profissionais_geral, name='profissionais'),
+    path('unidades/', views.cadastro_unidade, name='unidades'),
+    path('unidades/lista/', views.lista_unidades, name='lista_unidades'),
+    path('especialidades/', views.especialidades_geral, name='especialidades'),
+    path('convenios/', views.convenios_geral, name='convenios'),
+    path('exames/', views.exames_geral, name='exames'),
+    path('odontologia/', views.odonto_geral, name='odontologia'),
+    path('precos/', views.precos_geral, name='precos'),
+    path('precos-exames/', views.precos_exames_geral, name='precos_exames'),
+    path('acessos/', views.acesso_geral, name='acessos'),
 ]
-
