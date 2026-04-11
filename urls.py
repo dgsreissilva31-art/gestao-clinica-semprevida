@@ -3404,9 +3404,7 @@ urlpatterns = [
     path('prontuario/', prontuario_geral),
     path('caixa/', caixa_geral),
     path('admin-painel/', painel_controle, name='painel'),
-    path('login/', views.login_view, name='login'),
-​    path('logout/', views.logout_view, name='logout'),
-
+   
 
    
 ]
