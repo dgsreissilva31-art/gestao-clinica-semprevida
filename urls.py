@@ -3388,29 +3388,26 @@ def caixa_geral(request):
 
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
-from django.urls import path
-from . import views  # Isso importa o seu arquivo views.py inteiro
-
 urlpatterns = [
     # 🔐 AUTENTICAÇÃO
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
 
-    # 🏠 PAINEL PRINCIPAL
+    # 🏠 PAINEL
     path('', views.painel_controle, name='home'),
     path('admin-painel/', views.painel_controle, name='painel'),
 
-    # 🏥 GESTÃO OPERACIONAL
+    # 🏥 OPERACIONAL
     path('recepcao/', views.recepcao_geral, name='recepcao'),
     path('prontuario/', views.prontuario_geral, name='prontuario'),
     path('caixa/', views.caixa_geral, name='caixa'),
     
-    # 📅 AGENDAMENTOS
+    # 📅 AGENDAS
     path('agendar/', views.agendar_consulta, name='agendar'),
     path('agenda-diaria/', views.agenda_diaria, name='agenda_diaria'),
     path('agendas-config/', views.agendas_config_geral, name='agendas_config'),
 
-    # 👤 CADASTROS BÁSICOS
+    # 👤 CADASTROS
     path('pacientes/', views.pacientes_geral, name='pacientes'),
     path('profissionais/', views.profissionais_geral, name='profissionais'),
     path('unidades/', views.cadastro_unidade, name='unidades'),
@@ -3418,12 +3415,12 @@ urlpatterns = [
     path('especialidades/', views.especialidades_geral, name='especialidades'),
     path('convenios/', views.convenios_geral, name='convenios'),
 
-    # 📋 SERVIÇOS E TABELAS
+    # 📋 PREÇOS E SERVIÇOS
     path('exames/', views.exames_geral, name='exames'),
     path('odontologia/', views.odonto_geral, name='odontologia'),
     path('precos/', views.precos_geral, name='precos'),
     path('precos-exames/', views.precos_exames_geral, name='precos_exames'),
 
-    # 🛡️ SEGURANÇA E USUÁRIOS
+    # 🛡️ ACESSOS
     path('acessos/', views.acesso_geral, name='acessos'),
 ]
