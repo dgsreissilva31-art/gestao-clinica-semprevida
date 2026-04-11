@@ -1521,15 +1521,96 @@ def pacientes_geral(request):
 
 
 # --- 10. TELA 8: ACESSOS ---
-CREATE TABLE django_session (
-    session_key varchar(40) NOT NULL PRIMARY KEY,
-    session_data text NOT NULL,
-    expire_date timestamp with time zone NOT NULL
-);
+# --- 10. TELA 8: ACESSOS ---
+from django.contrib.auth.decorators import login_required
 
-CREATE INDEX django_session_expire_date_a5c62663 ON django_session (expire_date);
+@login_required
+def acesso_geral(request):
+    from django.db import connection
+    from django.http import HttpResponse
+    from django.contrib.auth import get_user_model
 
+    User = get_user_model()
 
+    mensagem = ""
+    
+    if request.method == "POST":
+        nome = request.POST.get('nome')
+        username = request.POST.get('username')
+        senha = request.POST.get('senha')
+        cargo = request.POST.get('cargo')
+        cpf = request.POST.get('cpf')
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'auth_user'
+                    )
+                """)
+                tabela_existe = cursor.fetchone()[0]
+
+            if not tabela_existe:
+                mensagem = '<div class="alert alert-danger">❌ Execute migrate.</div>'
+            else:
+                if not User.objects.filter(username=username).exists():
+                    user = User.objects.create_user(username=username, password=senha)
+                    
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
+                            [user.id, nome, cargo, cpf]
+                        )
+
+                    mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado!</div>'
+                else:
+                    mensagem = '<div class="alert alert-danger">❌ Login já existe</div>'
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
+
+    # LISTA
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
+        funcionarios = cursor.fetchall()
+
+    linhas = "".join([
+        f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>"
+        for f in funcionarios
+    ])
+
+    conteudo = f"""
+        <h4>Controle de Acesso</h4><hr>
+        {mensagem}
+
+        <form method="POST">
+            <input type="hidden" name="csrfmiddlewaretoken" value="{request.META.get('CSRF_COOKIE', '')}">
+
+            <input name="nome" placeholder="Nome" class="form-control mb-2" required>
+            <input name="username" placeholder="Usuário" class="form-control mb-2" required>
+            <input name="senha" type="password" placeholder="Senha" class="form-control mb-2" required>
+
+            <select name="cargo" class="form-control mb-2">
+                <option>Recepção</option>
+                <option>Médico</option>
+                <option>Dentista</option>
+                <option>Administrador</option>
+            </select>
+
+            <input name="cpf" placeholder="CPF" class="form-control mb-2">
+
+            <button class="btn btn-dark w-100">Criar</button>
+        </form>
+
+        <hr>
+
+        <table class="table">
+            {linhas}
+        </table>
+    """
+
+    return HttpResponse(base_html("Acessos", conteudo))
 
 
 
