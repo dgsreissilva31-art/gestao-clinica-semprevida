@@ -6,6 +6,12 @@ from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+from django.contrib.auth.models import User
+from django.shortcuts import render, HttpResponse, HttpResponseRedirect
+
+
+
+
 # --- 1. TEMPLATE BASE ---
 
 def base_html(titulo, conteudo):
