@@ -10,8 +10,6 @@ from django.shortcuts import render
 
 
 
-
-
 # --- 1. TEMPLATE BASE ---
 
 def base_html(titulo, conteudo):
