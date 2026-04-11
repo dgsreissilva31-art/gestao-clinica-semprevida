@@ -195,11 +195,14 @@ def painel_controle(request):
 
 
 
-# 🔒 DECORATOR CORRIGIDO
+from functools import wraps
+from django.http import HttpResponse
+from django.db import connection
+
 def cargo_required(cargo_necessario):
     def decorator(view_func):
 
-        @wraps(view_func)  # ✅ CORREÇÃO ESSENCIAL
+        @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
 
             if not request.user.is_authenticated:
@@ -227,74 +230,6 @@ def cargo_required(cargo_necessario):
 
         return _wrapped_view
     return decorator
-
-
-# --- CADASTRO DE UNIDADES (INALTERADO + PROTEÇÃO REAL) ---
-
-@login_required  # ✅ PRIMEIRO
-@cargo_required('Administrador')  # ✅ SEGUNDO
-def cadastro_unidade(request):
-    mensagem = ""
-    edit_id = request.GET.get('edit')
-    unidade_data = [None, "", "", ""] 
-
-    if edit_id:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s",
-                [edit_id]
-            )
-            unidade_data = cursor.fetchone() or unidade_data
-
-    if request.method == "POST":
-        id_post = request.POST.get('id_unidade')
-        nome = request.POST.get('nome')
-        end = request.POST.get('endereco')
-        tel = request.POST.get('telefone')
-
-        with connection.cursor() as cursor:
-            if id_post:
-                cursor.execute(
-                    "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
-                    [nome, end, tel, id_post]
-                )
-            else:
-                cursor.execute(
-                    "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)",
-                    [nome, end, tel]
-                )
-
-        return HttpResponseRedirect('/unidades/lista/')
-
-    conteudo = f"""
-        <h4>Unidade</h4>
-        <form method='POST' class='row g-3'>
-            <input type='hidden' name='id_unidade' value='{unidade_data[0] or ''}'>
-
-            <div class='col-md-6'>
-                <label>Nome</label>
-                <input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required>
-            </div>
-
-            <div class='col-md-6'>
-                <label>Endereço</label>
-                <input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'>
-            </div>
-
-            <div class='col-md-6'>
-                <label>Telefone</label>
-                <input type='text' name='telefone' class='form-control' value='{unidade_data[3]}'>
-            </div>
-
-            <div class='col-12'>
-                <button type='submit' class='btn btn-primary'>Salvar</button>
-            </div>
-        </form>
-    """
-
-    return HttpResponse(base_html("Unidades", conteudo))
-
-
 
 
 
