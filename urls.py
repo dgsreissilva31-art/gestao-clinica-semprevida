@@ -1,10 +1,39 @@
-import datetime, urllib.parse
+import datetime, urllib.parse, re
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.models import User
-from django.shortcuts import render, HttpResponse, HttpResponseRedirect
+from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+
+# Importação das suas views (Certifique-se que este arquivo de rotas está na mesma pasta que views.py)
+from .views import (
+    login_view,
+    logout_view,
+    painel_controle,
+    cadastro_unidade,
+    lista_unidades,
+    especialidades_geral,
+    profissionais_geral,
+    convenios_geral,
+    exames_geral,
+    odonto_geral,
+    pacientes_geral,
+    acesso_geral,
+    precos_geral,
+    precos_exames_geral,
+    agendas_config_geral,
+    agenda_diaria,
+    agendar_consulta,
+    recepcao_geral,
+    prontuario_geral,
+    caixa_geral
+)
+
+
+
+
 
 
 
@@ -3382,28 +3411,57 @@ def caixa_geral(request):
 
 
 
-# ---6. ROTAS ----
+# --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
+
 urlpatterns = [
-    path('', painel_controle),              # Painel Geral
-    path('unidades/', cadastro_unidade),    # Cadastro Unidades
-    path('unidades/lista/', lista_unidades), # Lista Unidades
-    path('especialidades/', especialidades_geral), # Especialidades
-    path('profissionais/', profissionais_geral),   # Médicos/Dentistas
-    path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
-    path('exames/', exames_geral),
-    path('odontologia/', odonto_geral),
-    path('pacientes/', pacientes_geral),
-    path('acessos/', acesso_geral),
-    path('precos/', precos_geral),
-    path('precos-exames/', precos_exames_geral),
-    path('agendas-config/', agendas_config_geral),
-    path('agenda-diaria/', agenda_diaria),
-    path('agendar/', agendar_consulta),
-    path('recepcao/', recepcao_geral),
-    path('prontuario/', prontuario_geral),
-    path('caixa/', caixa_geral),
+    # ========================
+    # 🔐 AUTENTICAÇÃO
+    # ========================
+    # Definimos o login como a porta de entrada principal
+    path('login/', login_view, name='login'),
+    path('logout/', logout_view, name='logout'),
+
+    # ========================
+    # 🏠 PAINEL PRINCIPAL
+    # ========================
+    path('', painel_controle, name='home'),
     path('admin-painel/', painel_controle, name='painel'),
 
+    # ========================
+    # 🏥 GESTÃO OPERACIONAL
+    # ========================
+    path('recepcao/', recepcao_geral, name='recepcao'),
+    path('prontuario/', prontuario_geral, name='prontuario'),
+    path('caixa/', caixa_geral, name='caixa'),
+    
+    # ========================
+    # 📅 AGENDAMENTOS
+    # ========================
+    path('agendar/', agendar_consulta, name='agendar'),
+    path('agenda-diaria/', agenda_diaria, name='agenda_diaria'),
+    path('agendas-config/', agendas_config_geral, name='agendas_config'),
 
-   
+    # ========================
+    # 👤 CADASTROS BÁSICOS
+    # ========================
+    path('pacientes/', pacientes_geral, name='pacientes'),
+    path('profissionais/', profissionais_geral, name='profissionais'),
+    path('unidades/', cadastro_unidade, name='unidades'),
+    path('unidades/lista/', lista_unidades, name='lista_unidades'),
+    path('especialidades/', especialidades_geral, name='especialidades'),
+    path('convenios/', convenios_geral, name='convenios'),
+
+    # ========================
+    # 📋 SERVIÇOS E TABELAS
+    # ========================
+    path('exames/', exames_geral, name='exames'),
+    path('odontologia/', odonto_geral, name='odontologia'),
+    path('precos/', precos_geral, name='precos'),
+    path('precos-exames/', precos_exames_geral, name='precos_exames'),
+
+    # ========================
+    # 🛡️ SEGURANÇA E USUÁRIOS
+    # ========================
+    path('acessos/', acesso_geral, name='acessos'),
 ]
+
