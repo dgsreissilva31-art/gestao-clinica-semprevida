@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views  # <--- ESSA LINHA É A CURA DO ERRO 500
+from import views  # <--- ESSA LINHA É A CURA DO ERRO 500
 
  
  
