@@ -185,7 +185,7 @@ def pacientes_geral(request):
         cursor.execute("SELECT id, nome, cpf, telefone FROM pacientes WHERE nome ILIKE %s ORDER BY id DESC", [f'%{termo}%'])
         pacs = cursor.fetchall()
     linhas = "".join([f"<tr><td>{p[1]}</td><td>{p[2]}</td></tr>" for p in pacs])
-    return HttpResponse(base_html("Pacientes", f"<h4>Pacientes</h4><table class='table'>{linhas}</table>"))
+    return HttpResponse("OK")
 
 @login_required
 @csrf_exempt
