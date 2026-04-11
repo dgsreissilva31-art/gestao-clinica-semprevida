@@ -1,10 +1,4 @@
-import datetime, urllib.parse
 from django.urls import path
-from django.http import HttpResponse, HttpResponseRedirect
-from django.db import connection
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.models import User
-from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 from django.contrib import admin
 from . import views  # ✅ correto
 
@@ -3391,6 +3385,7 @@ def caixa_geral(request):
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
 
+# --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
 urlpatterns = [
     # 🔐 AUTENTICAÇÃO
     path('login/', views.login_view, name='login'),
@@ -3427,6 +3422,6 @@ urlpatterns = [
     # 🛡️ ACESSOS
     path('acessos/', views.acesso_geral, name='acessos'),
 
-    # 🔧 ADMIN (opcional, mas recomendado)
+    # 🔧 ADMIN
     path('admin/', admin.site.urls),
 ]
