@@ -29,20 +29,32 @@ def get_cargo(user):
 from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required
 
-def cargo_required(*cargos_permitidos):
+
+
+def cargo_required(cargo_necessario):
     def decorator(view_func):
         def _wrapped_view(request, *args, **kwargs):
-            if not request.user.is_authenticated:
-                return HttpResponse("Não autenticado")
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT cargo FROM perfis_usuario WHERE user_id = %s
+                """, [request.user.id])
+                resultado = cursor.fetchone()
 
-            cargo = get_cargo(request.user)
+            if not resultado:
+                return HttpResponse("Usuário sem perfil", status=403)
 
-            if cargo not in cargos_permitidos:
-                return HttpResponse("🚫 Acesso negado")
+            cargo_usuario = resultado[0]
+
+            if cargo_usuario != cargo_necessario:
+                return HttpResponse("Acesso negado", status=403)
 
             return view_func(request, *args, **kwargs)
         return _wrapped_view
     return decorator
+
+
+
+
 
 
 
