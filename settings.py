@@ -39,7 +39,7 @@ MIDDLEWARE = [
 ]
 
 # 5. URLS E WSGI
-ROOT_URLCONF = 'urls'
+ROOT_URLCONF = 'clinica.urls'
 WSGI_APPLICATION = 'wsgi.application'
 
 # 6. TEMPLATES
