@@ -1521,127 +1521,13 @@ def pacientes_geral(request):
 
 
 # --- 10. TELA 8: ACESSOS ---
-# --- 10. TELA 8: ACESSOS ---
-@csrf_exempt
-def acesso_geral(request):
-    from django.db import connection
-    from django.http import HttpResponse
-    from django.contrib.auth import get_user_model
+CREATE TABLE django_session (
+    session_key varchar(40) NOT NULL PRIMARY KEY,
+    session_data text NOT NULL,
+    expire_date timestamp with time zone NOT NULL
+);
 
-    User = get_user_model()  # 🔥 CORREÇÃO PRINCIPAL
-
-    mensagem = ""
-    
-    if request.method == "POST":
-        nome = request.POST.get('nome')
-        username = request.POST.get('username')
-        senha = request.POST.get('senha')
-        cargo = request.POST.get('cargo')
-        cpf = request.POST.get('cpf')
-
-        try:
-            # 🔥 VERIFICA SE TABELA DE USUÁRIOS EXISTE
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_name = 'auth_user'
-                    )
-                """)
-                tabela_existe = cursor.fetchone()[0]
-
-            if not tabela_existe:
-                mensagem = '<div class="alert alert-danger">❌ Tabela de usuários não existe. Execute as migrations do Django (python manage.py migrate).</div>'
-            else:
-                # 1. CRIA USUÁRIO
-                if not User.objects.filter(username=username).exists():
-                    user = User.objects.create_user(username=username, password=senha)
-                    
-                    # 2. SALVA PERFIL
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
-                            [user.id, nome, cargo, cpf]
-                        )
-
-                    mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado com sucesso!</div>'
-                else:
-                    mensagem = '<div class="alert alert-danger">❌ Este login já existe!</div>'
-
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
-
-    # LISTA FUNCIONÁRIOS
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
-        funcionarios = cursor.fetchall()
-
-    linhas = "".join([
-        f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>"
-        for f in funcionarios
-    ])
-
-    conteudo = f"""
-        <h4><i class="bi bi-shield-lock"></i> Controle de Acesso e Funcionários</h4><hr>
-        {mensagem}
-
-        <form method="POST" class="row g-3 mb-4">
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Nome do Funcionário</label>
-                <input type="text" name="nome" class="form-control" required>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label fw-bold">Cargo</label>
-                <select name="cargo" class="form-select">
-                    <option value="Recepção">Recepção</option>
-                    <option value="Médico">Médico</option>
-                    <option value="Dentista">Dentista</option>
-                    <option value="Administrador">Administrador</option>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label fw-bold">CPF</label>
-                <input type="text" name="cpf" class="form-control" placeholder="000.000.000-00">
-            </div>
-            
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Login (Usuário)</label>
-                <input type="text" name="username" class="form-control" placeholder="Ex: douglas.silva" required>
-            </div>
-
-            <div class="col-md-6">
-                <label class="form-label fw-bold">Senha de Acesso</label>
-                <input type="password" name="senha" class="form-control" required>
-            </div>
-            
-            <div class="col-12">
-                <button type="submit" class="btn btn-dark w-100 fw-bold shadow-sm">
-                    CRIAR ACESSO AO SISTEMA
-                </button>
-            </div>
-        </form>
-
-        <hr>
-
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-dark">
-                    <tr><th>Nome</th><th>Cargo</th><th>CPF</th></tr>
-                </thead>
-                <tbody>
-                    {linhas if funcionarios else '<tr><td colspan="3" class="text-center">Nenhum funcionário cadastrado.</td></tr>'}
-                </tbody>
-            </table>
-        </div>
-
-        <a href="/" class="btn btn-outline-secondary mt-3">⬅️ Voltar ao Painel</a>
-    """
-
-    return HttpResponse(base_html("Acessos", conteudo))
-
-
+CREATE INDEX django_session_expire_date_a5c62663 ON django_session (expire_date);
 
 
 
