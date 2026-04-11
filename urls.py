@@ -1,8 +1,10 @@
-from django.contrib import admin
+import datetime, urllib.parse
 from django.urls import path
-import views
-
-
+from django.http import HttpResponse, HttpResponseRedirect
+from django.db import connection
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.models import User
+from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
 
  
