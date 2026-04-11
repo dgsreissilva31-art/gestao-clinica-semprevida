@@ -1,5 +1,4 @@
 import datetime, urllib.parse, re
-from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
