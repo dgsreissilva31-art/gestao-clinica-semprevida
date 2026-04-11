@@ -3388,39 +3388,28 @@ def caixa_geral(request):
 
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
+# ---6. ROTAS ----
 urlpatterns = [
-    # 🔐 AUTENTICAÇÃO
-    path('login/', views.login_view, name='login'),
-    path('logout/', views.logout_view, name='logout'),
+    path('', painel_controle),              # Painel Geral
+    path('unidades/', cadastro_unidade),    # Cadastro Unidades
+    path('unidades/lista/', lista_unidades), # Lista Unidades
+    path('especialidades/', especialidades_geral), # Especialidades
+    path('profissionais/', profissionais_geral),   # Médicos/Dentistas
+    path('convenios/', convenios_geral),           # <--- A NOVA TELA AQUI
+    path('exames/', exames_geral),
+    path('odontologia/', odonto_geral),
+    path('pacientes/', pacientes_geral),
+    path('acessos/', acesso_geral),
+    path('precos/', precos_geral),
+    path('precos-exames/', precos_exames_geral),
+    path('agendas-config/', agendas_config_geral),
+    path('agenda-diaria/', agenda_diaria),
+    path('agendar/', agendar_consulta),
+    path('recepcao/', recepcao_geral),
+    path('prontuario/', prontuario_geral),
+    path('caixa/', caixa_geral),
+    path('admin-painel/', painel_controle, name='painel'),
 
-    # 🏠 PAINEL
-    path('', views.painel_controle, name='home'),
-    path('admin-painel/', views.painel_controle, name='painel'),
 
-    # 🏥 OPERACIONAL
-    path('recepcao/', views.recepcao_geral, name='recepcao'),
-    path('prontuario/', views.prontuario_geral, name='prontuario'),
-    path('caixa/', views.caixa_geral, name='caixa'),
-    
-    # 📅 AGENDAS
-    path('agendar/', views.agendar_consulta, name='agendar'),
-    path('agenda-diaria/', views.agenda_diaria, name='agenda_diaria'),
-    path('agendas-config/', views.agendas_config_geral, name='agendas_config'),
-
-    # 👤 CADASTROS
-    path('pacientes/', views.pacientes_geral, name='pacientes'),
-    path('profissionais/', views.profissionais_geral, name='profissionais'),
-    path('unidades/', views.cadastro_unidade, name='unidades'),
-    path('unidades/lista/', views.lista_unidades, name='lista_unidades'),
-    path('especialidades/', views.especialidades_geral, name='especialidades'),
-    path('convenios/', views.convenios_geral, name='convenios'),
-
-    # 📋 PREÇOS E SERVIÇOS
-    path('exames/', views.exames_geral, name='exames'),
-    path('odontologia/', views.odonto_geral, name='odontologia'),
-    path('precos/', views.precos_geral, name='precos'),
-    path('precos-exames/', views.precos_exames_geral, name='precos_exames'),
-
-    # 🛡️ ACESSOS
-    path('acessos/', views.acesso_geral, name='acessos'),
+   
 ]
