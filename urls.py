@@ -1,37 +1,10 @@
-import datetime, urllib.parse, re
+import datetime, urllib.parse
 from django.urls import path
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth import authenticate, login, logout, get_user_model
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
-
-# Importação das suas views (Certifique-se que este arquivo de rotas está na mesma pasta que views.py)
-from .views import (
-    login_view,
-    logout_view,
-    painel_controle,
-    cadastro_unidade,
-    lista_unidades,
-    especialidades_geral,
-    profissionais_geral,
-    convenios_geral,
-    exames_geral,
-    odonto_geral,
-    pacientes_geral,
-    acesso_geral,
-    precos_geral,
-    precos_exames_geral,
-    agendas_config_geral,
-    agenda_diaria,
-    agendar_consulta,
-    recepcao_geral,
-    prontuario_geral,
-    caixa_geral
-)
-
-
+from django.contrib.auth.models import User
+from django.shortcuts import render, HttpResponse, HttpResponseRedirect
 
 
 
