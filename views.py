@@ -190,9 +190,18 @@ def painel_controle(request):
 
 
 
+
+
+from django.http import HttpResponse, HttpResponseRedirect
+from django.db import connection
+from django.contrib.auth.decorators import login_required
+from functools import wraps  # ✅ ADICIONADO
+
 # 🔒 DECORATOR CORRIGIDO
 def cargo_required(cargo_necessario):
     def decorator(view_func):
+
+        @wraps(view_func)  # ✅ CORREÇÃO ESSENCIAL
         def _wrapped_view(request, *args, **kwargs):
 
             if not request.user.is_authenticated:
@@ -224,8 +233,8 @@ def cargo_required(cargo_necessario):
 
 # --- CADASTRO DE UNIDADES (INALTERADO + PROTEÇÃO REAL) ---
 
-@cargo_required('Administrador')
-@login_required
+@login_required  # ✅ PRIMEIRO
+@cargo_required('Administrador')  # ✅ SEGUNDO
 def cadastro_unidade(request):
     mensagem = ""
     edit_id = request.GET.get('edit')
