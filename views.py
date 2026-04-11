@@ -186,25 +186,116 @@ def painel_controle(request):
     """
     return HttpResponse(base_html("Dashboard", conteudo))
 
+
+
+
+from django.http import HttpResponse, HttpResponseRedirect
+from django.db import connection
+from django.contrib.auth.decorators import login_required
+
+# 🔒 DECORATOR CORRIGIDO
+def cargo_required(cargo_necessario):
+    def decorator(view_func):
+        def _wrapped_view(request, *args, **kwargs):
+
+            if not request.user.is_authenticated:
+                return HttpResponse("❌ Usuário não autenticado", status=403)
+
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT cargo 
+                    FROM perfis_usuario 
+                    WHERE user_id = %s
+                """, [request.user.id])
+
+                resultado = cursor.fetchone()
+
+            if not resultado:
+                return HttpResponse("❌ Usuário sem perfil cadastrado", status=403)
+
+            cargo_usuario = str(resultado[0]).strip().lower()
+            cargo_necessario_fmt = str(cargo_necessario).strip().lower()
+
+            if cargo_usuario != cargo_necessario_fmt:
+                return HttpResponse("❌ Acesso negado: somente Administrador", status=403)
+
+            return view_func(request, *args, **kwargs)
+
+        return _wrapped_view
+    return decorator
+
+
+# --- CADASTRO DE UNIDADES (INALTERADO + PROTEÇÃO REAL) ---
+
 @cargo_required('Administrador')
 @login_required
 def cadastro_unidade(request):
     mensagem = ""
     edit_id = request.GET.get('edit')
     unidade_data = [None, "", "", ""] 
+
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
+            cursor.execute(
+                "SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s",
+                [edit_id]
+            )
             unidade_data = cursor.fetchone() or unidade_data
+
     if request.method == "POST":
         id_post = request.POST.get('id_unidade')
-        nome, end, tel = request.POST.get('nome'), request.POST.get('endereco'), request.POST.get('telefone')
+        nome = request.POST.get('nome')
+        end = request.POST.get('endereco')
+        tel = request.POST.get('telefone')
+
         with connection.cursor() as cursor:
-            if id_post: cursor.execute("UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s", [nome, end, tel, id_post])
-            else: cursor.execute("INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", [nome, end, tel])
+            if id_post:
+                cursor.execute(
+                    "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
+                    [nome, end, tel, id_post]
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)",
+                    [nome, end, tel]
+                )
+
         return HttpResponseRedirect('/unidades/lista/')
-    conteudo = f"<h4>Unidade</h4><form method='POST' class='row g-3'><input type='hidden' name='id_unidade' value='{unidade_data[0] or ''}'><div class='col-md-6'><label>Nome</label><input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required></div><div class='col-12'><button type='submit' class='btn btn-primary'>Salvar</button></div></form>"
+
+    conteudo = f"""
+        <h4>Unidade</h4>
+        <form method='POST' class='row g-3'>
+            <input type='hidden' name='id_unidade' value='{unidade_data[0] or ''}'>
+
+            <div class='col-md-6'>
+                <label>Nome</label>
+                <input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required>
+            </div>
+
+            <div class='col-md-6'>
+                <label>Endereço</label>
+                <input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'>
+            </div>
+
+            <div class='col-md-6'>
+                <label>Telefone</label>
+                <input type='text' name='telefone' class='form-control' value='{unidade_data[3]}'>
+            </div>
+
+            <div class='col-12'>
+                <button type='submit' class='btn btn-primary'>Salvar</button>
+            </div>
+        </form>
+    """
+
     return HttpResponse(base_html("Unidades", conteudo))
+
+
+
+
+
+
+
 
 @login_required
 def lista_unidades(request):
