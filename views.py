@@ -9,6 +9,53 @@ from django.shortcuts import render
 
 
 
+# --- FUNÇÃO PARA PEGAR CARGO ---
+def get_cargo(user):
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT cargo 
+            FROM perfis_usuario 
+            WHERE user_id = %s
+        """, [user.id])
+
+        resultado = cursor.fetchone()
+
+    return resultado[0] if resultado else None
+
+
+# --- DECORATOR DE PERMISSÃO ---
+from django.http import HttpResponse
+from django.contrib.auth.decorators import login_required
+
+def cargo_required(*cargos_permitidos):
+    def decorator(view_func):
+        def _wrapped_view(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return HttpResponse("Não autenticado")
+
+            cargo = get_cargo(request.user)
+
+            if cargo not in cargos_permitidos:
+                return HttpResponse("🚫 Acesso negado")
+
+            return view_func(request, *args, **kwargs)
+        return _wrapped_view
+    return decorator
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- 1. TEMPLATE BASE ---
 
