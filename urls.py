@@ -1,11 +1,6 @@
-from django.urls import path
 from django.contrib import admin
-from . import views  # ✅ correto
-
-
-
-
-
+from django.urls import path
+import views
 
 
 
@@ -3386,6 +3381,7 @@ def caixa_geral(request):
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
+
 urlpatterns = [
     # 🔐 AUTENTICAÇÃO
     path('login/', views.login_view, name='login'),
