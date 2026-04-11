@@ -194,53 +194,45 @@ def painel_controle(request):
 
 
 
-# 🔒 DECORATOR DE CARGO (VERSÃO BLINDADA)
+
+# 🔒 DECORATOR CORRIGIDO
 def cargo_required(cargo_necessario):
     def decorator(view_func):
-        @wraps(view_func)
-        def _wrapped_view(request, *args, **kwargs):
-            # 1. Verifica se está logado
-            if not request.user.is_authenticated:
-                return HttpResponse("❌ Sessão expirada. Faça login novamente.", status=401)
 
-            # 2. Busca o cargo no banco de dados
+        @wraps(view_func)  # ✅ CORREÇÃO ESSENCIAL
+        def _wrapped_view(request, *args, **kwargs):
+
+            if not request.user.is_authenticated:
+                return HttpResponse("❌ Usuário não autenticado", status=403)
+
             with connection.cursor() as cursor:
                 cursor.execute("""
                     SELECT cargo 
                     FROM perfis_usuario 
                     WHERE user_id = %s
                 """, [request.user.id])
+
                 resultado = cursor.fetchone()
 
-            # 3. Se não achar perfil nenhum
-            if not resultado or resultado[0] is None:
-                return HttpResponse(f"❌ Erro: Perfil não encontrado para o usuário {request.user.username}. Cadastre o cargo no menu 'Acessos'.", status=403)
+            if not resultado:
+                return HttpResponse("❌ Usuário sem perfil cadastrado", status=403)
 
-            # 4. Normalização para comparação (remove espaços e ignora maiúsculas)
             cargo_usuario = str(resultado[0]).strip().lower()
-            cargo_obrigatorio = str(cargo_necessario).strip().lower()
+            cargo_necessario_fmt = str(cargo_necessario).strip().lower()
 
-            # 5. Verificação de Permissão
-            if cargo_usuario != cargo_obrigatorio:
-                return HttpResponse(f"""
-                    <div style='font-family:sans-serif; text-align:center; margin-top:50px;'>
-                        <h2 style='color:red;'>⚠️ Acesso Negado</h2>
-                        <p>Seu cargo atual é: <b>{resultado[0]}</b></p>
-                        <p>Esta tela é restrita para: <b>{cargo_necessario}</b></p>
-                        <hr>
-                        <a href='/admin-painel/'>Voltar ao Painel</a>
-                    </div>
-                """, status=403)
+            if cargo_usuario != cargo_necessario_fmt:
+                return HttpResponse("❌ Acesso negado: somente Administrador", status=403)
 
             return view_func(request, *args, **kwargs)
+
         return _wrapped_view
     return decorator
 
 
-# --- CADASTRO DE UNIDADES (CORRIGIDO E PROTEGIDO) ---
+# --- CADASTRO DE UNIDADES (INALTERADO + PROTEÇÃO REAL) ---
 
-@login_required
-@cargo_required('Administrador')  # Bloqueia 'Recepção', 'Médico', etc.
+@login_required  # ✅ PRIMEIRO
+@cargo_required('Administrador')  # ✅ SEGUNDO
 def cadastro_unidade(request):
     mensagem = ""
     edit_id = request.GET.get('edit')
@@ -275,35 +267,32 @@ def cadastro_unidade(request):
         return HttpResponseRedirect('/unidades/lista/')
 
     conteudo = f"""
-        <h4><i class="bi bi-building"></i> Gerenciar Unidade</h4>
-        <hr>
+        <h4>Unidade</h4>
         <form method='POST' class='row g-3'>
             <input type='hidden' name='id_unidade' value='{unidade_data[0] or ''}'>
 
             <div class='col-md-6'>
-                <label class='fw-bold small'>Nome da Unidade</label>
+                <label>Nome</label>
                 <input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required>
             </div>
 
             <div class='col-md-6'>
-                <label class='fw-bold small'>Telefone</label>
+                <label>Endereço</label>
+                <input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'>
+            </div>
+
+            <div class='col-md-6'>
+                <label>Telefone</label>
                 <input type='text' name='telefone' class='form-control' value='{unidade_data[3]}'>
             </div>
 
             <div class='col-12'>
-                <label class='fw-bold small'>Endereço Completo</label>
-                <input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'>
-            </div>
-
-            <div class='col-12 mt-4'>
-                <button type='submit' class='btn btn-primary px-4'>SALVAR UNIDADE</button>
-                <a href='/unidades/lista/' class='btn btn-outline-secondary px-4'>CANCELAR</a>
+                <button type='submit' class='btn btn-primary'>Salvar</button>
             </div>
         </form>
     """
 
     return HttpResponse(base_html("Unidades", conteudo))
-
 
 
 
