@@ -1,10 +1,12 @@
 import datetime, urllib.parse, re
+from functools import wraps
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
+
 
 
 
@@ -49,40 +51,49 @@ def get_cargo(user):
     return resultado[0] if resultado else None
 
 
-# --- DECORATOR DE PERMISSÃO ---
-from django.http import HttpResponse
-from django.contrib.auth.decorators import login_required
 
 
+
+# --- 🔒 DECORATOR DE PERMISSÃO CORRIGIDO E BLINDADO ---
 
 def cargo_required(cargo_necessario):
     def decorator(view_func):
+        @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
+            # 1. Verifica autenticação
+            if not request.user.is_authenticated:
+                return HttpResponseRedirect('/login/')
+
+            # 2. Busca o cargo no banco
             with connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT cargo FROM perfis_usuario WHERE user_id = %s
-                """, [request.user.id])
+                cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
                 resultado = cursor.fetchone()
 
             if not resultado:
-                return HttpResponse("Usuário sem perfil", status=403)
+                return HttpResponse("❌ Erro: Usuário logado mas sem perfil cadastrado.", status=403)
 
-            cargo_usuario = resultado[0]
+            # 3. Normalização Crítica (Remove espaços e ignora maiúsculas/minúsculas)
+            cargo_usuario = str(resultado[0]).strip().lower()
+            cargo_alvo = str(cargo_necessario).strip().lower()
 
-            if cargo_usuario != cargo_necessario:
-                return HttpResponse("Acesso negado", status=403)
+            # 4. Verificação Real
+            if cargo_usuario != cargo_alvo:
+                # Retorna uma mensagem clara de erro usando o template do sistema
+                erro_html = f"""
+                <div class='alert alert-danger text-center shadow-sm'>
+                    <i class='bi bi-excluir-circle fs-1'></i>
+                    <h3 class='mt-2'>Acesso Restrito</h3>
+                    <p>Sua função atual (<b>{resultado[0]}</b>) não permite acessar esta página.</p>
+                    <hr>
+                    <p class='small'>Esta área é exclusiva para: <b>{cargo_necessario}</b></p>
+                    <a href='/admin-painel/' class='btn btn-dark mt-3'>Voltar ao Painel</a>
+                </div>
+                """
+                return HttpResponse(base_html("Acesso Negado", erro_html), status=403)
 
             return view_func(request, *args, **kwargs)
         return _wrapped_view
     return decorator
-
-
-
-
-
-
-
-
 
 
 
@@ -214,20 +225,18 @@ def painel_controle(request):
 
 
 
-# --- FUNÇÃO BLOQUEAR CADASTRO UNIDADE --- 120426
+# --- FUNÇÃO CADASTRO UNIDADE (AGORA 100% PROTEGIDA) ---
+
 @login_required
 @cargo_required('Administrador')
 def cadastro_unidade(request):
     mensagem = ""
     edit_id = request.GET.get('edit')
-    unidade_data = [None, "", "", ""] 
+    unidade_data = [None, "", "", ""]
 
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s",
-                [edit_id]
-            )
+            cursor.execute("SELECT id, nome, endereco, telefone FROM unidades WHERE id = %s", [edit_id])
             unidade_data = cursor.fetchone() or unidade_data
 
     if request.method == "POST":
@@ -235,54 +244,26 @@ def cadastro_unidade(request):
         nome = request.POST.get('nome')
         end = request.POST.get('endereco')
         tel = request.POST.get('telefone')
-
+        
         with connection.cursor() as cursor:
             if id_post:
-                cursor.execute(
-                    "UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s",
-                    [nome, end, tel, id_post]
-                )
+                cursor.execute("UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s", [nome, end, tel, id_post])
             else:
-                cursor.execute(
-                    "INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)",
-                    [nome, end, tel]
-                )
-
+                cursor.execute("INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)", [nome, end, tel])
         return HttpResponseRedirect('/unidades/lista/')
 
     conteudo = f"""
-        <h4>Unidade</h4>
-
-        {mensagem}
-
+        <h4>Gerenciar Unidade</h4>
+        <hr>
         <form method='POST' class='row g-3'>
             <input type='hidden' name='id_unidade' value='{unidade_data[0] or ''}'>
-
-            <div class='col-md-6'>
-                <label>Nome</label>
-                <input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required>
-            </div>
-
-            <div class='col-md-6'>
-                <label>Endereço</label>
-                <input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'>
-            </div>
-
-            <div class='col-md-6'>
-                <label>Telefone</label>
-                <input type='text' name='telefone' class='form-control' value='{unidade_data[3]}'>
-            </div>
-
-            <div class='col-12'>
-                <button type='submit' class='btn btn-primary'>Salvar</button>
-            </div>
+            <div class='col-md-6'><label class='small fw-bold'>Nome</label><input type='text' name='nome' class='form-control' value='{unidade_data[1]}' required></div>
+            <div class='col-md-6'><label class='small fw-bold'>Telefone</label><input type='text' name='telefone' class='form-control' value='{unidade_data[3]}'></div>
+            <div class='col-12'><label class='small fw-bold'>Endereço</label><input type='text' name='endereco' class='form-control' value='{unidade_data[2]}'></div>
+            <div class='col-12 mt-4'><button type='submit' class='btn btn-primary shadow'>SALVAR UNIDADE</button></div>
         </form>
     """
-
     return HttpResponse(base_html("Unidades", conteudo))
-
-
-
 
 
 
