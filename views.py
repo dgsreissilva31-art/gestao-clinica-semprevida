@@ -8,6 +8,30 @@ from django.shortcuts import render
 
 
 
+# --- FUNÇÃO BASE (TOPO CORRETO) --- 120426
+def base_html(titulo, conteudo):
+    return f"""
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <title>{titulo}</title>
+    </head>
+    <body class="bg-light">
+        <div class="container mt-5">
+            {conteudo}
+        </div>
+    </body>
+    </html>
+    """
+
+
+
+
+
+
 
 # --- FUNÇÃO PARA PEGAR CARGO ---
 def get_cargo(user):
@@ -230,6 +254,12 @@ def cargo_required(cargo_necessario):
 
         return _wrapped_view
     return decorator
+
+
+
+
+
+
 
 
 
