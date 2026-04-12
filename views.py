@@ -290,51 +290,6 @@ def cadastro_unidade(request):
 
 
 
-from functools import wraps
-from django.http import HttpResponse
-from django.db import connection
-
-def cargo_required(cargo_necessario):
-    def decorator(view_func):
-
-        @wraps(view_func)
-        def _wrapped_view(request, *args, **kwargs):
-
-            if not request.user.is_authenticated:
-                return HttpResponse("❌ Usuário não autenticado", status=403)
-
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT cargo 
-                    FROM perfis_usuario 
-                    WHERE user_id = %s
-                """, [request.user.id])
-
-                resultado = cursor.fetchone()
-
-            if not resultado:
-                return HttpResponse("❌ Usuário sem perfil cadastrado", status=403)
-
-            cargo_usuario = str(resultado[0]).strip().lower()
-            cargo_necessario_fmt = str(cargo_necessario).strip().lower()
-
-            if cargo_usuario != cargo_necessario_fmt:
-                return HttpResponse("❌ Acesso negado: somente Administrador", status=403)
-
-            return view_func(request, *args, **kwargs)
-
-        return _wrapped_view
-    return decorator
-
-
-
-
-
-
-
-
-
-
 
 @login_required
 def lista_unidades(request):
