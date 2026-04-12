@@ -273,6 +273,7 @@ def cadastro_unidade(request):
 
 
 @login_required
+@cargo_required('Administrador')
 def lista_unidades(request):
     if request.GET.get('delete'):
         with connection.cursor() as cursor: cursor.execute("DELETE FROM unidades WHERE id = %s", [request.GET.get('delete')])
