@@ -55,43 +55,29 @@ def get_cargo(user):
 
 
 # --- 🔒 DECORATOR DE PERMISSÃO CORRIGIDO E BLINDADO ---
-
 def cargo_required(cargo_necessario):
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
-            # 1. Verifica autenticação
+
             if not request.user.is_authenticated:
                 return HttpResponseRedirect('/login/')
 
-            # 2. Busca o cargo no banco
             with connection.cursor() as cursor:
                 cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
                 resultado = cursor.fetchone()
 
             if not resultado:
-                return HttpResponse("❌ Erro: Usuário logado mas sem perfil cadastrado.", status=403)
+                return HttpResponse("❌ Usuário sem perfil cadastrado", status=403)
 
-            # 3. Normalização Crítica (Remove espaços e ignora maiúsculas/minúsculas)
             cargo_usuario = str(resultado[0]).strip().lower()
             cargo_alvo = str(cargo_necessario).strip().lower()
 
-            # 4. Verificação Real
             if cargo_usuario != cargo_alvo:
-                # Retorna uma mensagem clara de erro usando o template do sistema
-                erro_html = f"""
-                <div class='alert alert-danger text-center shadow-sm'>
-                    <i class='bi bi-excluir-circle fs-1'></i>
-                    <h3 class='mt-2'>Acesso Restrito</h3>
-                    <p>Sua função atual (<b>{resultado[0]}</b>) não permite acessar esta página.</p>
-                    <hr>
-                    <p class='small'>Esta área é exclusiva para: <b>{cargo_necessario}</b></p>
-                    <a href='/admin-painel/' class='btn btn-dark mt-3'>Voltar ao Painel</a>
-                </div>
-                """
-                return HttpResponse(base_html("Acesso Negado", erro_html), status=403)
+                return HttpResponse("❌ Acesso negado", status=403)
 
             return view_func(request, *args, **kwargs)
+
         return _wrapped_view
     return decorator
 
