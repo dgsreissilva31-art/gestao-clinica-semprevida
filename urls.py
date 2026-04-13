@@ -3131,6 +3131,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA ---
 
 @login_required
 @csrf_exempt
@@ -3177,7 +3178,6 @@ def caixa_geral(request):
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
             
-            # ✅ Captura o username do Douglas (ou quem estiver logado)
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not unidade:
@@ -3215,7 +3215,7 @@ def caixa_geral(request):
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
     # ===============================
-    # SQL PRINCIPAL (BUSCANDO USUÁRIO)
+    # SQL PRINCIPAL
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
@@ -3268,11 +3268,11 @@ def caixa_geral(request):
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
         
-        # ✅ Correção: Se o banco retornar vazio, usa o nome do usuário atual ou "admin"
         user_display = user_nome if user_nome and user_nome != "None" else request.user.username
 
         linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
+        # DISTRIBUIÇÃO NOS BLOCOS
         if "retorno" in descricao.lower():
             total_retorno += val; linhas_retorno += linha_html
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -3287,6 +3287,7 @@ def caixa_geral(request):
         else:
             total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
+        # SOMA POR FORMA
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
         elif forma.lower() == "dinheiro": dinheiro_total += val
@@ -3311,7 +3312,8 @@ def caixa_geral(request):
         <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas</option>{opts_uni}</select></div>
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
-    <div class="card p-3 mb-3 border-dark bg-light">
+
+    <div class="card p-3 mb-3 border-dark bg-light shadow-sm">
         <h5>➕ Caixa Diversos</h5>
         <form method="POST" class="row g-2">
             <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
@@ -3322,29 +3324,53 @@ def caixa_geral(request):
             <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
         </form>
     </div>
-    <div class="card mb-3">
-        <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
-        <table class="table table-sm">{cabecalho_tab}{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
+
+    <div class="card mb-3 border-success shadow-sm">
+        <div class="card-header bg-success text-white fw-bold">Consultas Particulares - Total: R$ {total_consultas:.2f}</div>
+        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
     </div>
-    <div class="card mb-3">
-        <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
-        <table class="table table-sm">{cabecalho_tab}{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
+
+    <div class="card mb-3 border-warning shadow-sm">
+        <div class="card-header bg-warning fw-bold">Convênios / Faturados - Total: R$ {total_faturado:.2f}</div>
+        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab.replace('Valor', 'Status')}{linhas_faturado or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
     </div>
-    <div class="card mb-3">
-        <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
-        <table class="table table-sm">
-            <tr><th>Data</th><th>Descrição</th><th>Usuário</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
-            {linhas_diversos or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
-        </table>
+
+    <div class="card mb-3 border-info shadow-sm">
+        <div class="card-header bg-info text-white fw-bold">Retornos - Total: R$ {total_retorno:.2f}</div>
+        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_retorno or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
     </div>
+
+    <div class="card mb-3 border-primary shadow-sm">
+        <div class="card-header bg-primary text-white fw-bold">Exames - Total: R$ {total_exames:.2f}</div>
+        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
+    </div>
+
+    <div class="card mb-3 border-dark shadow-sm">
+        <div class="card-header bg-dark text-white fw-bold">Odontologia - Total: R$ {total_odonto:.2f}</div>
+        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_odonto or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
+    </div>
+
+    <div class="card mb-3 border-secondary shadow-sm">
+        <div class="card-header bg-secondary text-white fw-bold">Caixa Diversos / Despesas - Total: R$ {total_diversos:.2f}</div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-light"><tr><th>Data</th><th>Descrição</th><th>Usuário</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr></thead>
+                <tbody>{linhas_diversos or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="card mt-3 p-3 bg-dark text-white shadow">
-        <h5 class="m-0">Resumo: R$ {total_geral:.2f}</h5>
-        <small>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</small>
+        <div class="row text-center">
+            <div class="col-md-3"><h5>Total Geral: R$ {total_geral:.2f}</h5></div>
+            <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
+            <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
+            <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
+        </div>
     </div>
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
-
 
 
 
