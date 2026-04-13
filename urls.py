@@ -2587,7 +2587,6 @@ def recepcao_geral(request):
 
                 descricao = "Retorno" if retorno else None
 
-                # PARTICULAR
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2601,7 +2600,6 @@ def recepcao_geral(request):
                         VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, valor, forma, "Particular", unidade_id])
 
-                # CONVÊNIO
                 elif tipo == "convenio":
                     convenio_nome = ""
                     if convenio_id:
@@ -2616,7 +2614,6 @@ def recepcao_geral(request):
                         VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
                     """, [paciente_nome, profissional_nome, descricao or convenio_nome or "Convênio", unidade_id])
 
-                # CARTÃO
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0:
@@ -2656,7 +2653,7 @@ def recepcao_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCAS
+    # BUSCAS (CORRIGIDO FILTRO)
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
@@ -2665,7 +2662,8 @@ def recepcao_geral(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
-        cursor.execute("""
+        # 🔴 CORREÇÃO AQUI
+        sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
             LEFT JOIN pacientes pac ON ag.paciente_id = pac.id
@@ -2673,9 +2671,16 @@ def recepcao_geral(request):
             LEFT JOIN profissionais prof ON ac.profissional_id = prof.id
             LEFT JOIN unidades u ON ac.unidade_id = u.id
             WHERE ag.data_agendamento = %s
-            ORDER BY ag.horario_selecionado
-        """, [data_hoje])
+        """
+        params = [data_hoje]
 
+        if unidade_filtro:
+            sql += " AND u.id = %s"
+            params.append(unidade_filtro)
+
+        sql += " ORDER BY ag.horario_selecionado"
+
+        cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
     opts_unidades = "".join([
@@ -2690,7 +2695,7 @@ def recepcao_geral(request):
         status = a[4] or "Agendado"
 
         if status == "Agendado":
-            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2" class="btn btn-warning btn-sm">Check-in</a>'
+            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
@@ -2705,9 +2710,6 @@ def recepcao_geral(request):
         </tr>
         """
 
-    # ===============================
-    # MODAL
-    # ===============================
     modal_html = ""
     if agendamento_id and etapa == '2':
         modal_html = f"""
@@ -2715,8 +2717,8 @@ def recepcao_geral(request):
             <div class="modal-dialog">
                 <div class="modal-content p-4">
                     <form method="POST">
-
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
+                        <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
 
                         <h5>Financeiro</h5>
 
@@ -2779,7 +2781,7 @@ def recepcao_geral(request):
     <h4>Recepção</h4>
 
     <form method="GET">
-        <select name="unidade" class="form-select mb-2">
+        <select name="unidade" class="form-select mb-2" onchange="this.form.submit()">
             <option value="">Todas</option>
             {opts_unidades}
         </select>
@@ -2796,6 +2798,8 @@ def recepcao_geral(request):
     """
 
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
