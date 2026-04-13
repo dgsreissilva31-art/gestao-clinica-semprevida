@@ -2363,7 +2363,7 @@ def agenda_diaria(request):
 
 
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
-# --- TELA 13: NOVO AGENDAMENTO (COM AVISO DE AGENDA NÃO ABERTA) ---
+# --- TELA 13: NOVO AGENDAMENTO (COM TRAVA DE CLIQUE DUPLO) ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -2420,9 +2420,9 @@ def agendar_consulta(request):
             """, [unid_id, esp_id, hoje])
             profs_filtrados = cursor.fetchall()
 
-        # 🔹 4. DATAS (Com Verificação de Agenda Aberta)
+        # 🔹 4. DATAS
         datas_disponiveis = []
-        agenda_existe = True # Flag para verificar se há grade
+        agenda_existe = True
         
         if prof_id and unid_id:
             cursor.execute("""
@@ -2447,7 +2447,6 @@ def agendar_consulta(request):
                 if total_ocupados < slots_possiveis:
                     datas_disponiveis.append(d_grade)
             
-            # Se havia grade mas todas as datas estão lotadas
             if grades_candidatas and not datas_disponiveis:
                 agenda_existe = False
 
@@ -2503,7 +2502,6 @@ def agendar_consulta(request):
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
     opts_datas = "".join([f'<option value="{d}" {"selected" if str(d)==data_sel else ""}>{d.strftime("%d/%m/%Y")}</option>' for d in datas_disponiveis])
     
-    # Lógica do label de Data
     label_data = "4. Data Disponível"
     placeholder_data = "Selecione..."
     estilo_data = "border-danger"
@@ -2513,7 +2511,20 @@ def agendar_consulta(request):
 
     btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
 
+    # Script para bloquear múltiplos envios
+    script_bloqueio = """
+        <script>
+        function bloquearBotao(form) {
+            const btn = form.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
+            return true;
+        }
+        </script>
+    """
+
     conteudo = f"""
+        {script_bloqueio}
         <div class="container py-3">
             <h4 class="text-center mb-4 fw-bold"><i class="bi bi-calendar-check text-primary"></i> Novo Agendamento</h4>
             {mensagem}
@@ -2527,7 +2538,7 @@ def agendar_consulta(request):
             </div>
             {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "Sem horários livres."}</div></div>' if data_sel else ""}
             {f'''<div class="card p-4 shadow border-success">
-                <form method="POST" class="row g-3">
+                <form method="POST" class="row g-3" onsubmit="return bloquearBotao(this)">
                     <div class="col-md-6"><label class="small fw-bold">Paciente</label><input type="text" name="nome" class="form-control" required></div>
                     <div class="col-md-6"><label class="small fw-bold">Quem Agendando?</label><input type="text" name="quem_agenda" class="form-control" required></div>
                     <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" required></div>
@@ -2538,8 +2549,6 @@ def agendar_consulta(request):
         </div>
     """
     return HttpResponse(base_html("Agendar", conteudo))
-
-
 
 
 
