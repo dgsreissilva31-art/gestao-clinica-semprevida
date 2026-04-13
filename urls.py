@@ -226,8 +226,11 @@ def painel_controle(request):
 def cadastro_unidade(request):
     mensagem = ""
 
+    # 🔥 RESET DA SENHA A CADA ACESSO (CORREÇÃO)
+    acesso_liberado = request.session.pop("acesso_unidades", False)
+
     # --- 🔒 PROTEÇÃO POR SENHA ---
-    if request.session.get("acesso_unidades") != True:
+    if not acesso_liberado:
         if request.method == "POST" and request.POST.get("senha_acesso"):
             if request.POST.get("senha_acesso") == "8484":
                 request.session["acesso_unidades"] = True
@@ -253,9 +256,9 @@ def cadastro_unidade(request):
         </html>
         """)
 
-    # Se vier um ID via GET, estamos em modo EDIÇÃO
+    # --- RESTANTE INALTERADO ---
     edit_id = request.GET.get('edit')
-    unidade_data = [None, "", "", ""] # ID, Nome, Endereco, Telefone
+    unidade_data = [None, "", "", ""]
 
     if edit_id:
         with connection.cursor() as cursor:
@@ -270,12 +273,12 @@ def cadastro_unidade(request):
         
         try:
             with connection.cursor() as cursor:
-                if id_post: # UPDATE
+                if id_post:
                     cursor.execute("""
                         UPDATE unidades SET nome=%s, endereco=%s, telefone=%s WHERE id=%s
                     """, [nome, end, tel, id_post])
                     mensagem = '<div class="alert alert-success">✅ Unidade Atualizada!</div>'
-                else: # INSERT
+                else:
                     cursor.execute("""
                         INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)
                     """, [nome, end, tel])
@@ -329,11 +332,11 @@ def lista_unidades(request):
             <td>{u[3] or '---'}</td>
             <td>
                 <div class="btn-group">
-                    <a href="/unidades/?edit={u[0]}" class="btn btn-sm btn-info text-white" title="Alterar">
+                    <a href="/unidades/?edit={u[0]}" class="btn btn-sm btn-info text-white">
                         <i class="bi bi-pencil"></i>
                     </a>
                     <a href="/unidades/lista/?delete={u[0]}" class="btn btn-sm btn-danger" 
-                       onclick="return confirm('Deseja excluir?')" title="Excluir">
+                       onclick="return confirm('Deseja excluir?')">
                         <i class="bi bi-trash"></i>
                     </a>
                 </div>
@@ -355,6 +358,7 @@ def lista_unidades(request):
         <a href='/unidades/' class='btn btn-outline-secondary'>Voltar</a>
     """
     return HttpResponse(base_html("Lista Unidades", conteudo))
+
 
 
 
