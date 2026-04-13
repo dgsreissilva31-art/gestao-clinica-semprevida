@@ -3131,7 +3131,6 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA ---
 
 @login_required
 @csrf_exempt
@@ -3178,6 +3177,7 @@ def caixa_geral(request):
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
             
+            # ✅ REGISTRO DEFINITIVO: Captura o username no momento do clique
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not unidade:
@@ -3195,7 +3195,7 @@ def caixa_geral(request):
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, ["-", "-", valor, tipo, "Pago", categoria or "Diversos", descricao, unidade, usuario_nome])
 
-            mensagem = '<div class="alert alert-success">✅ Lançamento realizado!</div>'
+            mensagem = '<div class="alert alert-success">✅ Lançamento realizado com sucesso!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
@@ -3262,17 +3262,18 @@ def caixa_geral(request):
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
 
     for m in movimentos:
-        cat, pac, prof, val, forma, status, data_pg, uni, desc, user_nome = m
+        cat, pac, prof, val, forma, status, data_pg, uni, desc, user_nome_db = m
         val = float(val or 0)
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
         
-        user_display = user_nome if user_nome and user_nome != "None" else request.user.username
+        # ✅ CORREÇÃO AQUI: Usa apenas o que está no banco. Se nulo, mostra "S.I" (Sem Informação)
+        # Isso impede que o nome mude conforme quem está logado.
+        user_display = user_nome_db if user_nome_db and str(user_nome_db) != "None" else "S.I"
 
         linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
-        # DISTRIBUIÇÃO NOS BLOCOS
         if "retorno" in descricao.lower():
             total_retorno += val; linhas_retorno += linha_html
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
@@ -3287,7 +3288,6 @@ def caixa_geral(request):
         else:
             total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
-        # SOMA POR FORMA
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
         elif forma.lower() == "dinheiro": dinheiro_total += val
@@ -3308,19 +3308,19 @@ def caixa_geral(request):
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início DD/MM/AAAA"></div>
         <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim DD/MM/AAAA"></div>
-        <div class="col-md-3"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar Paciente, Usuário..."></div>
-        <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas</option>{opts_uni}</select></div>
+        <div class="col-md-3"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar por Paciente, Usuário ou Descrição..."></div>
+        <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas Unidades</option>{opts_uni}</select></div>
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
 
-    <div class="card p-3 mb-3 border-dark bg-light shadow-sm">
-        <h5>➕ Caixa Diversos</h5>
+    <div class="card p-3 mb-4 border-dark bg-light shadow-sm">
+        <h6 class="fw-bold"><i class="bi bi-plus-circle"></i> Caixa Diversos (Entradas/Saídas Manuais)</h6>
         <form method="POST" class="row g-2">
             <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
             <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
             <div class="col-md-2"><input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria"><datalist id="lista_categorias">{opts_cat}</datalist></div>
             <div class="col-md-3"><input type="text" name="descricao" class="form-control" placeholder="Descrição"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor R$"></div>
             <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
         </form>
     </div>
@@ -3361,8 +3361,8 @@ def caixa_geral(request):
     </div>
 
     <div class="card mt-3 p-3 bg-dark text-white shadow">
-        <div class="row text-center">
-            <div class="col-md-3"><h5>Total Geral: R$ {total_geral:.2f}</h5></div>
+        <div class="row text-center align-items-center">
+            <div class="col-md-3 border-end"><h5>Total Geral: R$ {total_geral:.2f}</h5></div>
             <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
             <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
             <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
@@ -3371,6 +3371,9 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
