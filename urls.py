@@ -1522,12 +1522,13 @@ def pacientes_geral(request):
 
 # --- 10. TELA 8: ACESSOS ---
 # --- 10. TELA 8: ACESSOS ---
+
 from django.contrib.auth.decorators import login_required
 
 @login_required
 def acesso_geral(request):
     from django.db import connection
-    from django.http import HttpResponse
+    from django.http import HttpResponse, HttpResponseRedirect
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -1585,14 +1586,18 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- EXCLUIR ---
+    # --- EXCLUIR (CORRIGIDO) ---
     if request.GET.get("delete"):
         user_id = request.GET.get("delete")
         try:
             with connection.cursor() as cursor:
+                # remove perfil
                 cursor.execute("DELETE FROM perfis_usuario WHERE user_id = %s", [user_id])
-            User.objects.filter(id=user_id).delete()
+                # remove usuário direto (SEM ORM)
+                cursor.execute("DELETE FROM auth_user WHERE id = %s", [user_id])
+
             return HttpResponseRedirect("/acessos/")
+
         except Exception as e:
             mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
 
@@ -1667,6 +1672,8 @@ def acesso_geral(request):
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
+
+
 
 
 
