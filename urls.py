@@ -3131,7 +3131,6 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -3146,8 +3145,6 @@ def caixa_geral(request):
     data_fim = request.GET.get('data_fim') or ""
     busca = request.GET.get('busca') or ""
     mensagem = ""
-
-    usuario_logado = request.user.username if request.user.is_authenticated else "-"
 
     # ===============================
     # FUNÇÕES AUXILIARES
@@ -3266,8 +3263,6 @@ def caixa_geral(request):
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
 
-        usuario_col = f"<td>{usuario_logado}</td>"
-
         # BOTÃO GUIA DE EXAME
         btn_guia = ""
         if cat == "Exame" and pac != "-":
@@ -3279,31 +3274,27 @@ def caixa_geral(request):
             })
             btn_guia = f'<a href="/caixa/?abrir_guia=1&{params_form}" target="_blank" class="btn btn-sm btn-primary">Abrir Guia</a>'
 
-        # BLOCOS COM USUÁRIO INSERIDO
+        # BLOCOS
         if "retorno" in descricao.lower():
             total_retorno += val
-            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td>{usuario_col}<td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
+            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
             total_consultas += val
-            linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td>{usuario_col}<td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
+            linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat == "Exame":
             total_exames += val
-            linhas_exames += f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td>{usuario_col}<td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
+            linhas_exames += f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
-            linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td>{usuario_col}<td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
-
+            linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
         elif pac == "-":
             total_diversos += val
-            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td>{usuario_logado}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
-
+            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
         else:
             total_faturado += val
-            linhas_faturado += f"<tr><td>{data_br}</td><td>{pac}</td>{usuario_col}<td>{prof or '-'}</td><td>{descricao}</td><td>Faturado</td></tr>"
+            linhas_faturado += f"<tr><td>{data_br}</td><td>{pac}</td><td>{prof or '-'}</td><td>{descricao}</td><td>Faturado</td></tr>"
 
+        # SOMA POR FORMA DE PAGAMENTO
         if forma.lower() == "pix":
             pix_total += val
         elif forma.lower() in ["cartão", "cartao"]:
@@ -3314,7 +3305,7 @@ def caixa_geral(request):
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
     # ===============================
-    # GUIA DE EXAME
+    # GUIA DE EXAME (ABRIR TELA)
     # ===============================
     if request.GET.get("abrir_guia"):
         paciente = request.GET.get("paciente") or ""
@@ -3343,11 +3334,86 @@ def caixa_geral(request):
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
 
     # ===============================
-    # HTML FINAL (INALTERADO)
+    # HTML FINAL COM SOMAS
     # ===============================
-    conteudo = f""" ... SEU HTML ORIGINAL INTACTO ... """
+    conteudo = f"""
+    <div class="container-fluid">
+
+    <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
+    {mensagem}
+
+    <!-- 🔎 FILTROS -->
+    <form method="GET" class="row g-2 mb-3">
+        <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Data Inicial"></div>
+        <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Data Final"></div>
+        <div class="col-md-3"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar..."></div>
+        <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas</option>{opts_uni}</select></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
+    </form>
+
+    <!-- 🔥 FORM DIVERSOS -->
+    <div class="card p-3 mb-3 border-dark">
+        <h5>➕ Caixa Diversos</h5>
+        <form method="POST" class="row g-2">
+            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
+            <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
+            <div class="col-md-2"><input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria"><datalist id="lista_categorias">{opts_cat}</datalist></div>
+            <div class="col-md-3"><input type="text" name="descricao" class="form-control" placeholder="Descrição"></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
+        </form>
+    </div>
+
+    <!-- BLOCOS -->
+    <div class="card mb-3">
+        <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
+        <table class="table">{linhas_consultas or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-warning">Convênios - Total: R$ {total_faturado:.2f}</div>
+        <table class="table">{linhas_faturado or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-info text-white">Retorno - Total: R$ {total_retorno:.2f}</div>
+        <table class="table">{linhas_retorno or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
+        <table class="table">{linhas_exames or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
+        <table class="table">{linhas_odonto or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
+        <table class="table">
+            <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr>
+            {linhas_diversos or '<tr><td colspan="5" class="text-center">Sem registros</td></tr>'}
+        </table>
+    </div>
+
+    <!-- RODAPÉ COM TOTAL GERAL E FORMAS DE PAGAMENTO -->
+    <div class="card mt-3 p-3">
+        <h5>Total Geral: R$ {total_geral:.2f}</h5>
+        <p>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
+    </div>
+
+    </div>
+    """
 
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
+
+
+
 
 
 
