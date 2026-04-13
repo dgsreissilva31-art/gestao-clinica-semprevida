@@ -1535,17 +1535,17 @@ def acesso_geral(request):
 
     mensagem = ""
     
-    # --- LISTAR UNIDADES (APENAS BANCO + "TODAS") ---
+    # --- LISTAR UNIDADES ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
+    # ADICIONA "TODAS UNIDADES" NO TOPO
     opcoes_unidades = "<option value=''>Todas Unidades</option>" + "".join([
         f"<option value='{u[0]}'>{u[1]}</option>"
         for u in unidades
     ])
 
-    # --- POST ---
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
@@ -1587,7 +1587,7 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- EXCLUIR ---
+    # --- EXCLUIR (CORRIGIDO) ---
     if request.GET.get("delete"):
         user_id = request.GET.get("delete")
         try:
@@ -1600,7 +1600,7 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
 
-    # --- LISTA ---
+    # --- LISTA FUNCIONÁRIOS ---
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT p.user_id, p.nome_completo, p.cargo, p.cpf, u.nome
@@ -1670,8 +1670,6 @@ def acesso_geral(request):
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
-
-
 
 
 
