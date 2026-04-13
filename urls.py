@@ -109,13 +109,21 @@ def base_html(titulo, conteudo):
 # --- 2. TELA 0: PAINEL DE GESTÃO (VERSÃO PROFISSIONAL CORRIGIDA) ---
 
 def painel_controle(request):
-    # Definimos o conteúdo usando o grid system col-md-4 para 3 colunas perfeitas
-    conteudo = """
+    # ✅ Usamos f""" (f-string) para que o Python processe o nome do usuário logado
+    # ✅ Usamos .title() para deixar a primeira letra maiúscula
+    # ✅ Usamos {{ }} duplos apenas para estilos CSS (se houver) para o Python não confundir
+    
+    conteudo = f"""
         <div class="mb-4">
             <h3 class="fw-bold text-dark"><i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão</h3>
-            <p class="text-muted">Bem-vindo, {{ request.user.username|title }}. Gerencie as operações da clínica Sempre Vida.</p>
+            <p class="text-muted">Bem-vindo, {request.user.username.title()}. Gerencie as operações da clínica Sempre Vida.</p>
         </div>
-        
+    """
+    # O restante da sua lógica de retorno (ex: return HttpResponse...) permanece aqui abaixo
+    return HttpResponse(base_html("Painel", conteudo))
+
+
+
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="p-4 bg-primary text-white rounded shadow-sm text-center h-100">
