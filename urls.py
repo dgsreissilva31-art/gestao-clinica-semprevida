@@ -226,11 +226,8 @@ def painel_controle(request):
 def cadastro_unidade(request):
     mensagem = ""
 
-    # 🔥 RESET DA SENHA A CADA ACESSO (CORREÇÃO)
-    acesso_liberado = request.session.pop("acesso_unidades", False)
-
     # --- 🔒 PROTEÇÃO POR SENHA ---
-    if not acesso_liberado:
+    if request.session.get("acesso_unidades") != True:
         if request.method == "POST" and request.POST.get("senha_acesso"):
             if request.POST.get("senha_acesso") == "8484":
                 request.session["acesso_unidades"] = True
@@ -283,6 +280,10 @@ def cadastro_unidade(request):
                         INSERT INTO unidades (nome, endereco, telefone) VALUES (%s, %s, %s)
                     """, [nome, end, tel])
                     mensagem = '<div class="alert alert-success">✅ Unidade Salva!</div>'
+
+            # 🔥 LIMPA ACESSO APÓS FINALIZAR (CORREÇÃO)
+            request.session.pop("acesso_unidades", None)
+
             return HttpResponseRedirect('/unidades/lista/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
@@ -358,6 +359,9 @@ def lista_unidades(request):
         <a href='/unidades/' class='btn btn-outline-secondary'>Voltar</a>
     """
     return HttpResponse(base_html("Lista Unidades", conteudo))
+
+
+
 
 
 
