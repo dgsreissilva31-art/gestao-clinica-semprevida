@@ -48,40 +48,41 @@ def base_html(titulo, conteudo):
     """
 
 # --- 🔒 DECORATOR DE PERMISSÃO (VERSÃO BLINDADA) ---
+from django.http import HttpResponse
+from django.db import connection
 
-def cargo_required(cargo_necessario):
+def cargo_required(cargo_permitido):
     def decorator(view_func):
-        @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
-            if not request.user.is_authenticated:
-                return HttpResponseRedirect('/login/')
-            
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
-                resultado = cursor.fetchone()
-            
-            if not resultado:
-                return HttpResponse("❌ Erro: Usuário sem perfil cadastrado.", status=403)
-            
-            # Normalização rigorosa: remove espaços, remove acentos (opcional) e coloca em minúsculo
-            cargo_usuario = str(resultado[0]).strip().lower()
-            cargo_alvo = str(cargo_necessario).strip().lower()
 
-            if cargo_usuario != cargo_alvo:
-                conteudo_erro = f"""
-                <div class='text-center py-5'>
-                    <h1 class='display-1 text-danger'><i class='bi bi-shield-lock'></i></h1>
-                    <h2 class='fw-bold'>Acesso Negado</h2>
-                    <p class='text-muted'>Sua conta ({resultado[0]}) não tem permissão para acessar o módulo de <b>{cargo_necessario}</b>.</p>
-                    <hr class='w-25 mx-auto'>
-                    <a href='/admin-painel/' class='btn btn-primary'>Voltar ao Início</a>
-                </div>
-                """
-                return HttpResponse(base_html("Acesso Negado", conteudo_erro), status=403)
-            
+            user_id = request.user.id
+
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT cargo 
+                    FROM perfis_usuario 
+                    WHERE user_id = %s
+                """, [user_id])
+                resultado = cursor.fetchone()
+
+            if not resultado:
+                return HttpResponse("Acesso negado")
+
+            cargo_usuario = resultado[0]
+
+            if cargo_usuario != cargo_permitido:
+                return HttpResponse("Acesso restrito")
+
             return view_func(request, *args, **kwargs)
+
         return _wrapped_view
     return decorator
+
+
+
+
+
+
 
 # --- 2. LOGIN / LOGOUT ---
 
