@@ -3175,7 +3175,9 @@ def caixa_geral(request):
             categoria = request.POST.get('categoria')
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
-            usuario_nome = request.user.username  # Nome do usuário logado
+            
+            # ✅ CORREÇÃO: Captura o username ou define padrão se estiver vazio
+            usuario_nome = request.user.username if request.user.is_authenticated else "---"
 
             if not unidade:
                 raise Exception("Selecione a unidade")
@@ -3267,25 +3269,27 @@ def caixa_geral(request):
         descricao = (desc or "").strip()
         user_nome = user_nome or "---"
 
-        # BLOCOS COM COLUNA USUÁRIO
+        # Linha padrão formatada
+        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+
         if "retorno" in descricao.lower():
             total_retorno += val
-            linhas_retorno += f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            linhas_retorno += linha_html
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
             total_consultas += val
-            linhas_consultas += f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            linhas_consultas += linha_html
         elif status == "Pago" and cat == "Exame":
             total_exames += val
-            linhas_exames += f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            linhas_exames += linha_html
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
             total_odonto += val
-            linhas_odonto += f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+            linhas_odonto += linha_html
         elif pac == "-":
             total_diversos += val
             linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary'>@{user_nome}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
         else:
             total_faturado += val
-            linhas_faturado += f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>Faturado</td></tr>"
+            linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
@@ -3294,14 +3298,10 @@ def caixa_geral(request):
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
     # ===============================
-    # SELECTS
+    # HTML FINAL
     # ===============================
     opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
-
-    # ===============================
-    # HTML FINAL
-    # ===============================
     cabecalho_tab = "<tr><th>Data</th><th>Paciente</th><th>Usuário</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>"
 
     conteudo = f"""
@@ -3341,11 +3341,6 @@ def caixa_geral(request):
     </div>
 
     <div class="card mb-3">
-        <div class="card-header bg-info text-white">Retorno - Total: R$ {total_retorno:.2f}</div>
-        <table class="table table-sm">{cabecalho_tab}{linhas_retorno or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
-    <div class="card mb-3">
         <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
         <table class="table table-sm">{cabecalho_tab}{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
     </div>
@@ -3372,7 +3367,6 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
 
 
 
