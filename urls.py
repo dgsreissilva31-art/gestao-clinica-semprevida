@@ -221,9 +221,38 @@ def painel_controle(request):
 
 
 # --- 3. TELA 1: UNIDADES ---
+# --- 3. TELA 1: UNIDADES ---
 @csrf_exempt
 def cadastro_unidade(request):
     mensagem = ""
+
+    # --- 🔒 PROTEÇÃO POR SENHA ---
+    if request.session.get("acesso_unidades") != True:
+        if request.method == "POST" and request.POST.get("senha_acesso"):
+            if request.POST.get("senha_acesso") == "8484":
+                request.session["acesso_unidades"] = True
+                return HttpResponseRedirect(request.path)
+            else:
+                mensagem = '<div class="alert alert-danger">❌ Senha incorreta</div>'
+
+        return HttpResponse(f"""
+        <html>
+        <head>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body class="bg-light d-flex justify-content-center align-items-center" style="height:100vh;">
+            <div class="card p-4 shadow" style="width:300px;">
+                <h5 class="text-center mb-3">🔒 Acesso Restrito</h5>
+                {mensagem}
+                <form method="POST">
+                    <input type="password" name="senha_acesso" class="form-control mb-3" placeholder="Digite a senha" required>
+                    <button class="btn btn-dark w-100">Entrar</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        """)
+
     # Se vier um ID via GET, estamos em modo EDIÇÃO
     edit_id = request.GET.get('edit')
     unidade_data = [None, "", "", ""] # ID, Nome, Endereco, Telefone
@@ -280,6 +309,7 @@ def cadastro_unidade(request):
     """
     return HttpResponse(base_html("Unidades", conteudo))
 
+
 def lista_unidades(request):
     if request.GET.get('delete'):
         with connection.cursor() as cursor:
@@ -290,7 +320,6 @@ def lista_unidades(request):
         cursor.execute("SELECT id, nome, endereco, telefone FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-    # MONTAGEM DAS LINHAS COM O BOTÃO DE ALTERAR (AZUL)
     linhas = ""
     for u in unidades:
         linhas += f"""
@@ -326,6 +355,9 @@ def lista_unidades(request):
         <a href='/unidades/' class='btn btn-outline-secondary'>Voltar</a>
     """
     return HttpResponse(base_html("Lista Unidades", conteudo))
+
+
+
 
 
 
