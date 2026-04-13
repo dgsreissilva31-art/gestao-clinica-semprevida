@@ -1534,12 +1534,23 @@ def acesso_geral(request):
 
     mensagem = ""
     
+    # --- LISTAR UNIDADES ---
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+
+    opcoes_unidades = "".join([
+        f"<option value='{u[0]}'>{u[1]}</option>"
+        for u in unidades
+    ])
+
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
         senha = request.POST.get('senha')
         cargo = request.POST.get('cargo')
         cpf = request.POST.get('cpf')
+        unidade_id = request.POST.get('unidade_id')
 
         try:
             with connection.cursor() as cursor:
@@ -1559,8 +1570,12 @@ def acesso_geral(request):
                     
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            "INSERT INTO perfis_usuario (user_id, nome_completo, cargo, cpf) VALUES (%s, %s, %s, %s)",
-                            [user.id, nome, cargo, cpf]
+                            """
+                            INSERT INTO perfis_usuario 
+                            (user_id, nome_completo, cargo, cpf, unidade_id) 
+                            VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            [user.id, nome, cargo, cpf, unidade_id]
                         )
 
                     mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado!</div>'
@@ -1570,13 +1585,41 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # LISTA
+    # --- EXCLUIR ---
+    if request.GET.get("delete"):
+        user_id = request.GET.get("delete")
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM perfis_usuario WHERE user_id = %s", [user_id])
+            User.objects.filter(id=user_id).delete()
+            return HttpResponseRedirect("/acessos/")
+        except Exception as e:
+            mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
+
+    # --- LISTA FUNCIONÁRIOS ---
     with connection.cursor() as cursor:
-        cursor.execute("SELECT nome_completo, cargo, cpf FROM perfis_usuario ORDER BY cargo, nome_completo")
+        cursor.execute("""
+            SELECT p.user_id, p.nome_completo, p.cargo, p.cpf, u.nome
+            FROM perfis_usuario p
+            LEFT JOIN unidades u ON p.unidade_id = u.id
+            ORDER BY p.cargo, p.nome_completo
+        """)
         funcionarios = cursor.fetchall()
 
     linhas = "".join([
-        f"<tr><td><b>{f[0]}</b></td><td>{f[1]}</td><td>{f[2]}</td></tr>"
+        f"""
+        <tr>
+            <td>
+                <b>{f[1]}</b><br>
+                <a href="/acessos/?edit={f[0]}" class="btn btn-sm btn-info text-white mt-1">Editar</a>
+                <a href="/acessos/?delete={f[0]}" class="btn btn-sm btn-danger mt-1"
+                   onclick="return confirm('Excluir usuário?')">Excluir</a>
+            </td>
+            <td>{f[2]}</td>
+            <td>{f[3]}</td>
+            <td>{f[4] or '-'}</td>
+        </tr>
+        """
         for f in funcionarios
     ])
 
@@ -1598,6 +1641,11 @@ def acesso_geral(request):
                 <option>Administrador</option>
             </select>
 
+            <select name="unidade_id" class="form-control mb-2">
+                <option value="">Selecione a Unidade</option>
+                {opcoes_unidades}
+            </select>
+
             <input name="cpf" placeholder="CPF" class="form-control mb-2">
 
             <button class="btn btn-dark w-100">Criar</button>
@@ -1606,11 +1654,22 @@ def acesso_geral(request):
         <hr>
 
         <table class="table">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Cargo</th>
+                    <th>CPF</th>
+                    <th>Unidade</th>
+                </tr>
+            </thead>
             {linhas}
         </table>
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
+
+
+
 
 
 
