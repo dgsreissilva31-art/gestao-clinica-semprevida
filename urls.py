@@ -1535,38 +1535,27 @@ def acesso_geral(request):
 
     mensagem = ""
     
-    # --- LISTAR UNIDADES (BANCO + FIXAS) ---
+    # --- LISTAR UNIDADES (COM "TODAS") ---
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_db = cursor.fetchall()
+        cursor.execute("""
+            SELECT DISTINCT id, nome 
+            FROM unidades 
+            ORDER BY nome
+        """)
+        unidades = cursor.fetchall()
 
-    # GARANTE AS 3 EXISTENTES
-    unidades_fixas = [
-        (0, "Unidade 1"),
-        (0, "Unidade 2"),
-        (0, "Unidade 3"),
-    ]
-
-    nomes_existentes = set([u[1] for u in unidades_db])
-    unidades = list(unidades_db)
-
-    for uf in unidades_fixas:
-        if uf[1] not in nomes_existentes:
-            unidades.append(uf)
-
-    opcoes_unidades = "".join([
+    opcoes_unidades = "<option value=''>Todas</option>" + "".join([
         f"<option value='{u[0]}'>{u[1]}</option>"
         for u in unidades
     ])
 
-    # --- POST ---
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
         senha = request.POST.get('senha')
         cargo = request.POST.get('cargo')
         cpf = request.POST.get('cpf')
-        unidade_id = request.POST.get('unidade_id')
+        unidade_id = request.POST.get('unidade_id') or None
 
         try:
             with connection.cursor() as cursor:
@@ -1601,7 +1590,7 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- EXCLUIR ---
+    # --- EXCLUIR (CORRIGIDO) ---
     if request.GET.get("delete"):
         user_id = request.GET.get("delete")
         try:
@@ -1614,7 +1603,7 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
 
-    # --- LISTA ---
+    # --- LISTA FUNCIONÁRIOS ---
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT p.user_id, p.nome_completo, p.cargo, p.cpf, u.nome
@@ -1660,7 +1649,6 @@ def acesso_geral(request):
             </select>
 
             <select name="unidade_id" class="form-control mb-2">
-                <option value="">Selecione a Unidade</option>
                 {opcoes_unidades}
             </select>
 
@@ -1685,6 +1673,8 @@ def acesso_geral(request):
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
+
+
 
 
 
