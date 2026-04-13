@@ -113,7 +113,7 @@ def painel_controle(request):
     conteudo = """
         <div class="mb-4">
             <h3 class="fw-bold text-dark"><i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão</h3>
-            <p class="text-muted">Bem-vindo, Douglas Silva. Gerencie as operações da clínica Sempre Vida.</p>
+            <p class="text-muted">Bem-vindo, {{ request.user.username }}. Gerencie as operações da clínica Sempre Vida.</p>
         </div>
         
         <div class="row g-3">
