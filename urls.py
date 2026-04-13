@@ -3131,6 +3131,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
+
 @login_required
 @csrf_exempt
 def caixa_geral(request):
@@ -3176,8 +3177,8 @@ def caixa_geral(request):
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
             
-            # ✅ CORREÇÃO: Captura o username ou define padrão se estiver vazio
-            usuario_nome = request.user.username if request.user.is_authenticated else "---"
+            # ✅ Captura o username do Douglas (ou quem estiver logado)
+            usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not unidade:
                 raise Exception("Selecione a unidade")
@@ -3214,7 +3215,7 @@ def caixa_geral(request):
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
     # ===============================
-    # SQL PRINCIPAL (INCLUINDO COLUNA usuario_lancamento)
+    # SQL PRINCIPAL (BUSCANDO USUÁRIO)
     # ===============================
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
@@ -3258,7 +3259,6 @@ def caixa_geral(request):
     # ===============================
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
-
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
 
     for m in movimentos:
@@ -3267,29 +3267,25 @@ def caixa_geral(request):
         pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
-        user_nome = user_nome or "---"
+        
+        # ✅ Correção: Se o banco retornar vazio, usa o nome do usuário atual ou "admin"
+        user_display = user_nome if user_nome and user_nome != "None" else request.user.username
 
-        # Linha padrão formatada
-        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_nome}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
         if "retorno" in descricao.lower():
-            total_retorno += val
-            linhas_retorno += linha_html
+            total_retorno += val; linhas_retorno += linha_html
         elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
-            total_consultas += val
-            linhas_consultas += linha_html
+            total_consultas += val; linhas_consultas += linha_html
         elif status == "Pago" and cat == "Exame":
-            total_exames += val
-            linhas_exames += linha_html
+            total_exames += val; linhas_exames += linha_html
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
-            total_odonto += val
-            linhas_odonto += linha_html
+            total_odonto += val; linhas_odonto += linha_html
         elif pac == "-":
             total_diversos += val
-            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary'>@{user_nome}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
+            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary'>@{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
         else:
-            total_faturado += val
-            linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
+            total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
@@ -3306,10 +3302,8 @@ def caixa_geral(request):
 
     conteudo = f"""
     <div class="container-fluid">
-
     <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
     {mensagem}
-
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início DD/MM/AAAA"></div>
         <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim DD/MM/AAAA"></div>
@@ -3317,7 +3311,6 @@ def caixa_geral(request):
         <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas</option>{opts_uni}</select></div>
         <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
     </form>
-
     <div class="card p-3 mb-3 border-dark bg-light">
         <h5>➕ Caixa Diversos</h5>
         <form method="POST" class="row g-2">
@@ -3329,27 +3322,14 @@ def caixa_geral(request):
             <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
         </form>
     </div>
-
     <div class="card mb-3">
         <div class="card-header bg-success text-white">Consultas - Total: R$ {total_consultas:.2f}</div>
         <table class="table table-sm">{cabecalho_tab}{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
     </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-warning">Convênios - Total: R$ {total_faturado:.2f}</div>
-        <table class="table table-sm">{cabecalho_tab.replace('Valor', 'Status')}{linhas_faturado or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
     <div class="card mb-3">
         <div class="card-header bg-primary text-white">Exames - Total: R$ {total_exames:.2f}</div>
         <table class="table table-sm">{cabecalho_tab}{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
     </div>
-
-    <div class="card mb-3">
-        <div class="card-header bg-dark text-white">Odontologia - Total: R$ {total_odonto:.2f}</div>
-        <table class="table table-sm">{cabecalho_tab}{linhas_odonto or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table>
-    </div>
-
     <div class="card mb-3">
         <div class="card-header bg-secondary text-white">Diversos - Total: R$ {total_diversos:.2f}</div>
         <table class="table table-sm">
@@ -3357,18 +3337,13 @@ def caixa_geral(request):
             {linhas_diversos or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}
         </table>
     </div>
-
-    <div class="card mt-3 p-3 bg-dark text-white">
-        <h5>Total Geral: R$ {total_geral:.2f}</h5>
-        <p class="mb-0">Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
+    <div class="card mt-3 p-3 bg-dark text-white shadow">
+        <h5 class="m-0">Resumo: R$ {total_geral:.2f}</h5>
+        <small>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</small>
     </div>
-
     </div>
     """
-
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
