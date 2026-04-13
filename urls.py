@@ -3174,9 +3174,6 @@ def caixa_geral(request):
 
     usuario_logado = request.user.username if request.user.is_authenticated else "-"
 
-    # ===============================
-    # FUNÇÕES AUXILIARES
-    # ===============================
     def limpar_nome(nome):
         if not nome:
             return ""
@@ -3192,9 +3189,7 @@ def caixa_geral(request):
     data_ini_sql = br_to_sql(data_ini) if data_ini else None
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
-    # ===============================
-    # LANÇAMENTO DIVERSOS
-    # ===============================
+    # --- LANÇAMENTO DIVERSOS ---
     if request.method == "POST" and "lancar_diverso" in request.POST:
         try:
             unidade = request.POST.get('unidade_id')
@@ -3223,9 +3218,7 @@ def caixa_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-    # ===============================
-    # UNIDADES
-    # ===============================
+    # --- UNIDADES ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
@@ -3237,9 +3230,7 @@ def caixa_geral(request):
         """)
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
-    # ===============================
-    # SQL PRINCIPAL
-    # ===============================
+    # --- SQL ---
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
                forma_pagamento, status, data_pagamento, unidade_id, descricao
@@ -3247,6 +3238,7 @@ def caixa_geral(request):
         WHERE 1=1
     """
     params = []
+
     if data_ini_sql:
         sql += " AND data_pagamento::date >= %s"
         params.append(data_ini_sql)
@@ -3276,9 +3268,7 @@ def caixa_geral(request):
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
 
-    # ===============================
-    # BLOCOS E SOMAS
-    # ===============================
+    # --- BLOCOS ---
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
 
@@ -3291,7 +3281,6 @@ def caixa_geral(request):
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
 
-        # inclui usuário entre paciente e profissional
         usuario_col = f"<td>{usuario_logado}</td>"
 
         if "retorno" in descricao.lower():
@@ -3322,9 +3311,48 @@ def caixa_geral(request):
 
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
-    # restante HTML mantido igual...
-    return HttpResponse(base_html("Caixa", conteudo))
+    # --- HTML (CORREÇÃO AQUI) ---
+    conteudo = f"""
+    <h5>Caixa Geral</h5>
+    {mensagem}
 
+    <div class="card mb-3">
+        <div class="card-header bg-success text-white">Consultas</div>
+        <table class="table">{linhas_consultas}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-warning">Convênios</div>
+        <table class="table">{linhas_faturado}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-info text-white">Retorno</div>
+        <table class="table">{linhas_retorno}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-primary text-white">Exames</div>
+        <table class="table">{linhas_exames}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-dark text-white">Odontologia</div>
+        <table class="table">{linhas_odonto}</table>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-secondary text-white">Diversos</div>
+        <table class="table">{linhas_diversos}</table>
+    </div>
+
+    <div class="card mt-3 p-3">
+        <h5>Total Geral: R$ {total_geral:.2f}</h5>
+        <p>Pix: R$ {pix_total:.2f} | Cartão: R$ {cartao_total:.2f} | Dinheiro: R$ {dinheiro_total:.2f}</p>
+    </div>
+    """
+
+    return HttpResponse(base_html("Caixa", conteudo))
 
 
 
