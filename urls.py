@@ -1540,8 +1540,7 @@ def acesso_geral(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-    # ADICIONA "TODAS UNIDADES" NO TOPO
-    opcoes_unidades = "<option value=''>Todas Unidades</option>" + "".join([
+    opcoes_unidades = "".join([
         f"<option value='{u[0]}'>{u[1]}</option>"
         for u in unidades
     ])
@@ -1552,7 +1551,7 @@ def acesso_geral(request):
         senha = request.POST.get('senha')
         cargo = request.POST.get('cargo')
         cpf = request.POST.get('cpf')
-        unidade_id = request.POST.get('unidade_id') or None
+        unidade_id = request.POST.get('unidade_id')
 
         try:
             with connection.cursor() as cursor:
@@ -1592,7 +1591,9 @@ def acesso_geral(request):
         user_id = request.GET.get("delete")
         try:
             with connection.cursor() as cursor:
+                # remove perfil
                 cursor.execute("DELETE FROM perfis_usuario WHERE user_id = %s", [user_id])
+                # remove usuário direto (SEM ORM)
                 cursor.execute("DELETE FROM auth_user WHERE id = %s", [user_id])
 
             return HttpResponseRedirect("/acessos/")
@@ -1646,6 +1647,7 @@ def acesso_geral(request):
             </select>
 
             <select name="unidade_id" class="form-control mb-2">
+                <option value="">Selecione a Unidade</option>
                 {opcoes_unidades}
             </select>
 
@@ -1670,6 +1672,8 @@ def acesso_geral(request):
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
+
+
 
 
 
