@@ -3376,8 +3376,6 @@ def caixa_geral(request):
 
 
 
-
-
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
 
 # --- CONFIGURAÇÃO DE ROTAS DO SISTEMA SEMPRE VIDA ---
