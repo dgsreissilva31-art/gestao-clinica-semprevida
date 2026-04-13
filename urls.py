@@ -3131,6 +3131,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA ---
 
 @login_required
 @csrf_exempt
@@ -3268,11 +3269,10 @@ def caixa_geral(request):
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
         
-        # ✅ CORREÇÃO AQUI: Usa apenas o que está no banco. Se nulo, mostra "S.I" (Sem Informação)
-        # Isso impede que o nome mude conforme quem está logado.
+        # ✅ CORREÇÃO: Removido o símbolo @. Exibe apenas o nome ou S.I
         user_display = user_nome_db if user_nome_db and str(user_nome_db) != "None" else "S.I"
 
-        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>@{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
         if "retorno" in descricao.lower():
             total_retorno += val; linhas_retorno += linha_html
@@ -3284,7 +3284,7 @@ def caixa_geral(request):
             total_odonto += val; linhas_odonto += linha_html
         elif pac == "-":
             total_diversos += val
-            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary'>@{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
+            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary'>{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
         else:
             total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
@@ -3371,8 +3371,6 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
