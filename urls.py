@@ -3165,6 +3165,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA ---
 @csrf_exempt
 def caixa_geral(request):
     from django.db import connection
@@ -3442,7 +3443,6 @@ def caixa_geral(request):
     """
 
     return HttpResponse(base_html("Caixa", conteudo))
-
 
 
 
