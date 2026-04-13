@@ -3140,6 +3140,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA ---
 
 @login_required
 @csrf_exempt
@@ -3186,7 +3187,7 @@ def caixa_geral(request):
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
             
-            # ✅ REGISTRO DEFINITIVO: Captura o username no momento do clique
+            # ✅ REGISTRO DEFINITIVO: Captura o username no momento exato do clique
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not unidade:
@@ -3270,9 +3271,6 @@ def caixa_geral(request):
     pix_total = cartao_total = dinheiro_total = 0
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
 
-    # ✅ Captura o usuário atual para preencher caso o banco esteja vazio
-    user_atual = request.user.username if request.user.is_authenticated else "S.I"
-
     for m in movimentos:
         cat, pac, prof, val, forma, status, data_pg, uni, desc, user_nome_db = m
         val = float(val or 0)
@@ -3280,8 +3278,9 @@ def caixa_geral(request):
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
         
-        # ✅ REGRA UNIFICADA: Prioriza o banco, se vazio usa o logado no momento
-        user_display = user_nome_db if (user_nome_db and str(user_nome_db).strip() != "" and str(user_nome_db) != "None") else user_atual
+        # ✅ FIX DEFINITIVO: Se o banco tiver NULL, exibe "S.I". 
+        # Nunca mais exibirá o usuário logado no lugar do responsável real.
+        user_display = user_nome_db if (user_nome_db and str(user_nome_db).strip() != "" and str(user_nome_db) != "None") else "S.I"
 
         linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
@@ -3382,6 +3381,9 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
+
+
+
 
 
 
