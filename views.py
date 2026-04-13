@@ -49,33 +49,36 @@ def base_html(titulo, conteudo):
     """
 
 # --- 🔒 DECORATOR DE PERMISSÃO (VERSÃO BLINDADA) ---
+from functools import wraps
 
 def cargo_required(cargo_permitido):
     def decorator(view_func):
+
+        @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
 
-            user_id = request.user.id
+            if not request.user.is_authenticated:
+                return HttpResponseRedirect("/login/")
 
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    SELECT cargo 
-                    FROM perfis_usuario 
-                    WHERE user_id = %s
-                """, [user_id])
-                resultado = cursor.fetchone()
+                    SELECT cargo FROM perfis_usuario WHERE user_id = %s
+                """, [request.user.id])
+                res = cursor.fetchone()
 
-            if not resultado:
+            if not res:
                 return HttpResponse("Acesso negado")
 
-            cargo_usuario = resultado[0]
-
-            if cargo_usuario != cargo_permitido:
+            if res[0] != cargo_permitido:
                 return HttpResponse("Acesso restrito")
 
             return view_func(request, *args, **kwargs)
 
         return _wrapped_view
     return decorator
+
+
+
 
 
 
