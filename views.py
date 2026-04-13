@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+
 # --- FUNÇÃO BASE (TOPO CORRETO) ---
 
 def base_html(titulo, conteudo):
@@ -48,8 +49,6 @@ def base_html(titulo, conteudo):
     """
 
 # --- 🔒 DECORATOR DE PERMISSÃO (VERSÃO BLINDADA) ---
-from django.http import HttpResponse
-from django.db import connection
 
 def cargo_required(cargo_permitido):
     def decorator(view_func):
