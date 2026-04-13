@@ -1535,16 +1535,31 @@ def acesso_geral(request):
 
     mensagem = ""
     
-    # --- LISTAR UNIDADES ---
+    # --- LISTAR UNIDADES (BANCO + FIXAS) ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades = cursor.fetchall()
+        unidades_db = cursor.fetchall()
+
+    # GARANTE AS 3 EXISTENTES
+    unidades_fixas = [
+        (0, "Unidade 1"),
+        (0, "Unidade 2"),
+        (0, "Unidade 3"),
+    ]
+
+    nomes_existentes = set([u[1] for u in unidades_db])
+    unidades = list(unidades_db)
+
+    for uf in unidades_fixas:
+        if uf[1] not in nomes_existentes:
+            unidades.append(uf)
 
     opcoes_unidades = "".join([
         f"<option value='{u[0]}'>{u[1]}</option>"
         for u in unidades
     ])
 
+    # --- POST ---
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
@@ -1586,14 +1601,12 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- EXCLUIR (CORRIGIDO) ---
+    # --- EXCLUIR ---
     if request.GET.get("delete"):
         user_id = request.GET.get("delete")
         try:
             with connection.cursor() as cursor:
-                # remove perfil
                 cursor.execute("DELETE FROM perfis_usuario WHERE user_id = %s", [user_id])
-                # remove usuário direto (SEM ORM)
                 cursor.execute("DELETE FROM auth_user WHERE id = %s", [user_id])
 
             return HttpResponseRedirect("/acessos/")
@@ -1601,7 +1614,7 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
 
-    # --- LISTA FUNCIONÁRIOS ---
+    # --- LISTA ---
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT p.user_id, p.nome_completo, p.cargo, p.cpf, u.nome
@@ -1672,8 +1685,6 @@ def acesso_geral(request):
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
-
-
 
 
 
