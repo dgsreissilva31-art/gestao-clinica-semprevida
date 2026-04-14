@@ -751,6 +751,7 @@ def convenios_geral(request):
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
 @csrf_exempt
+@login_required
 def exames_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
@@ -794,6 +795,9 @@ def exames_geral(request):
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
 
+            # ✅ CAPTURA O USUÁRIO LOGADO NO MOMENTO DO LANÇAMENTO
+            usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
+
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
 
@@ -806,10 +810,11 @@ def exames_geral(request):
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
+                # ✅ ADICIONADO 'usuario_lancamento' NO INSERT ABAIXO
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, [
                     paciente,
                     prestador,
@@ -818,16 +823,17 @@ def exames_geral(request):
                     'Pago',
                     'Exame',
                     nome_exame,
-                    unidade_id
+                    unidade_id,
+                    usuario_nome  # <--- Nome de quem lançou o exame
                 ])
 
-            mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
+            mensagem = f'<div class="alert alert-success">✅ Exame lançado no caixa por {usuario_nome}!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # CADASTRO / EDIÇÃO EXAMES
+    # CADASTRO / EDIÇÃO EXAMES (Orestante inalterado)
     # ===============================
     edit_id = request.GET.get('edit_exame')
     e_dados = ["", "", "", 0.00]
@@ -888,16 +894,12 @@ def exames_geral(request):
         """)
         exames_lista = cursor.fetchall()
 
-    # ===============================
     # SELECTS
-    # ===============================
     opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames])
     opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
-    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
+    opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(request.POST.get("unidade_id"))==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
 
-    # ===============================
     # LISTA EXAMES
-    # ===============================
     linhas = ""
     for ex in exames_lista:
         linhas += f"""
@@ -908,72 +910,57 @@ def exames_geral(request):
         </tr>
         """
 
-    # ===============================
     # HTML
-    # ===============================
     conteudo = f"""
     <h4>🧪 Exames</h4>
 
     {mensagem}
 
-    <!-- CADASTRO EXAME -->
     <div class="card p-3 mb-3">
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_exame" value="{edit_id or ''}">
-
             <div class="col-md-4">
-                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" required>
+                <input type="text" name="nome" value="{e_dados[0]}" class="form-control" placeholder="Nome do exame" required>
             </div>
-
             <div class="col-md-3">
-                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
+                <input type="text" name="grupo" value="{e_dados[1]}" class="form-control" placeholder="Grupo">
             </div>
-
             <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+                <input type="number" step="0.01" name="valor" value="{e_dados[3]}" class="form-control" placeholder="Valor">
             </div>
-
             <div class="col-md-3">
                 <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
             </div>
         </form>
     </div>
 
-    <!-- CAIXA EXAMES -->
-    <div class="card p-3 mb-3 border-success">
-        <h5>💰 Caixa de Exames</h5>
-
+    <div class="card p-3 mb-3 border-success shadow-sm">
+        <h5 class="text-success fw-bold">💰 Caixa de Exames</h5>
         <form method="POST" class="row g-2">
-
             <div class="col-md-2">
                 <select name="unidade_id" class="form-select" required>
                     <option value="">Unidade</option>
                     {opts_uni}
                 </select>
             </div>
-
             <div class="col-md-2">
                 <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
             </div>
-
             <div class="col-md-2">
                 <select name="exame_id" class="form-select" required>
                     <option value="">Exame</option>
                     {opts_exames}
                 </select>
             </div>
-
             <div class="col-md-2">
                 <select name="prestador" class="form-select">
                     <option value="">Prestador</option>
                     {opts_prest}
                 </select>
             </div>
-
             <div class="col-md-1">
                 <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
             </div>
-
             <div class="col-md-2">
                 <select name="forma" class="form-select">
                     <option>Pix</option>
@@ -981,23 +968,19 @@ def exames_geral(request):
                     <option>Dinheiro</option>
                 </select>
             </div>
-
             <div class="col-md-1">
                 <button name="lancar_exame" class="btn btn-success w-100">OK</button>
             </div>
-
         </form>
     </div>
 
-    <!-- LISTA -->
-    <table class="table table-sm">
-        <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
-        {linhas}
+    <table class="table table-sm table-hover">
+        <thead class="table-light"><tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr></thead>
+        <tbody>{linhas}</tbody>
     </table>
     """
 
     return HttpResponse(base_html("Exames", conteudo))
-
 
 
 
