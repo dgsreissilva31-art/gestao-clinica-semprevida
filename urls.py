@@ -3280,7 +3280,6 @@ def caixa_geral(request):
         descricao = (desc or "").strip()
         
         # ✅ FIX DEFINITIVO: Se o banco tiver NULL, exibe "S.I". 
-        # Nunca mais exibirá o usuário logado no lugar do responsável real.
         user_display = user_nome_db if (user_nome_db and str(user_nome_db).strip() != "" and str(user_nome_db) != "None") else "S.I"
 
         linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
@@ -3382,9 +3381,6 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
-
-
-
 
 
 
