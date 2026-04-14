@@ -3322,7 +3322,7 @@ def caixa_geral(request):
 
     cabecalho_tab = "<tr><th>Data</th><th>Paciente</th><th>Usuário</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>"
 
-    conteudo = f""" ... (RESTANTE DO HTML INALTERADO) ... """
+ 
 
     return HttpResponse(base_html("Caixa", conteudo))
 
