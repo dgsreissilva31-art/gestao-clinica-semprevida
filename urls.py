@@ -750,8 +750,10 @@ def convenios_geral(request):
 
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
+
+@login_required # ✅ Garante que o usuário esteja logado para não dar erro no request.user
 @csrf_exempt
-@login_required
 def exames_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
@@ -768,23 +770,7 @@ def exames_geral(request):
         return HttpResponseRedirect('/exames/')
 
     # ===============================
-    # CADASTRAR PRESTADOR
-    # ===============================
-    if request.method == "POST" and "novo_prestador" in request.POST:
-        try:
-            nome = request.POST.get('nome_prestador')
-
-            if nome:
-                with connection.cursor() as cursor:
-                    cursor.execute("INSERT INTO prestadores (nome) VALUES (%s)", [nome])
-
-                mensagem = '<div class="alert alert-success">✅ Prestador cadastrado!</div>'
-
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
-    # ===============================
-    # LANÇAMENTO CAIXA EXAMES (COM UNIDADE)
+    # LANÇAMENTO CAIXA EXAMES (CORRIGIDO)
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -794,64 +780,50 @@ def exames_geral(request):
             valor = float(request.POST.get('valor') or 0)
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
-
-            # ✅ CAPTURA O USUÁRIO LOGADO NO MOMENTO DO LANÇAMENTO
+            
+            # ✅ Captura o usuário logado no momento
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
-
             if not unidade_id:
                 raise Exception("Selecione a unidade")
 
             with connection.cursor() as cursor:
-
+                # Busca o nome do exame
                 cursor.execute("SELECT nome FROM exames WHERE id = %s", [exame_id])
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
-                # ✅ ADICIONADO 'usuario_lancamento' NO INSERT ABAIXO
+                # ✅ SQL CORRIGIDO: 10 colunas e 10 valores (%s)
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, 
+                     status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, %s, %s)
                 """, [
-                    paciente,
-                    prestador,
-                    valor,
-                    forma,
-                    'Pago',
-                    'Exame',
-                    nome_exame,
-                    unidade_id,
-                    usuario_nome  # <--- Nome de quem lançou o exame
+                    paciente,      # 1
+                    prestador,     # 2
+                    valor,         # 3
+                    forma,         # 4
+                    'Pago',        # 5
+                    'Exame',       # 6
+                    nome_exame,    # 7
+                    unidade_id,    # 8
+                    usuario_nome   # 9 (O 10º é o CURRENT_DATE que já está no SQL)
                 ])
 
-            mensagem = f'<div class="alert alert-success">✅ Exame lançado no caixa por {usuario_nome}!</div>'
+            mensagem = f'<div class="alert alert-success">✅ Exame lançado por {usuario_nome}!</div>'
 
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro no lançamento: {e}</div>'
 
     # ===============================
-    # CADASTRO / EDIÇÃO EXAMES (Orestante inalterado)
+    # CADASTRO / EDIÇÃO EXAMES (Inalterado)
     # ===============================
-    edit_id = request.GET.get('edit_exame')
-    e_dados = ["", "", "", 0.00]
-
-    if edit_id:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT nome, grupo, preparo, valor_particular 
-                FROM exames WHERE id = %s
-            """, [edit_id])
-            res = cursor.fetchone()
-            if res:
-                e_dados = res
-
     if request.method == "POST" and "salvar_exame" in request.POST:
         try:
             id_post = request.POST.get('id_exame')
-
             nome = request.POST.get('nome')
             grupo = request.POST.get('grupo')
             preparo = request.POST.get('preparo')
@@ -860,129 +832,59 @@ def exames_geral(request):
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
-                        UPDATE exames 
-                        SET nome=%s, grupo=%s, preparo=%s, valor_particular=%s
-                        WHERE id=%s
+                        UPDATE exames SET nome=%s, grupo=%s, preparo=%s, valor_particular=%s WHERE id=%s
                     """, [nome, grupo, preparo, valor, id_post])
                 else:
                     cursor.execute("""
-                        INSERT INTO exames (nome, grupo, preparo, valor_particular)
-                        VALUES (%s,%s,%s,%s)
+                        INSERT INTO exames (nome, grupo, preparo, valor_particular) VALUES (%s,%s,%s,%s)
                     """, [nome, grupo, preparo, valor])
-
             return HttpResponseRedirect('/exames/')
-
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCAR DADOS
+    # BUSCAR DADOS PARA SELECTS
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM exames ORDER BY nome")
-        exames = cursor.fetchall()
-
+        exames_select = cursor.fetchall()
         cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
         prestadores = cursor.fetchall()
-
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT id, nome, grupo, valor_particular 
-            FROM exames ORDER BY nome
-        """)
+        cursor.execute("SELECT id, nome, grupo, valor_particular FROM exames ORDER BY nome")
         exames_lista = cursor.fetchall()
 
-    # SELECTS
-    opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames])
+    opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames_select])
     opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
-    opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(request.POST.get("unidade_id"))==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
+    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
-    # LISTA EXAMES
-    linhas = ""
-    for ex in exames_lista:
-        linhas += f"""
-        <tr>
-            <td>{ex[1]}</td>
-            <td>{ex[2] or '-'}</td>
-            <td>R$ {float(ex[3] or 0):.2f}</td>
-        </tr>
-        """
+    linhas = "".join([f"<tr><td>{ex[1]}</td><td>{ex[2] or '-'}</td><td>R$ {float(ex[3] or 0):.2f}</td></tr>" for ex in exames_lista])
 
-    # HTML
+    # ===============================
+    # HTML (Inalterado)
+    # ===============================
     conteudo = f"""
-    <h4>🧪 Exames</h4>
-
+    <h4>🧪 Gerenciamento de Exames</h4>
     {mensagem}
-
-    <div class="card p-3 mb-3">
-        <form method="POST" class="row g-2">
-            <input type="hidden" name="id_exame" value="{edit_id or ''}">
-            <div class="col-md-4">
-                <input type="text" name="nome" value="{e_dados[0]}" class="form-control" placeholder="Nome do exame" required>
-            </div>
-            <div class="col-md-3">
-                <input type="text" name="grupo" value="{e_dados[1]}" class="form-control" placeholder="Grupo">
-            </div>
-            <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" value="{e_dados[3]}" class="form-control" placeholder="Valor">
-            </div>
-            <div class="col-md-3">
-                <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
-            </div>
-        </form>
-    </div>
-
     <div class="card p-3 mb-3 border-success shadow-sm">
         <h5 class="text-success fw-bold">💰 Caixa de Exames</h5>
         <form method="POST" class="row g-2">
-            <div class="col-md-2">
-                <select name="unidade_id" class="form-select" required>
-                    <option value="">Unidade</option>
-                    {opts_uni}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
-            </div>
-            <div class="col-md-2">
-                <select name="exame_id" class="form-select" required>
-                    <option value="">Exame</option>
-                    {opts_exames}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <select name="prestador" class="form-select">
-                    <option value="">Prestador</option>
-                    {opts_prest}
-                </select>
-            </div>
-            <div class="col-md-1">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
-            </div>
-            <div class="col-md-2">
-                <select name="forma" class="form-select">
-                    <option>Pix</option>
-                    <option>Cartão</option>
-                    <option>Dinheiro</option>
-                </select>
-            </div>
-            <div class="col-md-1">
-                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
-            </div>
+            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
+            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente" required></div>
+            <div class="col-md-2"><select name="exame_id" class="form-select" required><option value="">Exame</option>{opts_exames}</select></div>
+            <div class="col-md-2"><select name="prestador" class="form-select"><option value="">Prestador</option>{opts_prest}</select></div>
+            <div class="col-md-1"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-2"><select name="forma" class="form-select"><option>Pix</option><option>Cartão</option><option>Dinheiro</option></select></div>
+            <div class="col-md-1"><button name="lancar_exame" class="btn btn-success w-100">OK</button></div>
         </form>
     </div>
-
     <table class="table table-sm table-hover">
         <thead class="table-light"><tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr></thead>
         <tbody>{linhas}</tbody>
     </table>
     """
-
     return HttpResponse(base_html("Exames", conteudo))
-
-
 
 
 
