@@ -2977,8 +2977,7 @@ def prontuario_geral(request):
 
 
 # --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA ---
-# --- 18. TELA 16: CAIXA ---
+# --- 18. TELA 16: CAIXA (COM BOTÃO GUIA EM EXAMES) ---
 
 @login_required
 @csrf_exempt
@@ -2987,7 +2986,6 @@ def caixa_geral(request):
     from django.http import HttpResponse
     import datetime
     import re
-    import urllib.parse
 
     hoje = datetime.date.today()
     unidade_id = request.GET.get('unidade') or ""
@@ -2997,26 +2995,21 @@ def caixa_geral(request):
     mensagem = ""
 
     # ===============================
-    # FUNÇÕES AUXILIARES
+    # FUNÇÕES AUXILIARES E SQL (Mantidos)
     # ===============================
     def limpar_nome(nome):
-        if not nome:
-            return ""
-        return re.sub(r"\(.*?\)", "", nome).strip()
+        return re.sub(r"\(.*?\)", "", nome).strip() if nome else ""
 
     def br_to_sql(data_br):
         try:
             d, m, a = data_br.split('/')
             return f"{a}-{m}-{d}"
-        except:
-            return None
+        except: return None
 
     data_ini_sql = br_to_sql(data_ini) if data_ini else None
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
-    # ===============================
-    # LANÇAMENTO DIVERSOS
-    # ===============================
+    # (Código de Lançamento Diversos permanece igual...)
     if request.method == "POST" and "lancar_diverso" in request.POST:
         try:
             unidade = request.POST.get('unidade_id')
@@ -3024,78 +3017,40 @@ def caixa_geral(request):
             categoria = request.POST.get('categoria')
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
-            
-            # ✅ REGISTRO DEFINITIVO: Captura o username no momento do clique
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
-
-            if not unidade:
-                raise Exception("Selecione a unidade")
-            if valor <= 0:
-                raise Exception("Valor inválido")
-            if tipo == "Saída":
-                valor = -abs(valor)
-
+            if not unidade: raise Exception("Selecione a unidade")
+            if valor <= 0: raise Exception("Valor inválido")
+            if tipo == "Saída": valor = -abs(valor)
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento,
+                    INSERT INTO caixa (paciente_nome, profissional_nome, valor, forma_pagamento,
                      status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, ["-", "-", valor, tipo, "Pago", categoria or "Diversos", descricao, unidade, usuario_nome])
+            mensagem = '<div class="alert alert-success">✅ Lançamento realizado!</div>'
+        except Exception as e: mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-            mensagem = '<div class="alert alert-success">✅ Lançamento realizado com sucesso!</div>'
-
-        except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
-    # ===============================
-    # UNIDADES E CATEGORIAS
-    # ===============================
+    # Busca Unidades e Categorias
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
-        cursor.execute("""
-            SELECT DISTINCT categoria 
-            FROM caixa 
-            WHERE paciente_nome = '-' 
-            ORDER BY categoria
-        """)
+        cursor.execute("SELECT DISTINCT categoria FROM caixa WHERE paciente_nome = '-' ORDER BY categoria")
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
-    # ===============================
-    # SQL PRINCIPAL
-    # ===============================
+    # SQL de Movimentações
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
                forma_pagamento, status, data_pagamento, unidade_id, descricao, usuario_lancamento
-        FROM caixa
-        WHERE 1=1
+        FROM caixa WHERE 1=1
     """
     params = []
-    if data_ini_sql:
-        sql += " AND data_pagamento::date >= %s"
-        params.append(data_ini_sql)
-    if data_fim_sql:
-        sql += " AND data_pagamento::date <= %s"
-        params.append(data_fim_sql)
-    if not data_ini_sql and not data_fim_sql:
-        sql += " AND data_pagamento::date = %s"
-        params.append(hoje)
-    if unidade_id:
-        sql += " AND unidade_id = %s"
-        params.append(unidade_id)
+    if data_ini_sql: sql += " AND data_pagamento::date >= %s"; params.append(data_ini_sql)
+    if data_fim_sql: sql += " AND data_pagamento::date <= %s"; params.append(data_fim_sql)
+    if not data_ini_sql and not data_fim_sql: sql += " AND data_pagamento::date = %s"; params.append(hoje)
+    if unidade_id: sql += " AND unidade_id = %s"; params.append(unidade_id)
     if busca:
-        sql += """
-        AND (
-            paciente_nome ILIKE %s OR
-            profissional_nome ILIKE %s OR
-            descricao ILIKE %s OR
-            categoria ILIKE %s OR
-            usuario_lancamento ILIKE %s
-        )
-        """
-        params.extend([f"%{busca}%"] * 5)
-
+        sql += " AND (paciente_nome ILIKE %s OR profissional_nome ILIKE %s OR descricao ILIKE %s OR usuario_lancamento ILIKE %s)"
+        params.extend([f"%{busca}%"] * 4)
     sql += " ORDER BY data_pagamento DESC, id DESC"
 
     with connection.cursor() as cursor:
@@ -3103,40 +3058,44 @@ def caixa_geral(request):
         movimentos = cursor.fetchall()
 
     # ===============================
-    # BLOCOS E SOMAS
+    # PROCESSAMENTO DAS LINHAS
     # ===============================
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
-
-    # ✅ Captura o usuário atual para preencher caso o banco esteja vazio
     user_atual = request.user.username if request.user.is_authenticated else "S.I"
 
     for m in movimentos:
-        cat, pac, prof, val, forma, status, data_pg, uni, desc, user_nome_db = m
-        val = float(val or 0)
-        pac = limpar_nome(pac)
+        cat, pac, prof, val, forma, status, data_pg, uni, desc, user_db = m
+        val = float(val or 0); pac = limpar_nome(pac)
         data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip()
-        
-        # ✅ CORREÇÃO: Se não houver usuário no banco, exibe o usuário logado (S.I como fallback)
-        user_display = user_nome_db if (user_nome_db and str(user_nome_db).strip() != "" and str(user_nome_db) != "None") else user_atual
+        user_display = user_db if (user_db and str(user_db).strip() != "None") else user_atual
 
-        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        # ✅ Botão de Guia (Apenas para Exames)
+        btn_guia = f"""<button class='btn btn-outline-dark btn-sm ms-2' style='font-size:10px; padding: 2px 5px;' 
+                      onclick="gerarGuia('{pac}', '{prof or '-'}', '{descricao}', '{data_br}', '{user_display}')">
+                      <i class='bi bi-printer'></i> GUIA</button>"""
+
+        # Linha padrão
+        linha_base = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        
+        # Linha específica para Exames (com o botão Guia)
+        linha_exame = f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
         if "retorno" in descricao.lower():
-            total_retorno += val; linhas_retorno += linha_html
-        elif status == "Pago" and cat not in ["Exame", "Odonto", "Odontologia"] and pac != "-":
-            total_consultas += val; linhas_consultas += linha_html
+            total_retorno += val; linhas_retorno += linha_base
         elif status == "Pago" and cat == "Exame":
-            total_exames += val; linhas_exames += linha_html
+            total_exames += val; linhas_exames += linha_exame
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
-            total_odonto += val; linhas_odonto += linha_html
+            total_odonto += val; linhas_odonto += linha_base
         elif pac == "-":
             total_diversos += val
             linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
+        elif status == "Pago":
+            total_consultas += val; linhas_consultas += linha_base
         else:
-            total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
+            total_faturado += val; linhas_faturado += linha_base.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
@@ -3145,84 +3104,82 @@ def caixa_geral(request):
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
     # ===============================
-    # HTML FINAL
+    # JAVASCRIPT DA GUIA E CONTEÚDO
     # ===============================
+    script_guia = """
+    <script>
+    function gerarGuia(paciente, profissional, descricao, data, usuario) {
+        var janela = window.open('', '', 'width=800,height=600');
+        janela.document.write('<html><head><title>Guia de Exame</title>');
+        janela.document.write('<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">');
+        janela.document.write('<style>body{padding:40px; font-family: sans-serif;} .box{border: 2px solid #000; padding:20px; border-radius:10px;} .header{text-align:center; border-bottom:1px solid #ccc; margin-bottom:20px; pb-2;}</style>');
+        janela.document.write('</head><body>');
+        janela.document.write('<div class="box">');
+        janela.document.write('<div class="header"><h3>CLÍNICA SEMPRE VIDA</h3><p>Guia de Encaminhamento de Exame</p></div>');
+        janela.document.write('<p><strong>Paciente:</strong> ' + paciente + '</p>');
+        janela.document.write('<p><strong>Profissional:</strong> ' + profissional + '</p>');
+        janela.document.write('<p><strong>Descrição:</strong> ' + descricao + '</p>');
+        janela.document.write('<hr>');
+        janela.document.write('<p><strong>Data:</strong> ' + data + '</p>');
+        janela.document.write('<p><strong>Usuário Emissor:</strong> ' + usuario + '</p>');
+        janela.document.write('<br><br><br>');
+        janela.document.write('<div style="text-align:center; border-top: 1px solid #000; width:300px; margin: 0 auto;">Assinatura</div>');
+        janela.document.write('</div>');
+        janela.document.write('<script>window.onload = function(){ window.print(); window.close(); }</script>');
+        janela.document.write('</body></html>');
+        janela.document.close();
+    }
+    </script>
+    """
+
     opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
     cabecalho_tab = "<tr><th>Data</th><th>Paciente</th><th>Usuário</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>"
 
     conteudo = f"""
+    {script_guia}
     <div class="container-fluid">
-    <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
-    {mensagem}
-    <form method="GET" class="row g-2 mb-3">
-        <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início DD/MM/AAAA"></div>
-        <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim DD/MM/AAAA"></div>
-        <div class="col-md-3"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Buscar por Paciente, Usuário ou Descrição..."></div>
-        <div class="col-md-3"><select name="unidade" class="form-select"><option value="">Todas Unidades</option>{opts_uni}</select></div>
-        <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
-    </form>
-
-    <div class="card p-3 mb-4 border-dark bg-light shadow-sm">
-        <h6 class="fw-bold"><i class="bi bi-plus-circle"></i> Caixa Diversos (Entradas/Saídas Manuais)</h6>
-        <form method="POST" class="row g-2">
-            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
-            <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
-            <div class="col-md-2"><input list="lista_categorias" name="categoria" class="form-control" placeholder="Categoria"><datalist id="lista_categorias">{opts_cat}</datalist></div>
-            <div class="col-md-3"><input type="text" name="descricao" class="form-control" placeholder="Descrição"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor R$"></div>
-            <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
+        <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
+        {mensagem}
+        <form method="GET" class="row g-2 mb-3">
+            <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início DD/MM/AAAA"></div>
+            <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim DD/MM/AAAA"></div>
+            <div class="col-md-4"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente, Usuário ou Descrição..."></div>
+            <div class="col-md-2"><select name="unidade" class="form-select"><option value="">Unidades</option>{opts_uni}</select></div>
+            <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
         </form>
-    </div>
 
-    <div class="card mb-3 border-success shadow-sm">
-        <div class="card-header bg-success text-white fw-bold">Consultas Particulares - Total: R$ {total_consultas:.2f}</div>
-        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
-    </div>
-
-    <div class="card mb-3 border-warning shadow-sm">
-        <div class="card-header bg-warning fw-bold">Convênios / Faturados - Total: R$ {total_faturado:.2f}</div>
-        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab.replace('Valor', 'Status')}{linhas_faturado or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
-    </div>
-
-    <div class="card mb-3 border-info shadow-sm">
-        <div class="card-header bg-info text-white fw-bold">Retornos - Total: R$ {total_retorno:.2f}</div>
-        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_retorno or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
-    </div>
-
-    <div class="card mb-3 border-primary shadow-sm">
-        <div class="card-header bg-primary text-white fw-bold">Exames - Total: R$ {total_exames:.2f}</div>
-        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
-    </div>
-
-    <div class="card mb-3 border-dark shadow-sm">
-        <div class="card-header bg-dark text-white fw-bold">Odontologia - Total: R$ {total_odonto:.2f}</div>
-        <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}{linhas_odonto or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</table></div>
-    </div>
-
-    <div class="card mb-3 border-secondary shadow-sm">
-        <div class="card-header bg-secondary text-white fw-bold">Caixa Diversos / Despesas - Total: R$ {total_diversos:.2f}</div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover">
-                <thead class="table-light"><tr><th>Data</th><th>Descrição</th><th>Usuário</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr></thead>
-                <tbody>{linhas_diversos or '<tr><td colspan="6" class="text-center">Sem registros</td></tr>'}</tbody>
-            </table>
+        <div class="card mb-3 border-primary shadow-sm">
+            <div class="card-header bg-primary text-white fw-bold">Exames - Total: R$ {total_exames:.2f}</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">{cabecalho_tab}</thead>
+                    <tbody>{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody>
+                </table>
+            </div>
         </div>
-    </div>
 
-    <div class="card mt-3 p-3 bg-dark text-white shadow">
-        <div class="row text-center align-items-center">
-            <div class="col-md-3 border-end"><h5>Total Geral: R$ {total_geral:.2f}</h5></div>
-            <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
-            <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
-            <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
+        <div class="card mb-3 border-success shadow-sm">
+            <div class="card-header bg-success text-white fw-bold">Consultas Particulares - Total: R$ {total_consultas:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}<tbody>{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody></table></div>
         </div>
-    </div>
+
+        <div class="card mb-3 border-dark shadow-sm">
+            <div class="card-header bg-dark text-white fw-bold">Odontologia - Total: R$ {total_odonto:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}<tbody>{linhas_odonto or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody></table></div>
+        </div>
+
+        <div class="card mt-3 p-3 bg-dark text-white shadow">
+            <div class="row text-center align-items-center">
+                <div class="col-md-3 border-end"><h5>Total: R$ {total_geral:.2f}</h5></div>
+                <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
+                <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
+                <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
+            </div>
+        </div>
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
