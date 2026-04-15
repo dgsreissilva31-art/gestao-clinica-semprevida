@@ -2458,12 +2458,14 @@ def recepcao_geral(request):
     import datetime
 
     data_hoje = datetime.date.today()
+    mensagem = ""
+    
+    # ✅ CAPTURA O USUÁRIO NO INÍCIO
+    usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
-
-    mensagem = ""
 
     # ===============================
     # FINALIZAR CHECK-IN
@@ -2491,85 +2493,74 @@ def recepcao_geral(request):
                     raise Exception("Agendamento não encontrado")
 
                 paciente_nome, profissional_nome, unidade_id = info
+                descricao_base = "Retorno" if retorno else "Particular"
 
-                descricao = "Retorno" if retorno else None
-
+                # --- CENÁRIO 1: PARTICULAR ---
                 if tipo == "avista":
                     valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-
+                    if valor <= 0: raise Exception("Informe o valor")
                     forma = request.POST.get('forma_pagamento') or "Pix"
 
                     cursor.execute("""
                         INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, valor, forma, "Particular", unidade_id])
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
+                         categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s,%s)
+                    """, [paciente_nome, profissional_nome, valor, forma, descricao_base, unidade_id, usuario_nome])
 
+                # --- CENÁRIO 2: CONVÊNIO ---
                 elif tipo == "convenio":
                     convenio_nome = ""
                     if convenio_id:
                         cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
                         c = cursor.fetchone()
-                        if c:
-                            convenio_nome = c[0]
+                        if c: convenio_nome = c[0]
 
                     cursor.execute("""
                         INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s)
-                    """, [paciente_nome, profissional_nome, descricao or convenio_nome or "Convênio", unidade_id])
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
+                         categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                        VALUES (%s,%s,0,'Faturado','A Faturar','Consulta',%s,CURRENT_DATE,%s,%s)
+                    """, [paciente_nome, profissional_nome, "Retorno" if retorno else (convenio_nome or "Convênio"), unidade_id, usuario_nome])
 
+                # --- CENÁRIO 3: CARTÃO DESCONTO ---
                 elif tipo == "cartao":
                     valor = float(request.POST.get('valor') or 0)
-                    if valor <= 0:
-                        raise Exception("Informe o valor")
-
+                    if valor <= 0: raise Exception("Informe o valor")
                     forma = request.POST.get('forma_pagamento') or "Pix"
 
                     convenio_nome = ""
                     if convenio_id:
                         cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
                         c = cursor.fetchone()
-                        if c:
-                            convenio_nome = c[0]
+                        if c: convenio_nome = c[0]
 
                     cursor.execute("""
                         INSERT INTO caixa
-                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s)
+                        (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
+                         categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                        VALUES (%s,%s,%s,%s,'Pago','Consulta',%s,CURRENT_DATE,%s,%s)
                     """, [
-                        paciente_nome,
-                        profissional_nome,
-                        valor,
-                        forma,
+                        paciente_nome, profissional_nome, valor, forma,
                         f"Cartão: {convenio_nome}" if convenio_nome else "Cartão Desconto",
-                        unidade_id
+                        unidade_id, usuario_nome
                     ])
 
-                cursor.execute("""
-                    UPDATE agendamentos
-                    SET status = 'Chegada'
-                    WHERE id = %s
-                """, [ag_id])
+                # Atualiza status do agendamento
+                cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
 
             return redirect(f"/recepcao/?unidade={unidade_filtro}")
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-    # ===============================
-    # BUSCAS (CORRIGIDO FILTRO)
-    # ===============================
+    # --- O RESTANTE DO CÓDIGO (Buscas e HTML) SEGUE IGUAL ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades = cursor.fetchall()
-
+        unidades_lista = cursor.fetchall()
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
-        convenios = cursor.fetchall()
+        convenios_lista = cursor.fetchall()
 
-        # 🔴 CORREÇÃO AQUI
         sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
             FROM agendamentos ag
@@ -2580,43 +2571,28 @@ def recepcao_geral(request):
             WHERE ag.data_agendamento = %s
         """
         params = [data_hoje]
-
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
-
         sql += " ORDER BY ag.horario_selecionado"
-
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
-    opts_unidades = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
-
-    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios])
+    opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_lista])
+    opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios_lista])
 
     linhas = ""
     for a in agenda:
         status = a[4] or "Agendado"
-
         if status == "Agendado":
             btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
+        linhas += f"<tr><td>{str(a[3])[:5]}</td><td>{a[1]}</td><td>{a[2]}</td><td>{btn_acao}</td></tr>"
 
-        linhas += f"""
-        <tr>
-            <td>{str(a[3])[:5]}</td>
-            <td>{a[1]}</td>
-            <td>{a[2]}</td>
-            <td>{btn_acao}</td>
-        </tr>
-        """
-
+    # HTML do Modal e Conteúdo (Inalterado)
     modal_html = ""
     if agendamento_id and etapa == '2':
         modal_html = f"""
@@ -2626,59 +2602,37 @@ def recepcao_geral(request):
                     <form method="POST">
                         <input type="hidden" name="ag_id" value="{agendamento_id}">
                         <input type="hidden" name="unidade_id_hidden" value="{unidade_filtro}">
-
                         <h5>Financeiro</h5>
-
                         <select name="tipo_pagto" id="tipo" class="form-select mb-2" onchange="toggle()">
                             <option value="avista">Particular</option>
                             <option value="convenio">Convênio</option>
                             <option value="cartao">Cartão Desconto</option>
                         </select>
-
                         <select name="convenio_id" id="convenio" class="form-select mb-2">
                             <option value="">Selecione Convênio</option>
                             {opts_conv}
                         </select>
-
-                        <div class="mb-2" id="div_retorno" style="display:none;">
-                            <input type="checkbox" name="retorno" value="1"> Retorno
-                        </div>
-
+                        <div class="mb-2" id="div_retorno" style="display:none;"><input type="checkbox" name="retorno" value="1"> Retorno</div>
                         <div id="pagamento">
                             <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
                             <select name="forma_pagamento" class="form-select mb-3">
-                                <option>Pix</option>
-                                <option>Cartão</option>
-                                <option>Dinheiro</option>
+                                <option>Pix</option><option>Cartão</option><option>Dinheiro</option>
                             </select>
                         </div>
-
                         <button name="finalizar_fluxo" class="btn btn-success w-100">FINALIZAR</button>
                     </form>
                 </div>
             </div>
         </div>
-
         <script>
         function toggle() {{
             var tipo = document.getElementById("tipo").value;
             var pag = document.getElementById("pagamento");
             var conv = document.getElementById("convenio");
             var ret = document.getElementById("div_retorno");
-
-            if (tipo === "convenio") {{
-                pag.style.display = "none";
-                conv.style.display = "block";
-                ret.style.display = "block";
-            }} else if (tipo === "cartao") {{
-                pag.style.display = "block";
-                conv.style.display = "block";
-                ret.style.display = "none";
-            }} else {{
-                pag.style.display = "block";
-                conv.style.display = "none";
-                ret.style.display = "none";
-            }}
+            if (tipo === "convenio") {{ pag.style.display = "none"; conv.style.display = "block"; ret.style.display = "block"; }}
+            else if (tipo === "cartao") {{ pag.style.display = "block"; conv.style.display = "block"; ret.style.display = "none"; }}
+            else {{ pag.style.display = "block"; conv.style.display = "none"; ret.style.display = "none"; }}
         }}
         toggle();
         </script>
@@ -2686,27 +2640,20 @@ def recepcao_geral(request):
 
     conteudo = f"""
     <h4>Recepção</h4>
-
     <form method="GET">
         <select name="unidade" class="form-select mb-2" onchange="this.form.submit()">
-            <option value="">Todas</option>
+            <option value="">Todas as Unidades</option>
             {opts_unidades}
         </select>
     </form>
-
     {mensagem}
-
-    <table class="table">
-        <tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr>
-        {linhas}
+    <table class="table table-hover">
+        <thead class="table-light"><tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr></thead>
+        <tbody>{linhas}</tbody>
     </table>
-
     {modal_html}
     """
-
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
