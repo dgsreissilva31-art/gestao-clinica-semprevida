@@ -9,17 +9,9 @@ import views
  
 
 
-# --- 1. TEMPLATE BASE (HÍBRIDO: FUNCIONA COM OU SEM REQUEST) ---
+# --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
 
-def base_html(titulo, conteudo, request=None): # ✅ O request agora é opcional (=None)
-    
-    # Lógica de Usuário: Se o request for enviado, pega o nome real. 
-    # Se não for enviado (nas outras telas), mantém o padrão Douglas Silva.
-    usuario_logado = "Douglas Silva" 
-    
-    if request and request.user.is_authenticated:
-        usuario_logado = request.user.get_full_name() or request.user.username
-
+def base_html(titulo, conteudo):
     return f"""
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -32,16 +24,30 @@ def base_html(titulo, conteudo, request=None): # ✅ O request agora é opcional
         <style>
             :root {{ --sidebar-width: 260px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
             body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; overflow-x: hidden; }}
+            
+            /* Topo */
             .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            
+            /* Sidebar */
             .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; overflow-y: auto; transition: all 0.3s; }}
             .sidebar-menu {{ list-style: none; padding: 0; margin: 0; }}
             .sidebar-menu li a {{ padding: 10px 15px; display: flex; align-items: center; color: #b8c7ce; text-decoration: none; border-left: 3px solid transparent; font-size: 14px; }}
             .sidebar-menu li a i {{ margin-right: 10px; width: 20px; text-align: center; }}
             .sidebar-menu li a:hover {{ background: #1e282c; color: white; border-left-color: #3c8dbc; }}
+            
+            /* Rótulos de Seção */
             .menu-label {{ padding: 12px 15px 5px; font-size: 11px; color: #4b646f; background: #1a2226; text-transform: uppercase; font-weight: bold; }}
+            
+            /* Conteúdo Principal */
             .main-content {{ margin-left: var(--sidebar-width); padding: 70px 20px 20px; min-height: 100vh; }}
             .card-panel {{ background: white; border-top: 3px solid #3c8dbc; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; }}
-            @media (max-width: 768px) {{ .sidebar {{ left: -260px; }} .main-content {{ margin-left: 0; }} .sidebar.active {{ left: 0; }} }}
+            
+            /* Responsividade */
+            @media (max-width: 768px) {{ 
+                .sidebar {{ left: -260px; }} 
+                .main-content {{ margin-left: 0; }} 
+                .sidebar.active {{ left: 0; }} 
+            }}
         </style>
     </head>
     <body>
@@ -50,29 +56,38 @@ def base_html(titulo, conteudo, request=None): # ✅ O request agora é opcional
                 <i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> 
                 <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA</span>
             </div>
-            <div class="small"><i class="bi bi-person-circle"></i> {usuario_logado}</div>
+            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva</div>
         </div>
 
         <div class="sidebar shadow">
             <ul class="sidebar-menu">
                 <div class="menu-label">Principal</div>
                 <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                
                 <div class="menu-label">Operacional Hoje</div>
                 <li><a href="/recepcao/"><i class="bi bi-person-check-fill"></i> Recepção / Check-in</a></li>
                 <li><a href="/agendar/"><i class="bi bi-calendar-plus-fill"></i> Novo Agendamento</a></li>
                 <li><a href="/caixa/"><i class="bi bi-cash-stack"></i> Caixa do Dia</a></li>
                 <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda Geral</a></li>
+
                 <div class="menu-label">Cadastros</div>
                 <li><a href="/pacientes/"><i class="bi bi-people-fill"></i> Pacientes</a></li>
                 <li><a href="/profissionais/"><i class="bi bi-person-md"></i> Profissionais</a></li>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
+                
                 <div class="menu-label">Serviços e Preços</div>
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
+                <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Consultas</a></li>
+                <li><a href="/precos-exames/"><i class="bi bi-tags-fill"></i> Preços Exames</a></li>
+
                 <div class="menu-label">Configurações</div>
-                <li><a href="/logout/" class="text-danger fw-bold"><i class="bi bi-box-arrow-right"></i> Sair do Sistema</a></li>
+                <li><a href="/agendas-config/"><i class="bi bi-gear-fill"></i> Configurar Grades</a></li>
+                <li><a href="/acessos/"><i class="bi bi-shield-lock-fill"></i> Acessos / Usuários</a></li>
+                <hr style="border-color: #4b646f; margin: 10px 0;">
+                <li><a href="/" class="text-info"><i class="bi bi-globe"></i> Visualizar Site</a></li>
             </ul>
         </div>
 
@@ -81,12 +96,11 @@ def base_html(titulo, conteudo, request=None): # ✅ O request agora é opcional
                 {conteudo}
             </div>
         </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     </body>
     </html>
     """
-
-
 
 
 
@@ -739,19 +753,42 @@ def convenios_geral(request):
 
 
 # --- 7. TELA 5: EXAMES ---
-# --- 7. TELA 5: EXAMES + CAIXA EXAMES (SQL BLINDADO) ---
-@login_required
+# --- 7. TELA 5: EXAMES ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
+    import datetime
 
     mensagem = ""
-    # ✅ Captura quem está logado
-    usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
     # ===============================
-    # LANÇAMENTO CAIXA EXAMES
+    # EXCLUIR EXAME
+    # ===============================
+    if request.GET.get('delete_exame'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM exames WHERE id = %s", [request.GET.get('delete_exame')])
+        return HttpResponseRedirect('/exames/')
+
+    # ===============================
+    # CADASTRAR PRESTADOR
+    # ===============================
+    if request.method == "POST" and "novo_prestador" in request.POST:
+        try:
+            nome = request.POST.get('nome_prestador')
+
+            if nome:
+                with connection.cursor() as cursor:
+                    cursor.execute("INSERT INTO prestadores (nome) VALUES (%s)", [nome])
+
+                mensagem = '<div class="alert alert-success">✅ Prestador cadastrado!</div>'
+
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
+    # ===============================
+    # LANÇAMENTO CAIXA EXAMES (COM UNIDADE)
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -762,93 +799,209 @@ def exames_geral(request):
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
 
+            if not paciente or not exame_id:
+                raise Exception("Paciente e exame obrigatórios")
+
+            if not unidade_id:
+                raise Exception("Selecione a unidade")
+
             with connection.cursor() as cursor:
+
                 cursor.execute("SELECT nome FROM exames WHERE id = %s", [exame_id])
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
-                # ✅ SQL CAIXA: 10 colunas listadas / 9 %s + CURRENT_DATE
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
-                     categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, %s, %s)
-                """, [paciente, prestador, valor, forma, 'Pago', 'Exame', nome_exame, unidade_id, usuario_nome])
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                """, [
+                    paciente,
+                    prestador,
+                    valor,
+                    forma,
+                    'Pago',
+                    'Exame',
+                    nome_exame,
+                    unidade_id
+                ])
 
-            mensagem = '<div class="alert alert-success">✅ Lançado no caixa!</div>'
+            mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
+
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro no Caixa: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # CADASTRO / EDIÇÃO EXAMES (O provável culpado do erro 500)
+    # CADASTRO / EDIÇÃO EXAMES
     # ===============================
+    edit_id = request.GET.get('edit_exame')
+    e_dados = ["", "", "", 0.00]
+
+    if edit_id:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT nome, grupo, preparo, valor_particular 
+                FROM exames WHERE id = %s
+            """, [edit_id])
+            res = cursor.fetchone()
+            if res:
+                e_dados = res
+
     if request.method == "POST" and "salvar_exame" in request.POST:
         try:
             id_post = request.POST.get('id_exame')
+
             nome = request.POST.get('nome')
             grupo = request.POST.get('grupo')
-            preparo = request.POST.get('preparo') or "" # Mantendo o campo preparo
-            valor = float(request.POST.get('valor') or 0)
+            preparo = request.POST.get('preparo')
+            valor = request.POST.get('valor') or 0
 
             with connection.cursor() as cursor:
                 if id_post:
-                    # ✅ UPDATE: Verifique se todas essas colunas existem na sua tabela 'exames'
                     cursor.execute("""
                         UPDATE exames 
-                        SET nome=%s, grupo=%s, preparo=%s, valor_particular=%s, usuario_lancamento=%s
+                        SET nome=%s, grupo=%s, preparo=%s, valor_particular=%s
                         WHERE id=%s
-                    """, [nome, grupo, preparo, valor, usuario_nome, id_post])
+                    """, [nome, grupo, preparo, valor, id_post])
                 else:
-                    # ✅ INSERT: 5 colunas / 5 valores
                     cursor.execute("""
-                        INSERT INTO exames (nome, grupo, preparo, valor_particular, usuario_lancamento)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, [nome, grupo, preparo, valor, usuario_nome])
+                        INSERT INTO exames (nome, grupo, preparo, valor_particular)
+                        VALUES (%s,%s,%s,%s)
+                    """, [nome, grupo, preparo, valor])
 
             return HttpResponseRedirect('/exames/')
-        except Exception as e:
-            # Se der erro aqui, a mensagem vai aparecer na tela em vez de dar Erro 500
-            mensagem = f'<div class="alert alert-danger">❌ Erro no Cadastro: {e}</div>'
 
-    # --- BUSCA DE DADOS ---
+        except Exception as e:
+            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
+    # ===============================
+    # BUSCAR DADOS
+    # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM exames ORDER BY nome")
-        exames_data = cursor.fetchall()
+        exames = cursor.fetchall()
+
+        cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
+        prestadores = cursor.fetchall()
+
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
-        unidades_data = cursor.fetchall()
-        cursor.execute("SELECT id, nome, grupo, valor_particular FROM exames ORDER BY nome")
+        unidades = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT id, nome, grupo, valor_particular 
+            FROM exames ORDER BY nome
+        """)
         exames_lista = cursor.fetchall()
 
-    opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames_data])
-    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades_data])
-    linhas = "".join([f"<tr><td>{ex[1]}</td><td>{ex[2] or '-'}</td><td>R$ {float(ex[3] or 0):.2f}</td></tr>" for ex in exames_lista])
+    # ===============================
+    # SELECTS
+    # ===============================
+    opts_exames = "".join([f'<option value="{e[0]}">{e[1]}</option>' for e in exames])
+    opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
+    opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
+    # ===============================
+    # LISTA EXAMES
+    # ===============================
+    linhas = ""
+    for ex in exames_lista:
+        linhas += f"""
+        <tr>
+            <td>{ex[1]}</td>
+            <td>{ex[2] or '-'}</td>
+            <td>R$ {float(ex[3] or 0):.2f}</td>
+        </tr>
+        """
+
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
     <h4>🧪 Exames</h4>
+
     {mensagem}
-    <div class="card p-3 mb-3 border-primary shadow-sm">
+
+    <!-- CADASTRO EXAME -->
+    <div class="card p-3 mb-3">
         <form method="POST" class="row g-2">
-            <input type="hidden" name="id_exame" value="">
-            <div class="col-md-4"><input type="text" name="nome" class="form-control" placeholder="Nome" required></div>
-            <div class="col-md-3"><input type="text" name="grupo" class="form-control" placeholder="Grupo"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-3"><button name="salvar_exame" class="btn btn-primary w-100">Salvar</button></div>
+            <input type="hidden" name="id_exame" value="{edit_id or ''}">
+
+            <div class="col-md-4">
+                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" required>
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-3">
+                <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
+            </div>
         </form>
     </div>
+
+    <!-- CAIXA EXAMES -->
     <div class="card p-3 mb-3 border-success">
+        <h5>💰 Caixa de Exames</h5>
+
         <form method="POST" class="row g-2">
-            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
-            <div class="col-md-3"><input type="text" name="paciente" class="form-control" placeholder="Paciente" required></div>
-            <div class="col-md-3"><select name="exame_id" class="form-select" required><option value="">Exame</option>{opts_exames}</select></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-2"><button name="lancar_exame" class="btn btn-success w-100">Lançar</button></div>
+
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
+            </div>
+
+            <div class="col-md-2">
+                <select name="exame_id" class="form-select" required>
+                    <option value="">Exame</option>
+                    {opts_exames}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="prestador" class="form-select">
+                    <option value="">Prestador</option>
+                    {opts_prest}
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-2">
+                <select name="forma" class="form-select">
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                    <option>Dinheiro</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
+            </div>
+
         </form>
     </div>
-    <table class="table table-sm"><tbody>{linhas}</tbody></table>
+
+    <!-- LISTA -->
+    <table class="table table-sm">
+        <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
+        {linhas}
+    </table>
     """
-    return HttpResponse(base_html(request, "Exames", conteudo))
 
-
+    return HttpResponse(base_html("Exames", conteudo))
 
 
 
