@@ -766,6 +766,7 @@ def convenios_geral(request):
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
+@login_required
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
