@@ -787,8 +787,8 @@ def exames_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-    # ===============================
-    # LANÇAMENTO CAIXA EXAMES (COM UNIDADE)
+  # ===============================
+    # LANÇAMENTO CAIXA EXAMES (IGUAL AO DIVERSOS)
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -799,38 +799,40 @@ def exames_geral(request):
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
 
+            # ✅ CAPTURA O USUÁRIO EXATAMENTE COMO NO DIVERSOS
+            usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
+
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
 
-            if not unidade_id:
-                raise Exception("Selecione a unidade")
-
             with connection.cursor() as cursor:
-
+                # Busca o nome do exame para colocar na descrição
                 cursor.execute("SELECT nome FROM exames WHERE id = %s", [exame_id])
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
+                # ✅ SQL COM A CONTAGEM EXATA DE COLUNAS (Igual ao Diversos)
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, 
+                     status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, [
-                    paciente,
-                    prestador,
-                    valor,
-                    forma,
-                    'Pago',
-                    'Exame',
-                    nome_exame,
-                    unidade_id
+                    paciente,      # %s
+                    prestador,     # %s
+                    valor,         # %s
+                    forma,         # %s
+                    'Pago',        # %s
+                    'Exame',       # %s
+                    nome_exame,    # %s
+                    unidade_id,    # %s
+                    usuario_nome   # %s
                 ])
 
-            mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
+            mensagem = '<div class="alert alert-success">✅ Exame lançado com sucesso!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
     # ===============================
     # CADASTRO / EDIÇÃO EXAMES
     # ===============================
