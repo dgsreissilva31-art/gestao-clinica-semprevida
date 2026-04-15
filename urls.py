@@ -1022,6 +1022,8 @@ def odonto_geral(request):
 
     mensagem = ""
 
+      usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
+
     # ===============================
     # EXCLUIR PROCEDIMENTO
     # ===============================
