@@ -750,12 +750,11 @@ def convenios_geral(request):
 
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
-
-@login_required
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
+    import datetime
 
     mensagem = ""
 
@@ -784,7 +783,7 @@ def exames_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # LANÇAMENTO CAIXA EXAMES (COM AUDITORIA)
+    # LANÇAMENTO CAIXA EXAMES (COM UNIDADE)
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -794,9 +793,6 @@ def exames_geral(request):
             valor = float(request.POST.get('valor') or 0)
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
-
-            # ✅ CAPTURA USUÁRIO LOGADO
-            usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
@@ -812,9 +808,8 @@ def exames_geral(request):
 
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento,
-                     status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
                 """, [
                     paciente,
                     prestador,
@@ -823,8 +818,7 @@ def exames_geral(request):
                     'Pago',
                     'Exame',
                     nome_exame,
-                    unidade_id,
-                    usuario_nome
+                    unidade_id
                 ])
 
             mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
@@ -922,30 +916,80 @@ def exames_geral(request):
 
     {mensagem}
 
+    <!-- CADASTRO EXAME -->
     <div class="card p-3 mb-3">
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_exame" value="{edit_id or ''}">
-            <div class="col-md-4"><input type="text" name="nome" class="form-control" placeholder="Nome do exame" required></div>
-            <div class="col-md-3"><input type="text" name="grupo" class="form-control" placeholder="Grupo"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-3"><button name="salvar_exame" class="btn btn-primary w-100">Salvar</button></div>
+
+            <div class="col-md-4">
+                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" required>
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-3">
+                <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
+            </div>
         </form>
     </div>
 
+    <!-- CAIXA EXAMES -->
     <div class="card p-3 mb-3 border-success">
         <h5>💰 Caixa de Exames</h5>
 
         <form method="POST" class="row g-2">
-            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
-            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente" required></div>
-            <div class="col-md-2"><select name="exame_id" class="form-select" required><option value="">Exame</option>{opts_exames}</select></div>
-            <div class="col-md-2"><select name="prestador" class="form-select"><option value="">Prestador</option>{opts_prest}</select></div>
-            <div class="col-md-1"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-2"><select name="forma" class="form-select"><option>Pix</option><option>Cartão</option><option>Dinheiro</option></select></div>
-            <div class="col-md-1"><button name="lancar_exame" class="btn btn-success w-100">OK</button></div>
+
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
+            </div>
+
+            <div class="col-md-2">
+                <select name="exame_id" class="form-select" required>
+                    <option value="">Exame</option>
+                    {opts_exames}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="prestador" class="form-select">
+                    <option value="">Prestador</option>
+                    {opts_prest}
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-2">
+                <select name="forma" class="form-select">
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                    <option>Dinheiro</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
+            </div>
+
         </form>
     </div>
 
+    <!-- LISTA -->
     <table class="table table-sm">
         <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
         {linhas}
@@ -953,8 +997,6 @@ def exames_geral(request):
     """
 
     return HttpResponse(base_html("Exames", conteudo))
-
-
 
 
 
