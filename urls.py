@@ -2978,6 +2978,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA (COM BOTÃO GUIA EM EXAMES) ---
+# --- 18. TELA 16: CAIXA GERAL (COMPLETO COM GUIA) ---
 
 @login_required
 @csrf_exempt
@@ -2994,9 +2995,6 @@ def caixa_geral(request):
     busca = request.GET.get('busca') or ""
     mensagem = ""
 
-    # ===============================
-    # FUNÇÕES AUXILIARES E SQL (Mantidos)
-    # ===============================
     def limpar_nome(nome):
         return re.sub(r"\(.*?\)", "", nome).strip() if nome else ""
 
@@ -3009,7 +3007,7 @@ def caixa_geral(request):
     data_ini_sql = br_to_sql(data_ini) if data_ini else None
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
-    # (Código de Lançamento Diversos permanece igual...)
+    # Lançamento Diversos
     if request.method == "POST" and "lancar_diverso" in request.POST:
         try:
             unidade = request.POST.get('unidade_id')
@@ -3018,8 +3016,6 @@ def caixa_geral(request):
             descricao = request.POST.get('descricao')
             valor = float(request.POST.get('valor') or 0)
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
-            if not unidade: raise Exception("Selecione a unidade")
-            if valor <= 0: raise Exception("Valor inválido")
             if tipo == "Saída": valor = -abs(valor)
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -3030,14 +3026,13 @@ def caixa_geral(request):
             mensagem = '<div class="alert alert-success">✅ Lançamento realizado!</div>'
         except Exception as e: mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-    # Busca Unidades e Categorias
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_list = cursor.fetchall()
         cursor.execute("SELECT DISTINCT categoria FROM caixa WHERE paciente_nome = '-' ORDER BY categoria")
         categorias_list = [c[0] for c in cursor.fetchall() if c[0]]
 
-    # SQL de Movimentações
+    # SQL Principal
     sql = """
         SELECT categoria, paciente_nome, profissional_nome, valor, 
                forma_pagamento, status, data_pagamento, unidade_id, descricao, usuario_lancamento
@@ -3057,9 +3052,7 @@ def caixa_geral(request):
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
 
-    # ===============================
-    # PROCESSAMENTO DAS LINHAS
-    # ===============================
+    # Processamento
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
@@ -3067,35 +3060,33 @@ def caixa_geral(request):
 
     for m in movimentos:
         cat, pac, prof, val, forma, status, data_pg, uni, desc, user_db = m
-        val = float(val or 0); pac = limpar_nome(pac)
-        data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
-        descricao = (desc or "").strip()
-        user_display = user_db if (user_db and str(user_db).strip() != "None") else user_atual
+        val = float(val or 0); pac = limpar_nome(pac); data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
+        descricao = (desc or "").strip(); user_display = user_db if (user_db and str(user_db).strip() != "None") else user_atual
 
-        # ✅ Botão de Guia (Apenas para Exames)
-        btn_guia = f"""<button class='btn btn-outline-dark btn-sm ms-2' style='font-size:10px; padding: 2px 5px;' 
-                      onclick="gerarGuia('{pac}', '{prof or '-'}', '{descricao}', '{data_br}', '{user_display}')">
-                      <i class='bi bi-printer'></i> GUIA</button>"""
-
-        # Linha padrão
-        linha_base = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        # Botão GUIA (Escapando aspas para não quebrar o JS)
+        pac_js = pac.replace("'", "")
+        desc_js = descricao.replace("'", "")
+        prof_js = (prof or "-").replace("'", "")
         
-        # Linha específica para Exames (com o botão Guia)
-        linha_exame = f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        btn_guia = f"""<a href="javascript:void(0)" class="btn btn-outline-dark btn-sm ms-2" style="font-size:9px; padding:1px 4px;" 
+                      onclick="gerarGuia('{pac_js}', '{prof_js}', '{desc_js}', '{data_br}', '{user_display}')">GUIA</a>"""
+
+        linha_html = f"<tr><td>{data_br}</td><td>{pac}</td><td class='small text-primary fw-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
+        linha_exame = f"<tr><td>{data_br}</td><td>{pac} {btn_guia}</td><td class='small text-primary fw-bold'>{user_display}</td><td>{prof or '-'}</td><td>{descricao}</td><td>R$ {val:.2f}</td><td>{forma}</td></tr>"
 
         if "retorno" in descricao.lower():
-            total_retorno += val; linhas_retorno += linha_base
+            total_retorno += val; linhas_retorno += linha_html
         elif status == "Pago" and cat == "Exame":
             total_exames += val; linhas_exames += linha_exame
         elif status == "Pago" and cat in ["Odonto", "Odontologia"]:
-            total_odonto += val; linhas_odonto += linha_base
+            total_odonto += val; linhas_odonto += linha_html
         elif pac == "-":
             total_diversos += val
-            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary font-weight-bold'>{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
+            linhas_diversos += f"<tr><td>{data_br}</td><td>{descricao}</td><td class='small text-primary fw-bold'>{user_display}</td><td>{cat}</td><td>{forma}</td><td>R$ {val:.2f}</td></tr>"
         elif status == "Pago":
-            total_consultas += val; linhas_consultas += linha_base
+            total_consultas += val; linhas_consultas += linha_html
         else:
-            total_faturado += val; linhas_faturado += linha_base.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
+            total_faturado += val; linhas_faturado += linha_html.replace(f"<td>{forma}</td>", "<td>Faturado</td>")
 
         if forma.lower() == "pix": pix_total += val
         elif forma.lower() in ["cartão", "cartao"]: cartao_total += val
@@ -3103,75 +3094,113 @@ def caixa_geral(request):
 
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
-    # ===============================
-    # JAVASCRIPT DA GUIA E CONTEÚDO
-    # ===============================
+    # Script JS (Colocado dentro do conteúdo)
     script_guia = """
     <script>
     function gerarGuia(paciente, profissional, descricao, data, usuario) {
-        var janela = window.open('', '', 'width=800,height=600');
-        janela.document.write('<html><head><title>Guia de Exame</title>');
-        janela.document.write('<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">');
-        janela.document.write('<style>body{padding:40px; font-family: sans-serif;} .box{border: 2px solid #000; padding:20px; border-radius:10px;} .header{text-align:center; border-bottom:1px solid #ccc; margin-bottom:20px; pb-2;}</style>');
-        janela.document.write('</head><body>');
-        janela.document.write('<div class="box">');
-        janela.document.write('<div class="header"><h3>CLÍNICA SEMPRE VIDA</h3><p>Guia de Encaminhamento de Exame</p></div>');
-        janela.document.write('<p><strong>Paciente:</strong> ' + paciente + '</p>');
-        janela.document.write('<p><strong>Profissional:</strong> ' + profissional + '</p>');
-        janela.document.write('<p><strong>Descrição:</strong> ' + descricao + '</p>');
-        janela.document.write('<hr>');
-        janela.document.write('<p><strong>Data:</strong> ' + data + '</p>');
-        janela.document.write('<p><strong>Usuário Emissor:</strong> ' + usuario + '</p>');
-        janela.document.write('<br><br><br>');
-        janela.document.write('<div style="text-align:center; border-top: 1px solid #000; width:300px; margin: 0 auto;">Assinatura</div>');
-        janela.document.write('</div>');
-        janela.document.write('<script>window.onload = function(){ window.print(); window.close(); }</script>');
-        janela.document.write('</body></html>');
-        janela.document.close();
+        var conteudo = `
+            <html><head><title>Guia</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body { padding: 50px; }
+                .guia-box { border: 3px solid #000; padding: 30px; border-radius: 15px; min-height: 500px; position: relative; }
+                .assinatura { border-top: 1px solid #000; width: 300px; margin: 100px auto 20px; text-align: center; }
+            </style>
+            </head>
+            <body>
+                <div class="guia-box">
+                    <div class="text-center mb-4">
+                        <h2 class="fw-bold">CLÍNICA SEMPRE VIDA</h2>
+                        <p class="text-uppercase text-muted">Guia de Encaminhamento / Recibo de Exame</p>
+                    </div>
+                    <div class="mt-5 fs-5">
+                        <p><strong>PACIENTE:</strong> ${paciente}</p>
+                        <p><strong>PROFISSIONAL:</strong> ${profissional}</p>
+                        <p><strong>DESCRIÇÃO:</strong> ${descricao}</p>
+                        <hr>
+                        <p><strong>DATA:</strong> ${data}</p>
+                        <p><strong>USUÁRIO EMISSOR:</strong> ${usuario}</p>
+                    </div>
+                    <div class="assinatura">Assinatura / Carimbo</div>
+                </div>
+                <script>window.onload = function(){ window.print(); window.close(); }<` + `/script>
+            </body></html>`;
+        
+        var win = window.open('', '_blank');
+        win.document.write(conteudo);
+        win.document.close();
     }
     </script>
     """
 
     opts_uni = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_list])
     opts_cat = "".join([f'<option value="{c}">{c}</option>' for c in categorias_list])
-    cabecalho_tab = "<tr><th>Data</th><th>Paciente</th><th>Usuário</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>"
+    cab_tab = "<tr><th>Data</th><th>Paciente</th><th>Usuário</th><th>Profissional</th><th>Descrição</th><th>Valor</th><th>Forma</th></tr>"
 
     conteudo = f"""
     {script_guia}
     <div class="container-fluid">
-        <h5 class="fw-bold text-success">💰 Caixa Geral</h5>
+        <h5 class="fw-bold text-success mb-3">💰 Caixa Geral</h5>
         {mensagem}
+        
         <form method="GET" class="row g-2 mb-3">
-            <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início DD/MM/AAAA"></div>
-            <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim DD/MM/AAAA"></div>
-            <div class="col-md-4"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Paciente, Usuário ou Descrição..."></div>
+            <div class="col-md-2"><input type="text" name="data_ini" value="{data_ini}" class="form-control" placeholder="Início"></div>
+            <div class="col-md-2"><input type="text" name="data_fim" value="{data_fim}" class="form-control" placeholder="Fim"></div>
+            <div class="col-md-4"><input type="text" name="busca" value="{busca}" class="form-control" placeholder="Busca..."></div>
             <div class="col-md-2"><select name="unidade" class="form-select"><option value="">Unidades</option>{opts_uni}</select></div>
             <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
         </form>
 
+        <div class="card p-3 mb-4 bg-light">
+            <h6>Lançamento Manual (Diversos)</h6>
+            <form method="POST" class="row g-2">
+                <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
+                <div class="col-md-2"><select name="tipo" class="form-select"><option>Entrada</option><option>Saída</option></select></div>
+                <div class="col-md-2"><input name="categoria" class="form-control" placeholder="Categoria"></div>
+                <div class="col-md-3"><input name="descricao" class="form-control" placeholder="Descrição"></div>
+                <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+                <div class="col-md-1"><button name="lancar_diverso" class="btn btn-dark w-100">OK</button></div>
+            </form>
+        </div>
+
         <div class="card mb-3 border-primary shadow-sm">
-            <div class="card-header bg-primary text-white fw-bold">Exames - Total: R$ {total_exames:.2f}</div>
+            <div class="card-header bg-primary text-white">Exames - R$ {total_exames:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_exames or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-success shadow-sm">
+            <div class="card-header bg-success text-white">Consultas Particulares - R$ {total_consultas:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_consultas or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-warning shadow-sm">
+            <div class="card-header bg-warning">Faturados / Convênios - R$ {total_faturado:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_faturado or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-info shadow-sm">
+            <div class="card-header bg-info text-white">Retornos - R$ {total_retorno:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_retorno or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-dark shadow-sm">
+            <div class="card-header bg-dark text-white">Odontologia - R$ {total_odonto:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_odonto or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-secondary shadow-sm">
+            <div class="card-header bg-secondary text-white">Despesas / Diversos - R$ {total_diversos:.2f}</div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover">
-                    <thead class="table-light">{cabecalho_tab}</thead>
-                    <tbody>{linhas_exames or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody>
+                <table class="table table-sm">
+                    <thead class="table-light"><tr><th>Data</th><th>Descrição</th><th>Usuário</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr></thead>
+                    <tbody>{linhas_diversos or '<tr><td colspan="6">Vazio</td></tr>'}</tbody>
                 </table>
             </div>
         </div>
 
-        <div class="card mb-3 border-success shadow-sm">
-            <div class="card-header bg-success text-white fw-bold">Consultas Particulares - Total: R$ {total_consultas:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}<tbody>{linhas_consultas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody></table></div>
-        </div>
-
-        <div class="card mb-3 border-dark shadow-sm">
-            <div class="card-header bg-dark text-white fw-bold">Odontologia - Total: R$ {total_odonto:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm table-hover">{cabecalho_tab}<tbody>{linhas_odonto or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody></table></div>
-        </div>
-
-        <div class="card mt-3 p-3 bg-dark text-white shadow">
-            <div class="row text-center align-items-center">
-                <div class="col-md-3 border-end"><h5>Total: R$ {total_geral:.2f}</h5></div>
+        <div class="card mt-3 p-3 bg-dark text-white text-center">
+            <div class="row">
+                <div class="col-md-3"><h5>TOTAL: R$ {total_geral:.2f}</h5></div>
                 <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
                 <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
                 <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
@@ -3180,8 +3209,6 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
-
-
 
 
 
