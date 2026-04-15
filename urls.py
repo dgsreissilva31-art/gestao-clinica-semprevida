@@ -1012,7 +1012,7 @@ def exames_geral(request):
     </table>
     """
 
-    return HttpResponse(base_html("Exames", conteudo))
+return HttpResponse(base_html(request, "Exames", conteudo))
 
 
 
