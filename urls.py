@@ -750,6 +750,7 @@ def convenios_geral(request):
 
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES ---
+# --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
 @csrf_exempt
 def exames_geral(request):
@@ -807,23 +808,21 @@ def exames_geral(request):
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
-               usuario_responsavel = request.user.username  # ✅ captura quem está logado
+                cursor.execute("""
+                    INSERT INTO caixa
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s)
+                """, [
+                    paciente,
+                    prestador,
+                    valor,
+                    forma,
+                    'Pago',
+                    'Exame',
+                    nome_exame,
+                    unidade_id
+                ])
 
-cursor.execute("""  
-    INSERT INTO caixa  
-    (paciente_nome, profissional_nome, valor, forma_pagamento, status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)  
-    VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)  
-""", [  
-    paciente,  
-    prestador,  
-    valor,  
-    forma,  
-    'Pago',  
-    'Exame',  
-    nome_exame,  
-    unidade_id,  
-    usuario_responsavel  # ✅ novo campo
-])
             mensagem = '<div class="alert alert-success">✅ Exame lançado no caixa!</div>'
 
         except Exception as e:
@@ -1000,6 +999,8 @@ cursor.execute("""
     """
 
     return HttpResponse(base_html("Exames", conteudo))
+
+
 
 
 
