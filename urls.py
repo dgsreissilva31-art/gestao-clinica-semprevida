@@ -9,11 +9,14 @@ import views
  
 
 
+# --- 1. TEMPLATE BASE (COMPLETO + USUÁRIO DINÂMICO) ---
 
+def base_html(request, titulo, conteudo):
+    # ✅ Lógica para capturar o nome de quem está acessando
+    usuario_logado = "Visitante"
+    if request.user.is_authenticated:
+        usuario_logado = request.user.get_full_name() or request.user.username
 
-# --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
-
-def base_html(titulo, conteudo):
     return f"""
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -58,7 +61,7 @@ def base_html(titulo, conteudo):
                 <i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> 
                 <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA</span>
             </div>
-            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva</div>
+            <div class="small"><i class="bi bi-person-circle"></i> {usuario_logado}</div>
         </div>
 
         <div class="sidebar shadow">
@@ -89,6 +92,7 @@ def base_html(titulo, conteudo):
                 <li><a href="/agendas-config/"><i class="bi bi-gear-fill"></i> Configurar Grades</a></li>
                 <li><a href="/acessos/"><i class="bi bi-shield-lock-fill"></i> Acessos / Usuários</a></li>
                 <hr style="border-color: #4b646f; margin: 10px 0;">
+                <li><a href="/logout/" class="text-danger fw-bold"><i class="bi bi-box-arrow-right"></i> Sair do Sistema</a></li>
                 <li><a href="/" class="text-info"><i class="bi bi-globe"></i> Visualizar Site</a></li>
             </ul>
         </div>
@@ -103,6 +107,18 @@ def base_html(titulo, conteudo):
     </body>
     </html>
     """
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- 2. TELA 0: PAINEL DE GESTÃO (VERSÃO PROFISSIONAL CORRIGIDA) ---
 
