@@ -2978,7 +2978,7 @@ def prontuario_geral(request):
 
 # --- 18. TELA 16: CAIXA ---
 # --- 18. TELA 16: CAIXA (COM BOTÃO GUIA EM EXAMES) ---
-# --- 18. TELA 16: CAIXA GERAL (COMPLETO COM GUIA) ---
+# --- 18. TELA 16: CAIXA GERAL (ORDEM: CONSULTAS > CONVÊNIOS > RETORNOS > EXAMES > ODONTO > DIVERSOS) ---
 
 @login_required
 @csrf_exempt
@@ -3007,7 +3007,7 @@ def caixa_geral(request):
     data_ini_sql = br_to_sql(data_ini) if data_ini else None
     data_fim_sql = br_to_sql(data_fim) if data_fim else None
 
-    # Lançamento Diversos
+    # Lançamento Diversos Manual
     if request.method == "POST" and "lancar_diverso" in request.POST:
         try:
             unidade = request.POST.get('unidade_id')
@@ -3052,7 +3052,6 @@ def caixa_geral(request):
         cursor.execute(sql, params)
         movimentos = cursor.fetchall()
 
-    # Processamento
     total_consultas = total_exames = total_odonto = total_faturado = total_diversos = total_retorno = 0
     pix_total = cartao_total = dinheiro_total = 0
     linhas_consultas = linhas_exames = linhas_odonto = linhas_faturado = linhas_diversos = linhas_retorno = ""
@@ -3063,11 +3062,10 @@ def caixa_geral(request):
         val = float(val or 0); pac = limpar_nome(pac); data_br = data_pg.strftime('%d/%m/%Y') if data_pg else ""
         descricao = (desc or "").strip(); user_display = user_db if (user_db and str(user_db).strip() != "None") else user_atual
 
-        # Botão GUIA (Escapando aspas para não quebrar o JS)
+        # Configuração do Botão GUIA (Exames)
         pac_js = pac.replace("'", "")
         desc_js = descricao.replace("'", "")
         prof_js = (prof or "-").replace("'", "")
-        
         btn_guia = f"""<a href="javascript:void(0)" class="btn btn-outline-dark btn-sm ms-2" style="font-size:9px; padding:1px 4px;" 
                       onclick="gerarGuia('{pac_js}', '{prof_js}', '{desc_js}', '{data_br}', '{user_display}')">GUIA</a>"""
 
@@ -3094,41 +3092,17 @@ def caixa_geral(request):
 
     total_geral = total_consultas + total_exames + total_odonto + total_faturado + total_diversos + total_retorno
 
-    # Script JS (Colocado dentro do conteúdo)
     script_guia = """
     <script>
     function gerarGuia(paciente, profissional, descricao, data, usuario) {
-        var conteudo = `
-            <html><head><title>Guia</title>
+        var conteudo = `<html><head><title>Guia</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-            <style>
-                body { padding: 50px; }
-                .guia-box { border: 3px solid #000; padding: 30px; border-radius: 15px; min-height: 500px; position: relative; }
-                .assinatura { border-top: 1px solid #000; width: 300px; margin: 100px auto 20px; text-align: center; }
-            </style>
-            </head>
-            <body>
-                <div class="guia-box">
-                    <div class="text-center mb-4">
-                        <h2 class="fw-bold">CLÍNICA SEMPRE VIDA</h2>
-                        <p class="text-uppercase text-muted">Guia de Encaminhamento / Recibo de Exame</p>
-                    </div>
-                    <div class="mt-5 fs-5">
-                        <p><strong>PACIENTE:</strong> ${paciente}</p>
-                        <p><strong>PROFISSIONAL:</strong> ${profissional}</p>
-                        <p><strong>DESCRIÇÃO:</strong> ${descricao}</p>
-                        <hr>
-                        <p><strong>DATA:</strong> ${data}</p>
-                        <p><strong>USUÁRIO EMISSOR:</strong> ${usuario}</p>
-                    </div>
-                    <div class="assinatura">Assinatura / Carimbo</div>
-                </div>
-                <script>window.onload = function(){ window.print(); window.close(); }<` + `/script>
-            </body></html>`;
-        
-        var win = window.open('', '_blank');
-        win.document.write(conteudo);
-        win.document.close();
+            <style>body{padding:50px;} .guia-box{border:3px solid #000; padding:30px; border-radius:15px; min-height:500px; position:relative;} .assinatura{border-top:1px solid #000; width:300px; margin:100px auto 20px; text-align:center;}</style>
+            </head><body><div class="guia-box"><div class="text-center mb-4"><h2 class="fw-bold">CLÍNICA SEMPRE VIDA</h2><p class="text-uppercase text-muted">Guia de Encaminhamento / Recibo de Exame</p></div>
+            <div class="mt-5 fs-5"><p><strong>PACIENTE:</strong> ${paciente}</p><p><strong>PROFISSIONAL:</strong> ${profissional}</p><p><strong>DESCRIÇÃO:</strong> ${descricao}</p><hr><p><strong>DATA:</strong> ${data}</p><p><strong>USUÁRIO EMISSOR:</strong> ${usuario}</p></div>
+            <div class="assinatura">Assinatura / Carimbo</div></div>
+            <script>window.onload = function(){ window.print(); window.close(); }<` + `/script></body></html>`;
+        var win = window.open('', '_blank'); win.document.write(conteudo); win.document.close();
     }
     </script>
     """
@@ -3151,7 +3125,7 @@ def caixa_geral(request):
             <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
         </form>
 
-        <div class="card p-3 mb-4 bg-light">
+        <div class="card p-3 mb-4 bg-light shadow-sm">
             <h6>Lançamento Manual (Diversos)</h6>
             <form method="POST" class="row g-2">
                 <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
@@ -3163,44 +3137,49 @@ def caixa_geral(request):
             </form>
         </div>
 
-        <div class="card mb-3 border-primary shadow-sm">
-            <div class="card-header bg-primary text-white">Exames - R$ {total_exames:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_exames or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
-        </div>
-
         <div class="card mb-3 border-success shadow-sm">
-            <div class="card-header bg-success text-white">Consultas Particulares - R$ {total_consultas:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_consultas or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+            <div class="card-header bg-success text-white fw-bold">1. Consultas Particulares - R$ {total_consultas:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cab_tab}{linhas_consultas or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
         </div>
 
         <div class="card mb-3 border-warning shadow-sm">
-            <div class="card-header bg-warning">Faturados / Convênios - R$ {total_faturado:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_faturado or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+            <div class="card-header bg-warning fw-bold">2. Faturados / Convênios - R$ {total_faturado:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cab_tab}{linhas_faturado or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
         </div>
 
         <div class="card mb-3 border-info shadow-sm">
-            <div class="card-header bg-info text-white">Retornos - R$ {total_retorno:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_retorno or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+            <div class="card-header bg-info text-white fw-bold">3. Retornos - R$ {total_retorno:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cab_tab}{linhas_retorno or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+        </div>
+
+        <div class="card mb-3 border-primary shadow-sm">
+            <div class="card-header bg-primary text-white fw-bold">4. Exames (Com Guia) - R$ {total_exames:.2f}</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">{cab_tab}</thead>
+                    <tbody>{linhas_exames or '<tr><td colspan="7">Vazio</td></tr>'}</tbody>
+                </table>
+            </div>
         </div>
 
         <div class="card mb-3 border-dark shadow-sm">
-            <div class="card-header bg-dark text-white">Odontologia - R$ {total_odonto:.2f}</div>
-            <div class="table-responsive"><table class="table table-sm">{cab_tab}{linhas_odonto or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
+            <div class="card-header bg-dark text-white fw-bold">5. Odontologia - R$ {total_odonto:.2f}</div>
+            <div class="table-responsive"><table class="table table-sm table-hover">{cab_tab}{linhas_odonto or '<tr><td colspan="7">Vazio</td></tr>'}</table></div>
         </div>
 
         <div class="card mb-3 border-secondary shadow-sm">
-            <div class="card-header bg-secondary text-white">Despesas / Diversos - R$ {total_diversos:.2f}</div>
+            <div class="card-header bg-secondary text-white fw-bold">6. Despesas / Diversos - R$ {total_diversos:.2f}</div>
             <div class="table-responsive">
-                <table class="table table-sm">
+                <table class="table table-sm table-hover">
                     <thead class="table-light"><tr><th>Data</th><th>Descrição</th><th>Usuário</th><th>Categoria</th><th>Tipo</th><th>Valor</th></tr></thead>
                     <tbody>{linhas_diversos or '<tr><td colspan="6">Vazio</td></tr>'}</tbody>
                 </table>
             </div>
         </div>
 
-        <div class="card mt-3 p-3 bg-dark text-white text-center">
-            <div class="row">
-                <div class="col-md-3"><h5>TOTAL: R$ {total_geral:.2f}</h5></div>
+        <div class="card mt-3 p-3 bg-dark text-white text-center shadow">
+            <div class="row align-items-center">
+                <div class="col-md-3 border-end"><h5>TOTAL: R$ {total_geral:.2f}</h5></div>
                 <div class="col-md-3">Pix: R$ {pix_total:.2f}</div>
                 <div class="col-md-3">Cartão: R$ {cartao_total:.2f}</div>
                 <div class="col-md-3">Dinheiro: R$ {dinheiro_total:.2f}</div>
@@ -3209,6 +3188,8 @@ def caixa_geral(request):
     </div>
     """
     return HttpResponse(base_html("Caixa", conteudo))
+
+
 
 
 
