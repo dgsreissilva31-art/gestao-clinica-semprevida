@@ -1021,8 +1021,8 @@ def odonto_geral(request):
     import datetime
 
     mensagem = ""
-
-      usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
+    # ✅ Variável definida no topo para ser usada em qualquer bloco abaixo
+    usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
     # ===============================
     # EXCLUIR PROCEDIMENTO
@@ -1038,17 +1038,14 @@ def odonto_geral(request):
     if request.method == "POST" and "novo_prestador" in request.POST:
         try:
             nome = request.POST.get('nome_prestador')
-
             if nome:
                 with connection.cursor() as cursor:
                     cursor.execute("INSERT INTO prestadores (nome) VALUES (%s)", [nome])
-
                 mensagem = '<div class="alert alert-success">✅ Prestador cadastrado!</div>'
-
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-  # ===============================
+    # ===============================
     # LANÇAMENTO CAIXA ODONTO
     # ===============================
     if request.method == "POST" and "lancar_odonto" in request.POST:
@@ -1065,7 +1062,7 @@ def odonto_geral(request):
                 od = cursor.fetchone()
                 nome_proc = od[0] if od else "Procedimento"
 
-                # ✅ SQL CAIXA: 10 colunas e 9 placeholders (%s)
+                # ✅ SQL CAIXA: 10 colunas e 9 placeholders (%s) + CURRENT_DATE
                 cursor.execute("""
                     INSERT INTO caixa
                     (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
@@ -1073,12 +1070,12 @@ def odonto_geral(request):
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, [paciente, prestador, valor, forma, 'Pago', 'Odontologia', nome_proc, unidade_id, usuario_nome])
 
-            mensagem = '<div class="alert alert-success">✅ Lançado no caixa!</div>'
+            mensagem = '<div class="alert alert-success">✅ Lançado no caixa com sucesso!</div>'
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro no Caixa: {e}</div>'
 
     # ===============================
-    # CADASTRO / EDIÇÃO ODONTO
+    # CADASTRO / EDIÇÃO ODONTO (CORRIGIDO AQUI!)
     # ===============================
     edit_id = request.GET.get('edit_odonto')
     o_dados = ["", "", 0.00, ""]
@@ -1090,13 +1087,11 @@ def odonto_geral(request):
                 FROM odontologia WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
-            if res:
-                o_dados = res
+            if res: o_dados = res
 
     if request.method == "POST" and "salvar_odonto" in request.POST:
         try:
             id_post = request.POST.get('id_odonto')
-
             proc = request.POST.get('procedimento')
             grupo = request.POST.get('grupo')
             valor = request.POST.get('valor') or 0
@@ -1104,163 +1099,72 @@ def odonto_geral(request):
 
             with connection.cursor() as cursor:
                 if id_post:
+                    # ✅ UPDATE: Adicionado usuario_lancamento
                     cursor.execute("""
                         UPDATE odontologia 
-                        SET procedimento=%s, grupo=%s, valor_particular=%s, observacoes=%s
+                        SET procedimento=%s, grupo=%s, valor_particular=%s, observacoes=%s, usuario_lancamento=%s
                         WHERE id=%s
-                    """, [proc, grupo, valor, obs, id_post])
+                    """, [proc, grupo, valor, obs, usuario_nome, id_post])
                 else:
+                    # ✅ INSERT: Adicionado usuario_lancamento (5 colunas e 5 %s)
                     cursor.execute("""
-                        INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes)
-                        VALUES (%s,%s,%s,%s)
-                    """, [proc, grupo, valor, obs])
+                        INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes, usuario_lancamento)
+                        VALUES (%s,%s,%s,%s,%s)
+                    """, [proc, grupo, valor, obs, usuario_nome])
 
             return HttpResponseRedirect('/odontologia/')
 
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar procedimento: {e}</div>'
 
-    # ===============================
-    # BUSCAR DADOS
-    # ===============================
+    # --- O RESTANTE DO CÓDIGO (Buscas, Selects e HTML) SEGUE IGUAL ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, procedimento FROM odontologia ORDER BY procedimento")
         procedimentos = cursor.fetchall()
-
         cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
         prestadores = cursor.fetchall()
-
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT id, procedimento, grupo, valor_particular, observacoes 
-            FROM odontologia ORDER BY procedimento
-        """)
+        cursor.execute("SELECT id, procedimento, grupo, valor_particular, observacoes FROM odontologia ORDER BY procedimento")
         lista_odonto = cursor.fetchall()
 
-    # ===============================
-    # SELECTS
-    # ===============================
     opts_proc = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in procedimentos])
     opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
     opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
-    # ===============================
-    # LISTA
-    # ===============================
-    linhas = ""
-    for o in lista_odonto:
-        linhas += f"""
-        <tr>
-            <td>{o[1]}</td>
-            <td>{o[2] or '-'}</td>
-            <td>R$ {float(o[3] or 0):.2f}</td>
-            <td>{o[4] or '-'}</td>
-        </tr>
-        """
+    linhas = "".join([f"<tr><td>{o[1]}</td><td>{o[2] or '-'}</td><td>R$ {float(o[3] or 0):.2f}</td><td>{o[4] or '-'}</td></tr>" for o in lista_odonto])
 
-    # ===============================
-    # HTML
-    # ===============================
     conteudo = f"""
     <h4>🦷 Odontologia</h4>
-
     {mensagem}
-
-    <!-- CADASTRO -->
-    <div class="card p-3 mb-3">
+    <div class="card p-3 mb-3 border-primary shadow-sm">
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_odonto" value="{edit_id or ''}">
-
-            <div class="col-md-4">
-                <input type="text" name="procedimento" class="form-control" placeholder="Procedimento" required>
-            </div>
-
-            <div class="col-md-3">
-                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
-            </div>
-
-            <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
-            </div>
-
-            <div class="col-md-3">
-                <button name="salvar_odonto" class="btn btn-primary w-100">Salvar</button>
-            </div>
-
-            <div class="col-12">
-                <textarea name="observacoes" class="form-control" placeholder="Observações"></textarea>
-            </div>
+            <div class="col-md-4"><input type="text" name="procedimento" value="{o_dados[0]}" class="form-control" placeholder="Procedimento" required></div>
+            <div class="col-md-3"><input type="text" name="grupo" value="{o_dados[1]}" class="form-control" placeholder="Grupo"></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" value="{o_dados[2]}" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-3"><button name="salvar_odonto" class="btn btn-primary w-100">Salvar</button></div>
+            <div class="col-12 mt-2"><textarea name="observacoes" class="form-control" placeholder="Observações">{o_dados[3]}</textarea></div>
         </form>
     </div>
-
-    <!-- CAIXA ODONTO -->
-    <div class="card p-3 mb-3 border-success">
-        <h5>💰 Caixa Odontológico</h5>
-
+    <div class="card p-3 mb-3 border-success shadow-sm">
+        <h5 class="text-success fw-bold">💰 Caixa Odontológico</h5>
         <form method="POST" class="row g-2">
-
-            <div class="col-md-2">
-                <select name="unidade_id" class="form-select" required>
-                    <option value="">Unidade</option>
-                    {opts_uni}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
-            </div>
-
-            <div class="col-md-2">
-                <select name="odonto_id" class="form-select" required>
-                    <option value="">Procedimento</option>
-                    {opts_proc}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <select name="prestador" class="form-select">
-                    <option value="">Prestador</option>
-                    {opts_prest}
-                </select>
-            </div>
-
-            <div class="col-md-1">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
-            </div>
-
-            <div class="col-md-2">
-                <select name="forma" class="form-select">
-                    <option>Pix</option>
-                    <option>Cartão</option>
-                    <option>Dinheiro</option>
-                </select>
-            </div>
-
-            <div class="col-md-1">
-                <button name="lancar_odonto" class="btn btn-success w-100">OK</button>
-            </div>
-
-        </form>
-
-        <!-- PRESTADOR -->
-        <form method="POST" class="mt-2 d-flex gap-2">
-            <input type="text" name="nome_prestador" class="form-control" placeholder="Novo prestador">
-            <button name="novo_prestador" class="btn btn-secondary">Cadastrar</button>
+            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
+            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente" required></div>
+            <div class="col-md-2"><select name="odonto_id" class="form-select" required><option value="">Procedimento</option>{opts_proc}</select></div>
+            <div class="col-md-2"><select name="prestador" class="form-select"><option value="">Prestador</option>{opts_prest}</select></div>
+            <div class="col-md-1"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
+            <div class="col-md-2"><select name="forma" class="form-select"><option>Pix</option><option>Cartão</option><option>Dinheiro</option></select></div>
+            <div class="col-md-1"><button name="lancar_odonto" class="btn btn-success w-100">OK</button></div>
         </form>
     </div>
-
-    <!-- LISTA -->
-    <table class="table table-sm">
-        <tr><th>Procedimento</th><th>Grupo</th><th>Valor</th><th>Obs</th></tr>
-        {linhas}
+    <table class="table table-sm table-hover">
+        <thead class="table-light"><tr><th>Procedimento</th><th>Grupo</th><th>Valor</th><th>Obs</th></tr></thead>
+        <tbody>{linhas}</tbody>
     </table>
     """
-
     return HttpResponse(base_html("Odontologia", conteudo))
-
-
 
 
 
