@@ -1048,8 +1048,8 @@ def odonto_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-   # ===============================
-    # LANÇAMENTO CAIXA ODONTO 🔥 (CORRIGIDO)
+  # ===============================
+    # LANÇAMENTO CAIXA ODONTO
     # ===============================
     if request.method == "POST" and "lancar_odonto" in request.POST:
         try:
@@ -1060,39 +1060,22 @@ def odonto_geral(request):
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
 
-            if not paciente or not odonto_id:
-                raise Exception("Paciente e procedimento obrigatórios")
-            if not unidade_id:
-                raise Exception("Selecione a unidade")
-
             with connection.cursor() as cursor:
                 cursor.execute("SELECT procedimento FROM odontologia WHERE id = %s", [odonto_id])
                 od = cursor.fetchone()
                 nome_proc = od[0] if od else "Procedimento"
 
-                # ✅ SQL COM 10 COLUNAS E 9 VALORES (%s) - IGUAL AO DIVERSOS
+                # ✅ SQL CAIXA: 10 colunas e 9 placeholders (%s)
                 cursor.execute("""
                     INSERT INTO caixa
-                    (paciente_nome, profissional_nome, valor, forma_pagamento, 
-                     status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
+                    (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
+                     categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
-                """, [
-                    paciente,      # 1
-                    prestador,     # 2
-                    valor,         # 3
-                    forma,         # 4
-                    'Pago',        # 5
-                    'Odontologia', # 6
-                    nome_proc,     # 7
-                    unidade_id,    # 8
-                    usuario_nome   # 9
-                ])
+                """, [paciente, prestador, valor, forma, 'Pago', 'Odontologia', nome_proc, unidade_id, usuario_nome])
 
-            mensagem = f'<div class="alert alert-success">✅ Procedimento lançado por {usuario_nome}!</div>'
-
+            mensagem = '<div class="alert alert-success">✅ Lançado no caixa!</div>'
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
-
+            mensagem = f'<div class="alert alert-danger">❌ Erro no Caixa: {e}</div>'
 
     # ===============================
     # CADASTRO / EDIÇÃO ODONTO
