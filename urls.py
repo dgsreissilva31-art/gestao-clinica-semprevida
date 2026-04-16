@@ -54,9 +54,9 @@ def base_html(titulo, conteudo):
         <div class="navbar-top d-flex justify-content-between">
             <div>
                 <i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> 
-                <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA</span>
+                <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA / JOAO PAULO</span>
             </div>
-            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva</div>
+            <div class="small"><i class="bi bi-person-circle"></i> SEJA BEM VINDO!!!</div>
         </div>
 
         <div class="sidebar shadow">
