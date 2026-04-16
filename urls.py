@@ -9,9 +9,17 @@ import views
  
 
 
-# --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
+# --- 1. TEMPLATE BASE (SIDEBAR PROFISSIONAL COM USUÁRIO DINÂMICO) ---
 
-def base_html(titulo, conteudo):
+def base_html(titulo, conteudo, request=None):
+    # ✅ Lógica Inteligente: Se houver request e usuário logado, mostra o nome real.
+    # Caso contrário, mantém o padrão para não quebrar as outras telas.
+    usuario_topo = "Douglas Silva"
+    
+    if request and request.user.is_authenticated:
+        # Pega o Nome Completo ou o Username se o nome não estiver preenchido
+        usuario_topo = request.user.get_full_name() or request.user.username
+
     return f"""
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -56,7 +64,7 @@ def base_html(titulo, conteudo):
                 <i class="bi bi-list fs-4" style="cursor:pointer" onclick="document.querySelector('.sidebar').classList.toggle('active')"></i> 
                 <span class="ms-2 fw-bold text-uppercase" style="letter-spacing: 1px;">SEMPRE VIDA</span>
             </div>
-            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva</div>
+            <div class="small"><i class="bi bi-person-circle"></i> {usuario_topo}</div>
         </div>
 
         <div class="sidebar shadow">
@@ -80,13 +88,11 @@ def base_html(titulo, conteudo):
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
                 <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames</a></li>
                 <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
-                <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Consultas</a></li>
-                <li><a href="/precos-exames/"><i class="bi bi-tags-fill"></i> Preços Exames</a></li>
-
+                
                 <div class="menu-label">Configurações</div>
-                <li><a href="/agendas-config/"><i class="bi bi-gear-fill"></i> Configurar Grades</a></li>
                 <li><a href="/acessos/"><i class="bi bi-shield-lock-fill"></i> Acessos / Usuários</a></li>
                 <hr style="border-color: #4b646f; margin: 10px 0;">
+                <li><a href="/logout/" class="text-danger fw-bold"><i class="bi bi-box-arrow-right"></i> Sair do Sistema</a></li>
                 <li><a href="/" class="text-info"><i class="bi bi-globe"></i> Visualizar Site</a></li>
             </ul>
         </div>
@@ -101,7 +107,6 @@ def base_html(titulo, conteudo):
     </body>
     </html>
     """
-
 
 
 
