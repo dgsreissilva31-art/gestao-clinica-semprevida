@@ -2831,6 +2831,8 @@ def prontuario_geral(request):
     if not agendamento_id:
         return HttpResponse(base_html("Erro", "ID do agendamento não informado."))
 
+
+
     # ===============================
     # DADOS DO ATENDIMENTO
     # ===============================
@@ -2850,13 +2852,12 @@ def prontuario_geral(request):
         if not dados:
             return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
+        # ✅ TUDO ALINHADO AQUI:
         pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
         
         import re
-
-# Altere a linha do pac_nome para esta:
-pac_nome = re.sub(r"\(.*?\)", "", pac_nome_bruto).strip()
-
+        pac_nome = re.sub(r"\(.*?\)", "", pac_nome_bruto).strip()
+ 
     # ===============================
     # 💾 SALVAR
     # ===============================
