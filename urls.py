@@ -1172,27 +1172,33 @@ def odonto_geral(request):
 
 
 # --- 9. TELA 7: PACIENTES ---
-# --- 9. TELA 7: PACIENTES ---
+# --- 9. TELA 7: PACIENTES (ATUALIZADA) ---
 @csrf_exempt
 def pacientes_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
+    import re
 
     mensagem = ""
-    
-    # 1. BLOQUEAR
+    # ✅ Variável de usuário para auditoria (caso queira usar no futuro)
+    usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
+
+    # Função para limpar o nome (Remover "Quem agendou")
+    def limpar_nome(nome):
+        if not nome: return ""
+        return re.sub(r"\(.*?\)", "", nome).strip()
+
+    # 1. BLOQUEAR / DESBLOQUEAR / EXCLUIR (Inalterados)
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 2. DESBLOQUEAR (NOVO)
     if request.GET.get('unblock_pac'):
         with connection.cursor() as cursor:
             cursor.execute("UPDATE pacientes SET status = 'Ativo' WHERE id = %s", [request.GET.get('unblock_pac')])
         return HttpResponseRedirect('/pacientes/')
 
-    # 3. EXCLUIR
     if request.GET.get('delete_pac'):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
@@ -1212,19 +1218,19 @@ def pacientes_geral(request):
             res = cursor.fetchone()
             if res:
                 p_dados = list(res)
+                p_dados[0] = limpar_nome(p_dados[0]) # ✅ Limpa nome ao carregar para editar
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
     # 5. SALVAR
     if request.method == "POST":
         id_post = request.POST.get('id_pac')
-
         cpf = request.POST.get('cpf')
-        if not cpf or cpf.strip() == "":
-            cpf = None
+        if not cpf or cpf.strip() == "": cpf = None
 
+        # Campos para salvar (O nome já vem limpo do formulário, mas limpamos de novo por segurança)
         campos = [
-            request.POST.get('nome'),
+            limpar_nome(request.POST.get('nome')),
             cpf,
             request.POST.get('sexo'),
             request.POST.get('data_nasc') or None,
@@ -1255,23 +1261,12 @@ def pacientes_geral(request):
                         (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes) 
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
-
-            return HttpResponse("""
-                <html>
-                    <head>
-                        <script>
-                            alert("Paciente Atualizado");
-                            window.location.href = "/recepcao/";
-                        </script>
-                    </head>
-                    <body></body>
-                </html>
-            """)
-
+            return HttpResponseRedirect('/pacientes/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
-    # 6. BUSCA
+    # 6. FILTROS (Unidade e Busca)
+    unidade_filtro = request.GET.get('unidade_id', '')
     termo_busca = request.GET.get('busca', '')
     termo_sql = termo_busca
 
@@ -1279,68 +1274,57 @@ def pacientes_geral(request):
         try:
             d, m, a = termo_busca.split('/')
             termo_sql = f"{a}-{m}-{d}"
-        except:
-            pass
+        except: pass
 
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
         
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+        
+        # SQL com Filtro de Unidade (Baseado nos agendamentos vinculados ou cadastro)
         sql_busca = """
-            SELECT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
+            SELECT DISTINCT p.id, p.nome, p.cpf, p.telefone, c.nome, p.status, p.cidade, p.data_nascimento 
             FROM pacientes p 
             LEFT JOIN convenios c ON p.convenio_id = c.id 
+            LEFT JOIN agendamentos ag ON p.id = ag.paciente_id
+            LEFT JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            WHERE 1=1
         """
-        
         params = []
         if termo_busca:
-            sql_busca += """
-                WHERE p.cpf LIKE %s 
-                OR CAST(p.data_nascimento AS TEXT) LIKE %s 
-                OR p.nome ILIKE %s
-                OR p.cidade ILIKE %s
-            """
-            params = [
-                f'%{termo_sql}%',
-                f'%{termo_sql}%',
-                f'%{termo_busca}%',
-                f'%{termo_busca}%'
-            ]
+            sql_busca += " AND (p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s OR p.nome ILIKE %s OR p.cidade ILIKE %s)"
+            params.extend([f'%{termo_sql}%', f'%{termo_sql}%', f'%{termo_busca}%', f'%{termo_busca}%'])
         
-        sql_busca += " ORDER BY p.id DESC"
+        if unidade_filtro:
+            sql_busca += " AND ac.unidade_id = %s"
+            params.append(unidade_filtro)
+        
+        sql_busca += " ORDER BY p.nome ASC"
         cursor.execute(sql_busca, params)
         lista_pacientes = cursor.fetchall()
 
-    # 7. HTML
-    opcoes_conv = "".join([
-        f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
-        for c in convenios
-    ])
+    # 7. MONTAGEM DO HTML
+    opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
+    opcoes_uni = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_filtro) else ""}>{u[1]}</option>' for u in unidades])
     
     linhas = ""
     for p in lista_pacientes:
         cor_st = "success" if p[5] == "Ativo" else "danger"
         data_br = p[7].strftime('%d/%m/%Y') if p[7] else '--'
+        nome_exibicao = limpar_nome(p[1]) # ✅ Limpa nome na lista
         
         linhas += f"""
         <tr>
-            <td><b>{p[1]}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
+            <td><b>{nome_exibicao}</b><br><small class='text-muted'>CPF: {p[2]} | Nasc: {data_br}</small></td>
             <td>{p[3]}<br><span class="badge bg-{cor_st}">{p[5]}</span></td>
             <td>{p[4] if p[4] else 'Particular'}</td>
             <td>
                 <div class="btn-group">
-                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar Paciente">
-                        <i class="bi bi-pencil"></i>
-                    </a>
-                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" title="Bloquear Paciente">
-                        <i class="bi bi-slash-circle"></i>
-                    </a>
-                    <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success" title="Desbloquear Paciente">
-                        <i class="bi bi-check-circle"></i>
-                    </a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')" title="Excluir Paciente">
-                        <i class="bi bi-trash"></i>
-                    </a>
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning"><i class="bi bi-slash-circle"></i></a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
                 </div>
             </td>
         </tr>
@@ -1349,14 +1333,14 @@ def pacientes_geral(request):
     conteudo = f"""
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
-            <a href="/admin-painel/" class="btn btn-outline-secondary btn-sm">Painel</a>
         </div>
         
         {mensagem}
 
         <form method="POST" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
             <input type="hidden" name="id_pac" value="{edit_id or ''}">
-            <div class="col-md-5"><label>Nome</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
+            
+            <div class="col-md-5"><label class="fw-bold">Nome *</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
             <div class="col-md-3"><label>CPF</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}"></div>
             <div class="col-md-2"><label>Sexo</label>
                 <select name="sexo" class="form-select">
@@ -1364,11 +1348,11 @@ def pacientes_geral(request):
                     <option value="Feminino" {"selected" if p_dados[2]=="Feminino" else ""}>F</option>
                 </select>
             </div>
-            <div class="col-md-2"><label>Nascimento</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
+            <div class="col-md-2"><label class="fw-bold">Nascimento *</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
 
-            <div class="col-md-4"><label>Telefone</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
-            <div class="col-md-4"><label>Convênio</label>
-                <select name="convenio_id" class="form-select">
+            <div class="col-md-4"><label class="fw-bold">Telefone *</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+            <div class="col-md-4"><label class="fw-bold">Convênio *</label>
+                <select name="convenio_id" class="form-select" required>
                     <option value="">Particular</option>
                     {opcoes_conv}
                 </select>
@@ -1384,26 +1368,34 @@ def pacientes_geral(request):
             <div class="col-md-6"><label>Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[12]}"></div>
 
             <div class="col-12 mt-3">
-                <button type="submit" class="btn btn-danger w-100">
+                <button type="submit" class="btn btn-danger w-100 fw-bold">
                     {'ATUALIZAR DADOS' if edit_id else 'SALVAR NOVO PACIENTE'}
                 </button>
             </div>
         </form>
 
-        <form method="GET" class="mb-3">
-            <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF, Data ou Cidade">
+        <form method="GET" class="row g-2 mb-3">
+            <div class="col-md-4">
+                <select name="unidade_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">Filtrar por Unidade (Todas)</option>
+                    {opcoes_uni}
+                </select>
+            </div>
+            <div class="col-md-8">
+                <input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Buscar por Nome, CPF, Data ou Cidade">
+            </div>
         </form>
 
-        <table class="table table-hover">
+        <table class="table table-hover border">
             <thead class="table-dark">
                 <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
             </thead>
-            <tbody>{linhas}</tbody>
+            <tbody>{linhas or '<tr><td colspan="4" class="text-center">Nenhum paciente encontrado.</td></tr>'}</tbody>
         </table>
     """
 
-    return HttpResponse(base_html("Pacientes", conteudo))
-
+    # Retorno enviando o request para manter o nome logado no topo
+    return HttpResponse(base_html("Pacientes", conteudo, request=request))
 
 
 
