@@ -2851,7 +2851,11 @@ def prontuario_geral(request):
             return HttpResponse(base_html("Erro", "Agendamento não encontrado."))
 
         pac_id, pac_nome_bruto, pac_tel, conv_nome, prof_id, prof_nome, data, hora = dados
-        pac_nome = pac_nome_bruto.split("(Ag:")[0].strip() if "(Ag:" in pac_nome_bruto else pac_nome_bruto
+        
+        import re
+
+# Altere a linha do pac_nome para esta:
+pac_nome = re.sub(r"\(.*?\)", "", pac_nome_bruto).strip()
 
     # ===============================
     # 💾 SALVAR
