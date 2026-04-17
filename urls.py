@@ -1180,13 +1180,19 @@ def odonto_geral(request):
 
 
 # --- 9. TELA 7: PACIENTES ---
-# --- 9. TELA 7: PACIENTES ---
+# --- 9. TELA 7: PACIENTES (VERSÃO CORRIGIDA E COMPLETA) ---
 @csrf_exempt
 def pacientes_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
+    import re
 
     mensagem = ""
+    
+    # Função para limpar o nome (Remover "Quem agendou")
+    def limpar_nome_pac(nome):
+        if not nome: return ""
+        return re.sub(r"\(.*?\)", "", nome).strip()
 
     # ===============================
     # AÇÕES
@@ -1207,26 +1213,27 @@ def pacientes_geral(request):
         return HttpResponseRedirect('/pacientes/')
 
     # ===============================
-    # EDITAR
+    # EDITAR (CARREGAR DADOS)
     # ===============================
     edit_id = request.GET.get('edit_pac')
-    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", "", ""]
+    # Ordem: nome, cpf, sexo, nasc, tel, conv, cep, rua, num, compl, bairro, cid, uf, obs, unidade
+    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep,
-                       rua, numero, bairro, cidade, estado, observacoes, unidade_id
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, 
+                       cep, rua, numero, complemento, bairro, cidade, estado, observacoes, unidade_id 
                 FROM pacientes WHERE id = %s
             """, [edit_id])
             res = cursor.fetchone()
             if res:
                 p_dados = list(res)
+                p_dados[0] = limpar_nome_pac(p_dados[0]) 
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # proteção índice
-    unidade_sel = p_dados[13] if len(p_dados) > 13 else ""
+    unidade_sel = p_dados[14] if len(p_dados) > 14 else ""
 
     # ===============================
     # SALVAR
@@ -1234,79 +1241,60 @@ def pacientes_geral(request):
     if request.method == "POST":
         try:
             id_post = request.POST.get('id_pac')
-
-            nome = request.POST.get('nome')
+            nome = limpar_nome_pac(request.POST.get('nome'))
             nascimento = request.POST.get('data_nasc')
             telefone = request.POST.get('telefone')
             convenio_id = request.POST.get('convenio_id') or None
             unidade_id = request.POST.get('unidade_id')
 
-            # validações
-            if not nome or not nascimento or not telefone:
-                raise Exception("Preencha Nome, Nascimento e Telefone")
-
+            if not nome or not nascimento or not telefone or not convenio_id:
+                raise Exception("Preencha Nome, Nascimento, Telefone e Convênio")
             if not unidade_id:
-                raise Exception("Selecione a unidade")
-
-            cpf = request.POST.get('cpf') or None
+                raise Exception("Selecione a Unidade")
 
             campos = [
-                nome,
-                cpf,
-                request.POST.get('sexo'),
-                nascimento,
-                telefone,
-                convenio_id,
-                request.POST.get('cep'),
-                request.POST.get('rua'),
-                request.POST.get('numero'),
-                request.POST.get('bairro'),
-                request.POST.get('cidade'),
-                request.POST.get('estado'),
-                request.POST.get('observacoes'),
-                unidade_id
+                nome, request.POST.get('cpf') or None, request.POST.get('sexo'),
+                nascimento, telefone, convenio_id, request.POST.get('cep'),
+                request.POST.get('rua'), request.POST.get('numero'), request.POST.get('complemento'),
+                request.POST.get('bairro'), request.POST.get('cidade'), request.POST.get('estado'),
+                request.POST.get('observacoes'), unidade_id
             ]
 
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
                         UPDATE pacientes SET 
-                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
-                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                            cidade=%s, estado=%s, observacoes=%s, unidade_id=%s
-                        WHERE id=%s
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, convenio_id=%s,
+                            cep=%s, rua=%s, numero=%s, complemento=%s, bairro=%s, cidade=%s, 
+                            estado=%s, observacoes=%s, unidade_id=%s WHERE id=%s
                     """, campos + [id_post])
                 else:
                     cursor.execute("""
                         INSERT INTO pacientes 
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id,
-                         cep, rua, numero, bairro, cidade, estado, observacoes, unidade_id) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, 
+                         cep, rua, numero, complemento, bairro, cidade, estado, observacoes, unidade_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
             return HttpResponseRedirect('/pacientes/')
-
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCA
+    # BUSCA E FILTROS
     # ===============================
     termo_busca = request.GET.get('busca', '')
     unidade_filtro = request.GET.get('unidade_id', '')
-
     termo_sql = termo_busca
     if "/" in termo_busca:
         try:
             d, m, a = termo_busca.split('/')
             termo_sql = f"{a}-{m}-{d}"
-        except:
-            pass
+        except: pass
 
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
-
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
@@ -1316,139 +1304,86 @@ def pacientes_geral(request):
             LEFT JOIN convenios c ON p.convenio_id = c.id
             WHERE 1=1
         """
-
         params = []
-
         if unidade_filtro:
             sql += " AND p.unidade_id = %s"
             params.append(unidade_filtro)
-
         if termo_busca:
-            sql += """
-                AND (
-                    p.nome ILIKE %s OR
-                    p.cpf LIKE %s OR
-                    CAST(p.data_nascimento AS TEXT) LIKE %s
-                )
-            """
+            sql += " AND (p.nome ILIKE %s OR p.cpf LIKE %s OR CAST(p.data_nascimento AS TEXT) LIKE %s)"
             params.extend([f"%{termo_busca}%", f"%{termo_sql}%", f"%{termo_sql}%"])
-
+        
         sql += " ORDER BY p.id DESC"
-
         cursor.execute(sql, params)
         lista_pacientes = cursor.fetchall()
 
     # ===============================
-    # SELECTS
+    # HTML E SELECTS
     # ===============================
-    opcoes_conv = "".join([
-        f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>'
-        for c in convenios
-    ])
+    opcoes_conv = "".join([f'<option value="{c[0]}" {"selected" if str(c[0])==str(p_dados[5]) else ""}>{c[1]}</option>' for c in convenios])
+    opcoes_uni = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_sel) else ""}>{u[1]}</option>' for u in unidades])
+    opcoes_uni_f = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
 
-    opcoes_uni = "".join([
-        f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_sel) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
-
-    opcoes_uni_filtro = "".join([
-        f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>'
-        for u in unidades
-    ])
-
-    # ===============================
-    # LISTA
-    # ===============================
     linhas = ""
     for p in lista_pacientes:
         data_br = p[6].strftime('%d/%m/%Y') if p[6] else '--'
-        status_cor = "success" if p[5] == "Ativo" else "danger"
-
+        st_cor = "success" if p[5] == "Ativo" else "danger"
         linhas += f"""
         <tr>
-            <td><b>{p[1]}</b><br><small>CPF: {p[2]} | Nasc: {data_br}</small></td>
-            <td>{p[3]} <br><span class="badge bg-{status_cor}">{p[5]}</span></td>
+            <td><b>{limpar_nome_pac(p[1])}</b><br><small>CPF: {p[2]} | Nasc: {data_br}</small></td>
+            <td>{p[3]} <br><span class="badge bg-{st_cor}">{p[5]}</span></td>
             <td>{p[4] or 'Particular'}</td>
             <td>
-                <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info">Editar</a>
-                <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning">Bloquear</a>
-                <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success">Ativar</a>
-                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')">Excluir</a>
+                <div class="btn-group">
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white">Editar</a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning">Bloquear</a>
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')">Excluir</a>
+                </div>
             </td>
-        </tr>
-        """
+        </tr>"""
 
-    # ===============================
-    # HTML
-    # ===============================
     conteudo = f"""
-    <h4>Pacientes</h4>
+    <div class="container-fluid">
+        <h4 class="mb-3">Gestão de Pacientes</h4>
+        {mensagem}
+        
+        <div class="card p-3 mb-4 shadow-sm border-primary">
+            <form method="POST" class="row g-2">
+                <input type="hidden" name="id_pac" value="{edit_id or ''}">
+                <div class="col-md-3"><label>Unidade *</label><select name="unidade_id" class="form-select" required><option value="">Selecione...</option>{opcoes_uni}</select></div>
+                <div class="col-md-5"><label>Nome *</label><input type="text" name="nome" class="form-control" value="{p_dados[0]}" required></div>
+                <div class="col-md-2"><label>Nascimento *</label><input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required></div>
+                <div class="col-md-2"><label>Sexo</label><select name="sexo" class="form-select"><option value="Masculino" {"selected" if p_dados[2]=='Masculino' else ''}>M</option><option value="Feminino" {"selected" if p_dados[2]=='Feminino' else ''}>F</option></select></div>
+                
+                <div class="col-md-3"><label>CPF</label><input type="text" name="cpf" class="form-control" value="{p_dados[1]}"></div>
+                <div class="col-md-3"><label>Telefone *</label><input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required></div>
+                <div class="col-md-3"><label>Convênio *</label><select name="convenio_id" class="form-select" required><option value="">Selecione...</option>{opcoes_conv}</select></div>
+                <div class="col-md-3"><label>CEP</label><input type="text" name="cep" class="form-control" value="{p_dados[6]}"></div>
 
-    {mensagem}
+                <div class="col-md-4"><label>Rua</label><input type="text" name="rua" class="form-control" value="{p_dados[7]}"></div>
+                <div class="col-md-1"><label>Nº</label><input type="text" name="numero" class="form-control" value="{p_dados[8]}"></div>
+                <div class="col-md-2"><label>Compl.</label><input type="text" name="complemento" class="form-control" value="{p_dados[9]}"></div>
+                <div class="col-md-2"><label>Bairro</label><input type="text" name="bairro" class="form-control" value="{p_dados[10]}"></div>
+                <div class="col-md-2"><label>Cidade</label><input type="text" name="cidade" class="form-control" value="{p_dados[11]}"></div>
+                <div class="col-md-1"><label>UF</label><input type="text" name="estado" class="form-control" value="{p_dados[12]}" maxlength="2"></div>
+                <div class="col-md-12"><label>Observações</label><input type="text" name="observacoes" class="form-control" value="{p_dados[13]}"></div>
 
-    <form method="POST" class="row g-2 mb-4">
-        <input type="hidden" name="id_pac" value="{edit_id or ''}">
-
-        <div class="col-md-3">
-            <label>Unidade</label>
-            <select name="unidade_id" class="form-select" required>
-                <option value="">Selecione</option>
-                {opcoes_uni}
-            </select>
+                <div class="col-12 mt-3"><button class="btn btn-danger w-100 fw-bold">SALVAR PACIENTE</button></div>
+            </form>
         </div>
 
-        <div class="col-md-5">
-            <label>Nome</label>
-            <input type="text" name="nome" class="form-control" value="{p_dados[0]}" required>
-        </div>
+        <form method="GET" class="row g-2 mb-3">
+            <div class="col-md-4"><input type="text" name="busca" class="form-control" value="{termo_busca}" placeholder="Busca Nome/CPF"></div>
+            <div class="col-md-4"><select name="unidade_id" class="form-select"><option value="">Todas Unidades</option>{opcoes_uni_f}</select></div>
+            <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
+        </form>
 
-        <div class="col-md-2">
-            <label>Nascimento</label>
-            <input type="date" name="data_nasc" class="form-control" value="{p_dados[3]}" required>
-        </div>
-
-        <div class="col-md-2">
-            <label>Telefone</label>
-            <input type="text" name="telefone" class="form-control" value="{p_dados[4]}" required>
-        </div>
-
-        <div class="col-md-4">
-            <label>Convênio</label>
-            <select name="convenio_id" class="form-select">
-                <option value="">Particular</option>
-                {opcoes_conv}
-            </select>
-        </div>
-
-        <div class="col-12">
-            <button class="btn btn-danger w-100">Salvar</button>
-        </div>
-    </form>
-
-    <form method="GET" class="row g-2 mb-3">
-        <div class="col-md-4">
-            <input type="text" name="busca" class="form-control" value="{termo_busca}">
-        </div>
-        <div class="col-md-4">
-            <select name="unidade_id" class="form-select">
-                <option value="">Todas Unidades</option>
-                {opcoes_uni_filtro}
-            </select>
-        </div>
-        <div class="col-md-2">
-            <button class="btn btn-primary w-100">Buscar</button>
-        </div>
-    </form>
-
-    <table class="table table-hover">
-        <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
-        {linhas}
-    </table>
+        <table class="table table-hover bg-white shadow-sm">
+            <thead class="table-dark"><tr><th>Paciente</th><th>Contato / Status</th><th>Convênio</th><th>Ações</th></tr></thead>
+            <tbody>{linhas or '<tr><td colspan="4" class="text-center">Nenhum registro.</td></tr>'}</tbody>
+        </table>
+    </div>
     """
-
     return HttpResponse(base_html(request, "Pacientes", conteudo))
-
-
 
 
 
