@@ -1229,7 +1229,6 @@ def pacientes_geral(request):
             convenio_id = request.POST.get('convenio_id')
             unidade_id = request.POST.get('unidade_id')
 
-            # 🔴 CAMPOS OBRIGATÓRIOS
             if not nome or not nascimento or not telefone or not convenio_id:
                 raise Exception("Preencha Nome, Nascimento, Telefone e Convênio")
 
@@ -1330,8 +1329,13 @@ def pacientes_geral(request):
         for c in convenios
     ])
 
-    opcoes_uni = "".join([
+    opcoes_uni_form = "".join([
         f'<option value="{u[0]}" {"selected" if str(u[0])==str(p_dados[13]) else ""}>{u[1]}</option>'
+        for u in unidades
+    ])
+
+    opcoes_uni_filtro = "".join([
+        f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_filtro) else ""}>{u[1]}</option>'
         for u in unidades
     ])
 
@@ -1371,7 +1375,7 @@ def pacientes_geral(request):
             <label>Unidade</label>
             <select name="unidade_id" class="form-select" required>
                 <option value="">Selecione</option>
-                {opcoes_uni}
+                {opcoes_uni_form}
             </select>
         </div>
 
@@ -1393,6 +1397,7 @@ def pacientes_geral(request):
         <div class="col-md-4">
             <label>Convênio</label>
             <select name="convenio_id" class="form-select" required>
+                <option value="">Selecione</option>
                 {opcoes_conv}
             </select>
         </div>
@@ -1409,7 +1414,7 @@ def pacientes_geral(request):
         <div class="col-md-4">
             <select name="unidade_id" class="form-select">
                 <option value="">Todas</option>
-                {opcoes_uni}
+                {opcoes_uni_filtro}
             </select>
         </div>
         <div class="col-md-2">
@@ -1424,6 +1429,8 @@ def pacientes_geral(request):
     """
 
     return HttpResponse(base_html(request, "Pacientes", conteudo))
+
+
 
 
 
