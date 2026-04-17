@@ -11,7 +11,7 @@ import views
 
 # --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
 
-def base_html(titulo, conteudo):
+def base_html(request, titulo, conteudo):
     return f"""
     <!DOCTYPE html>
     <html lang="pt-br">
