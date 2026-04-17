@@ -11,11 +11,28 @@ import views
 
 # --- 1. TEMPLATE BASE (SIDEBAR COMPLETA E PROFISSIONAL) ---
 
-def base_html(request, titulo, conteudo):
+def base_html(*args):
+    if len(args) == 2:
+        titulo, conteudo = args
+    elif len(args) == 3:
+        request, titulo, conteudo = args
+    else:
+        raise Exception("Erro na chamada do base_html")
+
     return f"""
-    <!DOCTYPE html>
-    <html lang="pt-br">
+    <html>
     <head>
+        <title>{titulo}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    </head>
+    <body class="container mt-4">
+        {conteudo}
+    </body>
+    </html>
+    """
+
+ 
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
