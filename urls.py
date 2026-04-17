@@ -1327,23 +1327,30 @@ def pacientes_geral(request):
     for p in lista_pacientes:
         data_br = p[6].strftime('%d/%m/%Y') if p[6] else '--'
         st_cor = "success" if p[5] == "Ativo" else "danger"
+        
+        # Botão de Desbloquear (só aparece se o status não for Ativo)
+        btn_desbloquear = ""
+        if p[5] != "Ativo":
+            btn_desbloquear = f'<a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success text-white" title="Desbloquear"><i class="bi bi-unlock-fill"></i></a>'
+
         linhas += f"""
         <tr>
             <td><b>{limpar_nome_pac(p[1])}</b><br><small>CPF: {p[2]} | Nasc: {data_br}</small></td>
             <td>{p[3]} <br><span class="badge bg-{st_cor}">{p[5]}</span></td>
             <td>{p[4] or 'Particular'}</td>
             <td>
-                <div class="btn-group">
-                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white">Editar</a>
-                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning">Bloquear</a>
-                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')">Excluir</a>
+                <div class="btn-group shadow-sm">
+                    <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info text-white" title="Editar"><i class="bi bi-pencil-fill"></i></a>
+                    <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning" title="Bloquear"><i class="bi bi-lock-fill"></i></a>
+                    {btn_desbloquear}
+                    <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir permanentemente?')" title="Excluir"><i class="bi bi-trash-fill"></i></a>
                 </div>
             </td>
         </tr>"""
 
     conteudo = f"""
     <div class="container-fluid">
-        <h4 class="mb-3">Gestão de Pacientes</h4>
+        <h4 class="mb-3"><i class="bi bi-people-fill"></i> Gestão de Pacientes</h4>
         {mensagem}
         
         <div class="card p-3 mb-4 shadow-sm border-primary">
@@ -1377,14 +1384,13 @@ def pacientes_geral(request):
             <div class="col-md-2"><button class="btn btn-primary w-100">Filtrar</button></div>
         </form>
 
-        <table class="table table-hover bg-white shadow-sm">
+        <table class="table table-hover bg-white shadow-sm border">
             <thead class="table-dark"><tr><th>Paciente</th><th>Contato / Status</th><th>Convênio</th><th>Ações</th></tr></thead>
             <tbody>{linhas or '<tr><td colspan="4" class="text-center">Nenhum registro.</td></tr>'}</tbody>
         </table>
     </div>
     """
     return HttpResponse(base_html(request, "Pacientes", conteudo))
-
 
 
 
