@@ -1172,7 +1172,6 @@ def odonto_geral(request):
 
 
 # --- 9. TELA 7: PACIENTES ---
-# --- 9. TELA 7: PACIENTES ---
 @csrf_exempt
 def pacientes_geral(request):
     from django.db import connection
@@ -1185,31 +1184,33 @@ def pacientes_geral(request):
     # ===============================
     if request.GET.get('block_pac'):
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE pacientes SET status = 'Bloqueado' WHERE id = %s", [request.GET.get('block_pac')])
+            cursor.execute("UPDATE pacientes SET status='Bloqueado' WHERE id=%s", [request.GET.get('block_pac')])
         return HttpResponseRedirect('/pacientes/')
 
     if request.GET.get('unblock_pac'):
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE pacientes SET status = 'Ativo' WHERE id = %s", [request.GET.get('unblock_pac')])
+            cursor.execute("UPDATE pacientes SET status='Ativo' WHERE id=%s", [request.GET.get('unblock_pac')])
         return HttpResponseRedirect('/pacientes/')
 
     if request.GET.get('delete_pac'):
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM pacientes WHERE id = %s", [request.GET.get('delete_pac')])
+            cursor.execute("DELETE FROM pacientes WHERE id=%s", [request.GET.get('delete_pac')])
         return HttpResponseRedirect('/pacientes/')
 
     # ===============================
     # EDITAR
     # ===============================
     edit_id = request.GET.get('edit_pac')
-    p_dados = ["", "", "Masculino", "", "", "", "", "", "", "", "", "", "", ""]
+
+    p_dados = [""] * 15
 
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep,
-                       rua, numero, bairro, cidade, estado, observacoes, unidade_id
-                FROM pacientes WHERE id = %s
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id,
+                       cep, rua, numero, complemento, bairro, cidade, estado,
+                       observacoes, unidade_id
+                FROM pacientes WHERE id=%s
             """, [edit_id])
             res = cursor.fetchone()
             if res:
@@ -1217,8 +1218,7 @@ def pacientes_geral(request):
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
 
-    # proteção índice
-    unidade_sel = p_dados[13] if len(p_dados) > 13 else ""
+    unidade_sel = p_dados[14]
 
     # ===============================
     # SALVAR
@@ -1230,12 +1230,11 @@ def pacientes_geral(request):
             nome = request.POST.get('nome')
             nascimento = request.POST.get('data_nasc')
             telefone = request.POST.get('telefone')
-            convenio_id = request.POST.get('convenio_id') or None
+            convenio_id = request.POST.get('convenio_id')
             unidade_id = request.POST.get('unidade_id')
 
-            # validações
-            if not nome or not nascimento or not telefone:
-                raise Exception("Preencha Nome, Nascimento e Telefone")
+            if not nome or not nascimento or not telefone or not convenio_id:
+                raise Exception("Preencha Nome, Nascimento, Telefone e Convênio")
 
             if not unidade_id:
                 raise Exception("Selecione a unidade")
@@ -1252,6 +1251,7 @@ def pacientes_geral(request):
                 request.POST.get('cep'),
                 request.POST.get('rua'),
                 request.POST.get('numero'),
+                request.POST.get('complemento'),
                 request.POST.get('bairro'),
                 request.POST.get('cidade'),
                 request.POST.get('estado'),
@@ -1262,18 +1262,19 @@ def pacientes_geral(request):
             with connection.cursor() as cursor:
                 if id_post:
                     cursor.execute("""
-                        UPDATE pacientes SET 
-                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s, 
-                            convenio_id=%s, cep=%s, rua=%s, numero=%s, bairro=%s, 
-                            cidade=%s, estado=%s, observacoes=%s, unidade_id=%s
+                        UPDATE pacientes SET
+                            nome=%s, cpf=%s, sexo=%s, data_nascimento=%s, telefone=%s,
+                            convenio_id=%s, cep=%s, rua=%s, numero=%s, complemento=%s,
+                            bairro=%s, cidade=%s, estado=%s, observacoes=%s, unidade_id=%s
                         WHERE id=%s
                     """, campos + [id_post])
                 else:
                     cursor.execute("""
-                        INSERT INTO pacientes 
+                        INSERT INTO pacientes
                         (nome, cpf, sexo, data_nascimento, telefone, convenio_id,
-                         cep, rua, numero, bairro, cidade, estado, observacoes, unidade_id) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         cep, rua, numero, complemento, bairro, cidade, estado,
+                         observacoes, unidade_id)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """, campos)
 
             return HttpResponseRedirect('/pacientes/')
@@ -1287,15 +1288,8 @@ def pacientes_geral(request):
     termo_busca = request.GET.get('busca', '')
     unidade_filtro = request.GET.get('unidade_id', '')
 
-    termo_sql = termo_busca
-    if "/" in termo_busca:
-        try:
-            d, m, a = termo_busca.split('/')
-            termo_sql = f"{a}-{m}-{d}"
-        except:
-            pass
-
     with connection.cursor() as cursor:
+
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios = cursor.fetchall()
 
@@ -1316,14 +1310,8 @@ def pacientes_geral(request):
             params.append(unidade_filtro)
 
         if termo_busca:
-            sql += """
-                AND (
-                    p.nome ILIKE %s OR
-                    p.cpf LIKE %s OR
-                    CAST(p.data_nascimento AS TEXT) LIKE %s
-                )
-            """
-            params.extend([f"%{termo_busca}%", f"%{termo_sql}%", f"%{termo_sql}%"])
+            sql += " AND p.nome ILIKE %s"
+            params.append(f"%{termo_busca}%")
 
         sql += " ORDER BY p.id DESC"
 
@@ -1354,18 +1342,18 @@ def pacientes_geral(request):
     linhas = ""
     for p in lista_pacientes:
         data_br = p[6].strftime('%d/%m/%Y') if p[6] else '--'
-        status_cor = "success" if p[5] == "Ativo" else "danger"
+        cor = "success" if p[5] == "Ativo" else "danger"
 
         linhas += f"""
         <tr>
             <td><b>{p[1]}</b><br><small>CPF: {p[2]} | Nasc: {data_br}</small></td>
-            <td>{p[3]} <br><span class="badge bg-{status_cor}">{p[5]}</span></td>
+            <td>{p[3]} <br><span class="badge bg-{cor}">{p[5]}</span></td>
             <td>{p[4] or 'Particular'}</td>
             <td>
                 <a href="/pacientes/?edit_pac={p[0]}" class="btn btn-sm btn-info">Editar</a>
                 <a href="/pacientes/?block_pac={p[0]}" class="btn btn-sm btn-warning">Bloquear</a>
                 <a href="/pacientes/?unblock_pac={p[0]}" class="btn btn-sm btn-success">Ativar</a>
-                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir?')">Excluir</a>
+                <a href="/pacientes/?delete_pac={p[0]}" class="btn btn-sm btn-danger">Excluir</a>
             </td>
         </tr>
         """
@@ -1378,7 +1366,9 @@ def pacientes_geral(request):
 
     {mensagem}
 
+    <!-- FORM -->
     <form method="POST" class="row g-2 mb-4">
+
         <input type="hidden" name="id_pac" value="{edit_id or ''}">
 
         <div class="col-md-3">
@@ -1406,10 +1396,24 @@ def pacientes_geral(request):
 
         <div class="col-md-4">
             <label>Convênio</label>
-            <select name="convenio_id" class="form-select">
-                <option value="">Particular</option>
+            <select name="convenio_id" class="form-select" required>
+                <option value="">Selecione</option>
                 {opcoes_conv}
             </select>
+        </div>
+
+        <!-- ENDEREÇO -->
+        <div class="col-md-3"><input name="cep" class="form-control" placeholder="CEP" value="{p_dados[6]}"></div>
+        <div class="col-md-5"><input name="rua" class="form-control" placeholder="Rua" value="{p_dados[7]}"></div>
+        <div class="col-md-2"><input name="numero" class="form-control" placeholder="Número" value="{p_dados[8]}"></div>
+        <div class="col-md-2"><input name="complemento" class="form-control" placeholder="Complemento" value="{p_dados[9]}"></div>
+
+        <div class="col-md-4"><input name="bairro" class="form-control" placeholder="Bairro" value="{p_dados[10]}"></div>
+        <div class="col-md-4"><input name="cidade" class="form-control" placeholder="Cidade" value="{p_dados[11]}"></div>
+        <div class="col-md-2"><input name="estado" class="form-control" placeholder="UF" value="{p_dados[12]}"></div>
+
+        <div class="col-md-6">
+            <input name="observacoes" class="form-control" placeholder="Observações" value="{p_dados[13]}">
         </div>
 
         <div class="col-12">
@@ -1417,6 +1421,7 @@ def pacientes_geral(request):
         </div>
     </form>
 
+    <!-- FILTRO -->
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-4">
             <input type="text" name="busca" class="form-control" value="{termo_busca}">
@@ -1432,15 +1437,13 @@ def pacientes_geral(request):
         </div>
     </form>
 
-    <table class="table table-hover">
+    <table class="table">
         <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
         {linhas}
     </table>
     """
 
-    return HttpResponse(base_html(request, "Pacientes", conteudo))
-
-
+    return HttpResponse(base_html("Pacientes", conteudo))
 
 
 
