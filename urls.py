@@ -1207,7 +1207,7 @@ def pacientes_geral(request):
     if edit_id:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, 
+                SELECT nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep,
                        rua, numero, bairro, cidade, estado, observacoes, unidade_id
                 FROM pacientes WHERE id = %s
             """, [edit_id])
@@ -1216,6 +1216,9 @@ def pacientes_geral(request):
                 p_dados = list(res)
                 if p_dados[3]:
                     p_dados[3] = p_dados[3].strftime('%Y-%m-%d')
+
+    # proteção índice
+    unidade_sel = p_dados[13] if len(p_dados) > 13 else ""
 
     # ===============================
     # SALVAR
@@ -1227,11 +1230,15 @@ def pacientes_geral(request):
             nome = request.POST.get('nome')
             nascimento = request.POST.get('data_nasc')
             telefone = request.POST.get('telefone')
-            convenio_id = request.POST.get('convenio_id')
+            convenio_id = request.POST.get('convenio_id') or None
             unidade_id = request.POST.get('unidade_id')
 
-            if not nome or not nascimento or not telefone or not convenio_id:
-                raise Exception("Preencha Nome, Nascimento, Telefone e Convênio")
+            # validações
+            if not nome or not nascimento or not telefone:
+                raise Exception("Preencha Nome, Nascimento e Telefone")
+
+            if not unidade_id:
+                raise Exception("Selecione a unidade")
 
             cpf = request.POST.get('cpf') or None
 
@@ -1264,7 +1271,8 @@ def pacientes_geral(request):
                 else:
                     cursor.execute("""
                         INSERT INTO pacientes 
-                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id, cep, rua, numero, bairro, cidade, estado, observacoes, unidade_id) 
+                        (nome, cpf, sexo, data_nascimento, telefone, convenio_id,
+                         cep, rua, numero, bairro, cidade, estado, observacoes, unidade_id) 
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, campos)
 
@@ -1274,7 +1282,7 @@ def pacientes_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCA + FILTRO UNIDADE
+    # BUSCA
     # ===============================
     termo_busca = request.GET.get('busca', '')
     unidade_filtro = request.GET.get('unidade_id', '')
@@ -1331,7 +1339,7 @@ def pacientes_geral(request):
     ])
 
     opcoes_uni = "".join([
-        f'<option value="{u[0]}" {"selected" if str(u[0])==str(p_dados[13]) else ""}>{u[1]}</option>'
+        f'<option value="{u[0]}" {"selected" if str(u[0])==str(unidade_sel) else ""}>{u[1]}</option>'
         for u in unidades
     ])
 
@@ -1398,7 +1406,8 @@ def pacientes_geral(request):
 
         <div class="col-md-4">
             <label>Convênio</label>
-            <select name="convenio_id" class="form-select" required>
+            <select name="convenio_id" class="form-select">
+                <option value="">Particular</option>
                 {opcoes_conv}
             </select>
         </div>
@@ -1410,7 +1419,29 @@ def pacientes_geral(request):
 
     <form method="GET" class="row g-2 mb-3">
         <div class="col-md-4">
-            <input type="text" name="bus
+            <input type="text" name="busca" class="form-control" value="{termo_busca}">
+        </div>
+        <div class="col-md-4">
+            <select name="unidade_id" class="form-select">
+                <option value="">Todas Unidades</option>
+                {opcoes_uni_filtro}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary w-100">Buscar</button>
+        </div>
+    </form>
+
+    <table class="table table-hover">
+        <tr><th>Paciente</th><th>Contato</th><th>Convênio</th><th>Ações</th></tr>
+        {linhas}
+    </table>
+    """
+
+    return HttpResponse(base_html(request, "Pacientes", conteudo))
+
+
+
 
 
 
