@@ -22,15 +22,6 @@ def base_html(*args):
     return f"""
     <html>
     <head>
-        <title>{titulo}</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
-    </head>
-    <body class="container mt-4">
-        {conteudo}
-    </body>
-    </html>
-    """
 
  
         <meta charset="UTF-8">
