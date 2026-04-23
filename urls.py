@@ -155,13 +155,13 @@ def painel_controle(request):
             </div>
             <div class="col-md-4">
                 <div class="p-4 bg-secondary text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2 fw-bold">Exames/Prestadores</h5>
+                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2 fw-bold">Caixas Exames/Prestadores</h5>
                     <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="p-4 bg-dark text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2 fw-bold">Odontologia</h5>
+                    <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2 fw-bold">Caixa Odontologia</h5>
                     <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
