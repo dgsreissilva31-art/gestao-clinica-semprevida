@@ -760,6 +760,7 @@ def convenios_geral(request):
 
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM PRESTADORES CRUD) ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM PRESTADORES + CRUD EXAMES COMPLETO) ---
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
@@ -819,7 +820,7 @@ def exames_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # LANÇAMENTO CAIXA EXAMES
+    # LANÇAMENTO CAIXA
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -857,24 +858,30 @@ def exames_geral(request):
                     usuario_nome
                 ])
 
-            mensagem = '<div class="alert alert-success">✅ Exame lançado com sucesso!</div>'
+            mensagem = '<div class="alert alert-success">✅ Exame lançado!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # EXAMES - CADASTRO
+    # EXAMES - EDITAR
     # ===============================
     edit_id = request.GET.get('edit_exame')
     e_dados = ["", "", "", 0.00]
 
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT nome, grupo, preparo, valor_particular FROM exames WHERE id = %s", [edit_id])
+            cursor.execute("""
+                SELECT nome, grupo, preparo, valor_particular 
+                FROM exames WHERE id = %s
+            """, [edit_id])
             res = cursor.fetchone()
             if res:
                 e_dados = res
 
+    # ===============================
+    # EXAMES - SALVAR
+    # ===============================
     if request.method == "POST" and "salvar_exame" in request.POST:
         try:
             id_post = request.POST.get('id_exame')
@@ -902,7 +909,7 @@ def exames_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
     # ===============================
-    # BUSCAR DADOS
+    # DADOS
     # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM exames ORDER BY nome")
@@ -914,7 +921,10 @@ def exames_geral(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        cursor.execute("SELECT id, nome, grupo, valor_particular FROM exames ORDER BY nome")
+        cursor.execute("""
+            SELECT id, nome, grupo, preparo, valor_particular 
+            FROM exames ORDER BY nome
+        """)
         exames_lista = cursor.fetchall()
 
     # ===============================
@@ -925,7 +935,7 @@ def exames_geral(request):
     opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
     # ===============================
-    # LISTA EXAMES
+    # LISTAS
     # ===============================
     linhas = ""
     for ex in exames_lista:
@@ -933,13 +943,15 @@ def exames_geral(request):
         <tr>
             <td>{ex[1]}</td>
             <td>{ex[2] or '-'}</td>
-            <td>R$ {float(ex[3] or 0):.2f}</td>
+            <td>{ex[3] or '-'}</td>
+            <td>R$ {float(ex[4] or 0):.2f}</td>
+            <td>
+                <a href="/exames/?edit_exame={ex[0]}" class="btn btn-sm btn-info">Editar</a>
+                <a href="/exames/?delete_exame={ex[0]}" class="btn btn-sm btn-danger">Excluir</a>
+            </td>
         </tr>
         """
 
-    # ===============================
-    # LISTA PRESTADORES
-    # ===============================
     linhas_prest = ""
     for p in prestadores:
         linhas_prest += f"""
@@ -957,21 +969,46 @@ def exames_geral(request):
     # ===============================
     conteudo = f"""
     <h4>🧪 Exames</h4>
-
     {mensagem}
+
+    <!-- EXAMES CADASTRO -->
+    <div class="card p-3 mb-3 border-primary">
+        <h5>Cadastro de Exames</h5>
+        <form method="POST" class="row g-2">
+            <input type="hidden" name="id_exame" value="{edit_id or ''}">
+
+            <div class="col-md-3">
+                <input type="text" name="nome" class="form-control" placeholder="Exame" value="{e_dados[0]}" required>
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="grupo" class="form-control" placeholder="Grupo" value="{e_dados[1]}">
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="preparo" class="form-control" placeholder="Preparo" value="{e_dados[2]}">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor" value="{e_dados[3]}">
+            </div>
+
+            <div class="col-md-2">
+                <button name="salvar_exame" class="btn btn-primary w-100">
+                    {"Atualizar" if edit_id else "Salvar"}
+                </button>
+            </div>
+        </form>
+    </div>
 
     <!-- PRESTADORES -->
     <div class="card p-3 mb-3 border-warning">
-        <h5>👨‍⚕️ Prestadores</h5>
-
+        <h5>Prestadores</h5>
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_prestador" value="{edit_prest or ''}">
-
             <div class="col-md-9">
-                <input type="text" name="nome_prestador" class="form-control" 
-                       placeholder="Nome do prestador" value="{prest_nome}" required>
+                <input type="text" name="nome_prestador" class="form-control" value="{prest_nome}" required>
             </div>
-
             <div class="col-md-3">
                 <button name="salvar_prestador" class="btn btn-warning w-100">
                     {"Atualizar" if edit_prest else "Incluir"}
@@ -979,66 +1016,35 @@ def exames_geral(request):
             </div>
         </form>
 
-        <table class="table table-sm mt-3">
+        <table class="table table-sm mt-2">
             <tr><th>Nome</th><th>Ações</th></tr>
             {linhas_prest}
         </table>
     </div>
 
-    <!-- RESTANTE DO CÓDIGO MANTIDO -->
+    <!-- CAIXA -->
     <div class="card p-3 mb-3 border-success">
-        <h5>💰 Caixa de Exames</h5>
+        <h5>Caixa de Exames</h5>
         <form method="POST" class="row g-2">
-            <div class="col-md-2">
-                <select name="unidade_id" class="form-select" required>
-                    <option value="">Unidade</option>
-                    {opts_uni}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
-            </div>
-
-            <div class="col-md-2">
-                <select name="exame_id" class="form-select" required>
-                    <option value="">Exame</option>
-                    {opts_exames}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <select name="prestador" class="form-select">
-                    <option value="">Prestador</option>
-                    {opts_prest}
-                </select>
-            </div>
-
-            <div class="col-md-1">
-                <input type="number" step="0.01" name="valor" class="form-control">
-            </div>
-
-            <div class="col-md-2">
-                <select name="forma" class="form-select">
-                    <option>Pix</option>
-                    <option>Cartão</option>
-                    <option>Dinheiro</option>
-                </select>
-            </div>
-
-            <div class="col-md-1">
-                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
-            </div>
+            <div class="col-md-2">{opts_uni}</div>
+            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente"></div>
+            <div class="col-md-2"><select name="exame_id" class="form-select">{opts_exames}</select></div>
+            <div class="col-md-2"><select name="prestador" class="form-select">{opts_prest}</select></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control"></div>
+            <div class="col-md-1"><button name="lancar_exame" class="btn btn-success w-100">OK</button></div>
         </form>
     </div>
 
+    <!-- LISTA -->
     <table class="table table-sm">
-        <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
+        <tr><th>Exame</th><th>Grupo</th><th>Preparo</th><th>Valor</th><th>Ações</th></tr>
         {linhas}
     </table>
     """
 
     return HttpResponse(base_html("Exames", conteudo))
+
+
 
 
 
