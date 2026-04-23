@@ -968,7 +968,7 @@ def exames_geral(request):
     # HTML
     # ===============================
     conteudo = f"""
-    <h4>🧪 Exame</h4>
+    <h4>🧪 Exames</h4>
     {mensagem}
 
     <!-- CAIXA NO TOPO -->
