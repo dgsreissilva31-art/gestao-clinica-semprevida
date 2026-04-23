@@ -1070,6 +1070,7 @@ def exames_geral(request):
 
 # --- 8. TELA 6: ODONTOLOGIA ---
 # --- 8. TELA 6: ODONTOLOGIA + CAIXA ODONTO ---
+# --- 8. TELA 6: ODONTOLOGIA + CAIXA ODONTO ---
 @csrf_exempt
 def odonto_geral(request):
     from django.db import connection
@@ -1077,7 +1078,6 @@ def odonto_geral(request):
     import datetime
 
     mensagem = ""
-    # ✅ Variável definida no topo para ser usada em qualquer bloco abaixo
     usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
     # ===============================
@@ -1118,7 +1118,6 @@ def odonto_geral(request):
                 od = cursor.fetchone()
                 nome_proc = od[0] if od else "Procedimento"
 
-                # ✅ SQL CAIXA: 10 colunas e 9 placeholders (%s) + CURRENT_DATE
                 cursor.execute("""
                     INSERT INTO caixa
                     (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
@@ -1131,7 +1130,7 @@ def odonto_geral(request):
             mensagem = f'<div class="alert alert-danger">❌ Erro no Caixa: {e}</div>'
 
     # ===============================
-    # CADASTRO / EDIÇÃO ODONTO (CORRIGIDO AQUI!)
+    # CADASTRO / EDIÇÃO ODONTO
     # ===============================
     edit_id = request.GET.get('edit_odonto')
     o_dados = ["", "", 0.00, ""]
@@ -1155,14 +1154,12 @@ def odonto_geral(request):
 
             with connection.cursor() as cursor:
                 if id_post:
-                    # ✅ UPDATE: Adicionado usuario_lancamento
                     cursor.execute("""
                         UPDATE odontologia 
                         SET procedimento=%s, grupo=%s, valor_particular=%s, observacoes=%s, usuario_lancamento=%s
                         WHERE id=%s
                     """, [proc, grupo, valor, obs, usuario_nome, id_post])
                 else:
-                    # ✅ INSERT: Adicionado usuario_lancamento (5 colunas e 5 %s)
                     cursor.execute("""
                         INSERT INTO odontologia (procedimento, grupo, valor_particular, observacoes, usuario_lancamento)
                         VALUES (%s,%s,%s,%s,%s)
@@ -1173,54 +1170,147 @@ def odonto_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar procedimento: {e}</div>'
 
-    # --- O RESTANTE DO CÓDIGO (Buscas, Selects e HTML) SEGUE IGUAL ---
+    # ===============================
+    # DADOS
+    # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, procedimento FROM odontologia ORDER BY procedimento")
         procedimentos = cursor.fetchall()
+
         cursor.execute("SELECT id, nome FROM prestadores ORDER BY nome")
         prestadores = cursor.fetchall()
+
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
-        cursor.execute("SELECT id, procedimento, grupo, valor_particular, observacoes FROM odontologia ORDER BY procedimento")
+
+        cursor.execute("""
+            SELECT id, procedimento, grupo, valor_particular, observacoes 
+            FROM odontologia ORDER BY procedimento
+        """)
         lista_odonto = cursor.fetchall()
 
     opts_proc = "".join([f'<option value="{p[0]}">{p[1]}</option>' for p in procedimentos])
     opts_prest = "".join([f'<option value="{p[1]}">{p[1]}</option>' for p in prestadores])
     opts_uni = "".join([f'<option value="{u[0]}">{u[1]}</option>' for u in unidades])
 
-    linhas = "".join([f"<tr><td>{o[1]}</td><td>{o[2] or '-'}</td><td>R$ {float(o[3] or 0):.2f}</td><td>{o[4] or '-'}</td></tr>" for o in lista_odonto])
+    # ===============================
+    # LISTA COM BOTÕES (AQUI FOI CORRIGIDO)
+    # ===============================
+    linhas = ""
+    for o in lista_odonto:
+        linhas += f"""
+        <tr>
+            <td>{o[1]}</td>
+            <td>{o[2] or '-'}</td>
+            <td>R$ {float(o[3] or 0):.2f}</td>
+            <td>
+                {o[4] or '-'}
+                <br>
+                <a href="/odontologia/?edit_odonto={o[0]}" class="btn btn-sm btn-info mt-1">Editar</a>
+                <a href="/odontologia/?delete_odonto={o[0]}" class="btn btn-sm btn-danger mt-1">Excluir</a>
+            </td>
+        </tr>
+        """
 
+    # ===============================
+    # HTML
+    # ===============================
     conteudo = f"""
     <h4>🦷 Odontologia</h4>
     {mensagem}
+
     <div class="card p-3 mb-3 border-primary shadow-sm">
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_odonto" value="{edit_id or ''}">
-            <div class="col-md-4"><input type="text" name="procedimento" value="{o_dados[0]}" class="form-control" placeholder="Procedimento" required></div>
-            <div class="col-md-3"><input type="text" name="grupo" value="{o_dados[1]}" class="form-control" placeholder="Grupo"></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" value="{o_dados[2]}" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-3"><button name="salvar_odonto" class="btn btn-primary w-100">Salvar</button></div>
-            <div class="col-12 mt-2"><textarea name="observacoes" class="form-control" placeholder="Observações">{o_dados[3]}</textarea></div>
+
+            <div class="col-md-4">
+                <input type="text" name="procedimento" value="{o_dados[0]}" class="form-control" placeholder="Procedimento" required>
+            </div>
+
+            <div class="col-md-3">
+                <input type="text" name="grupo" value="{o_dados[1]}" class="form-control" placeholder="Grupo">
+            </div>
+
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="valor" value="{o_dados[2]}" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-3">
+                <button name="salvar_odonto" class="btn btn-primary w-100">Salvar</button>
+            </div>
+
+            <div class="col-12 mt-2">
+                <textarea name="observacoes" class="form-control" placeholder="Observações">{o_dados[3]}</textarea>
+            </div>
         </form>
     </div>
+
     <div class="card p-3 mb-3 border-success shadow-sm">
         <h5 class="text-success fw-bold">💰 Caixa Odontológico</h5>
+
         <form method="POST" class="row g-2">
-            <div class="col-md-2"><select name="unidade_id" class="form-select" required><option value="">Unidade</option>{opts_uni}</select></div>
-            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente" required></div>
-            <div class="col-md-2"><select name="odonto_id" class="form-select" required><option value="">Procedimento</option>{opts_proc}</select></div>
-            <div class="col-md-2"><select name="prestador" class="form-select"><option value="">Prestador</option>{opts_prest}</select></div>
-            <div class="col-md-1"><input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor"></div>
-            <div class="col-md-2"><select name="forma" class="form-select"><option>Pix</option><option>Cartão</option><option>Dinheiro</option></select></div>
-            <div class="col-md-1"><button name="lancar_odonto" class="btn btn-success w-100">OK</button></div>
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
+            </div>
+
+            <div class="col-md-2">
+                <select name="odonto_id" class="form-select" required>
+                    <option value="">Procedimento</option>
+                    {opts_proc}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="prestador" class="form-select">
+                    <option value="">Prestador</option>
+                    {opts_prest}
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-2">
+                <select name="forma" class="form-select">
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                    <option>Dinheiro</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_odonto" class="btn btn-success w-100">OK</button>
+            </div>
         </form>
     </div>
+
     <table class="table table-sm table-hover">
-        <thead class="table-light"><tr><th>Procedimento</th><th>Grupo</th><th>Valor</th><th>Obs</th></tr></thead>
-        <tbody>{linhas}</tbody>
+        <thead class="table-light">
+            <tr>
+                <th>Procedimento</th>
+                <th>Grupo</th>
+                <th>Valor</th>
+                <th>Obs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {linhas}
+        </tbody>
     </table>
     """
+
     return HttpResponse(base_html("Odontologia", conteudo))
+
+
+
 
 
 
