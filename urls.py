@@ -1840,10 +1840,6 @@ def precos_exames_geral(request):
 # --- 13. TELA 11: CONFIGURAÇÃO DE AGENDAS (ABRIR GRADES) ---
 @csrf_exempt
 def agendas_config_geral(request):
-    from django.db import connection
-    from django.http import HttpResponse, HttpResponseRedirect
-    import datetime
-
     mensagem = ""
     
     # 1. AÇÕES: EXCLUSÃO
@@ -1866,10 +1862,7 @@ def agendas_config_geral(request):
             res = cursor.fetchone()
             if res:
                 a_dados = list(res)
-                try:
-                    if a_dados[2]: a_dados[2] = a_dados[2].strftime('%Y-%m-%d')
-                except:
-                    a_dados[2] = "" # Caso a data esteja corrompida (ex: 20226)
+                if a_dados[2]: a_dados[2] = a_dados[2].strftime('%Y-%m-%d')
 
     # 3. SALVAR / ATUALIZAR (POST)
     if request.method == "POST":
@@ -1898,13 +1891,14 @@ def agendas_config_geral(request):
                     """, [unid, prof, data_ag, inicio, fim, inter])
             return HttpResponseRedirect('/agendas-config/')
         except Exception as e:
-            mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
+            mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
     # 4. BUSCA DE DADOS
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
         
+        # Puxamos profissionais COM o ID da unidade vinculada para o JavaScript filtrar
         cursor.execute("""
             SELECT p.id, p.nome, e.nome, p.unidade_id 
             FROM profissionais p 
@@ -1920,21 +1914,17 @@ def agendas_config_geral(request):
             JOIN unidades u ON ac.unidade_id = u.id
             JOIN profissionais p ON ac.profissional_id = p.id
             LEFT JOIN especialidades e ON p.especialidade_id = e.id
-            ORDER BY ac.data_especifica DESC, u.nome ASC
+            ORDER BY u.nome ASC, ac.data_especifica ASC
         """)
         lista_agendas = cursor.fetchall()
 
     # 5. MONTAGEM DO HTML
     opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==str(a_dados[0]) else ""}>{u[1]}</option>' for u in unidades])
     
+    # Criamos um "dicionário" em JavaScript para o filtro dinâmico
     linhas_tabela = ""
     for a in lista_agendas:
-        # ✅ Correção para anos fora de range (como 20226)
-        try:
-            data_f = a[3].strftime('%d/%m/%Y') if a[3] else "--"
-        except:
-            data_f = '<span class="text-danger">Data Inválida</span>'
-
+        data_f = a[3].strftime('%d/%m/%Y') if a[3] else "--"
         linhas_tabela += f"""
             <tr>
                 <td><span class="badge bg-primary">{a[1]}</span></td>
@@ -1942,10 +1932,8 @@ def agendas_config_geral(request):
                 <td>{data_f} <br> <small class="text-muted">{a[4]} - {a[5]}</small></td>
                 <td>{a[7]} min</td>
                 <td>
-                    <div class="btn-group">
-                        <a href="/agendas-config/?edit_agenda={a[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
-                        <a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger" onclick="return confirm('Excluir esta grade?')"><i class="bi bi-trash"></i></a>
-                    </div>
+                    <a href="/agendas-config/?edit_agenda={a[0]}" class="btn btn-sm btn-info text-white"><i class="bi bi-pencil"></i></a>
+                    <a href="/agendas-config/?delete_agenda={a[0]}" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></a>
                 </td>
             </tr>"""
 
@@ -1960,23 +1948,27 @@ def agendas_config_geral(request):
         <form method="POST" id="formAgenda" class="card p-3 shadow-sm bg-light border-primary mb-4">
             <input type="hidden" name="id_agenda" value="{edit_id or ''}">
             <div class="row g-3">
+                
                 <div class="col-md-4">
-                    <label class="fw-bold small text-primary">1º Unidade</label>
+                    <label class="fw-bold small text-primary">1º Escolha a Unidade</label>
                     <select name="unidade_id" id="select_unidade" class="form-select border-primary" onchange="filtrarProfissionais()" required>
                         <option value="">-- Selecione a Unidade --</option>
                         {opts_unid}
                     </select>
                 </div>
+
                 <div class="col-md-5">
-                    <label class="fw-bold small text-primary">2º Profissional</label>
+                    <label class="fw-bold small text-primary">2º Profissional Disponível</label>
                     <select name="profissional_id" id="select_profissional" class="form-select border-primary" required disabled>
                         <option value="">-- Selecione a Unidade Antes --</option>
                     </select>
                 </div>
+
                 <div class="col-md-3">
                     <label class="fw-bold small">Data da Agenda</label>
                     <input type="date" name="data_ag" class="form-control" value="{a_dados[2]}" required>
                 </div>
+
                 <div class="col-md-4">
                     <label class="fw-bold small">Início</label>
                     <input type="time" name="inicio" class="form-control" value="{a_dados[3]}" required>
@@ -1989,41 +1981,52 @@ def agendas_config_geral(request):
                     <label class="fw-bold small">Intervalo (Min)</label>
                     <input type="number" name="intervalo" class="form-control" value="{a_dados[5]}" required>
                 </div>
+
                 <div class="col-12 mt-3">
-                    <button type="submit" class="btn btn-primary w-100 fw-bold">
-                        { 'ATUALIZAR GRADE' if edit_id else 'GERAR GRADE' }
+                    <button type="submit" class="btn btn-primary w-100 fw-bold shadow">
+                        { '<i class="bi bi-arrow-repeat"></i> ATUALIZAR GRADE' if edit_id else '<i class="bi bi-plus-lg"></i> GERAR GRADE' }
                     </button>
                 </div>
+                { f'<div class="col-12 text-center mt-2"><a href="/agendas-config/" class="text-danger small">Cancelar Edição</a></div>' if edit_id else '' }
             </div>
         </form>
 
         <script>
+            // Dados dos profissionais injetados pelo Python para o JS
             const profissionais = [
-                {"".join([f'{{id: {p[0]}, nome: "{p[1]} ({p[2]})", unidade: "{p[3]}"}},' for p in profs])}
+                { "".join([f'{{id: {p[0]}, nome: "{p[1]} ({p[2]})", unidade: "{p[3]}"}},' for p in profs]) }
             ];
 
             function filtrarProfissionais() {{
                 const unidId = document.getElementById('select_unidade').value;
                 const selectProf = document.getElementById('select_profissional');
+                
                 selectProf.innerHTML = '<option value="">-- Selecione o Profissional --</option>';
                 
-                if (unidId === "") {{ selectProf.disabled = true; return; }}
+                if (unidId === "") {{
+                    selectProf.disabled = true;
+                    return;
+                }}
 
                 const filtrados = profissionais.filter(p => p.unidade == unidId);
+
                 if (filtrados.length > 0) {{
                     filtrados.forEach(p => {{
                         const opt = document.createElement('option');
                         opt.value = p.id;
                         opt.text = p.nome;
+                        // Se estiver editando, pré-seleciona
                         if(p.id == "{a_dados[1]}") opt.selected = true;
                         selectProf.appendChild(opt);
                     }});
                     selectProf.disabled = false;
                 }} else {{
-                    selectProf.innerHTML = '<option value="">Nenhum médico nesta unidade</option>';
+                    selectProf.innerHTML = '<option value="">Nenhum médico cadastrado nesta unidade</option>';
                     selectProf.disabled = true;
                 }}
             }}
+
+            // Executa ao carregar caso seja modo edição
             window.onload = filtrarProfissionais;
         </script>
 
@@ -2036,8 +2039,8 @@ def agendas_config_geral(request):
             </table>
         </div>
     """
-    # ✅ Agora enviando o request corretamente para evitar o erro de sidebar
-    return HttpResponse(base_html("Configuração de Agendas", conteudo, request=request))
+    return HttpResponse(base_html("Configuração de Agendas", conteudo))
+
 
 
 
