@@ -759,13 +759,11 @@ def convenios_geral(request):
 
 
 # --- 7. TELA 5: EXAMES ---
-# --- 7. TELA 5: EXAMES ---
-# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM UNIDADE) ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM PRESTADORES CRUD) ---
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
     from django.http import HttpResponse, HttpResponseRedirect
-    import datetime
 
     mensagem = ""
 
@@ -778,23 +776,50 @@ def exames_geral(request):
         return HttpResponseRedirect('/exames/')
 
     # ===============================
-    # CADASTRAR PRESTADOR
+    # PRESTADORES - EXCLUIR
     # ===============================
-    if request.method == "POST" and "novo_prestador" in request.POST:
+    if request.GET.get('delete_prestador'):
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM prestadores WHERE id = %s", [request.GET.get('delete_prestador')])
+        return HttpResponseRedirect('/exames/')
+
+    # ===============================
+    # PRESTADORES - EDITAR
+    # ===============================
+    edit_prest = request.GET.get('edit_prestador')
+    prest_nome = ""
+
+    if edit_prest:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT nome FROM prestadores WHERE id = %s", [edit_prest])
+            res = cursor.fetchone()
+            if res:
+                prest_nome = res[0]
+
+    # ===============================
+    # PRESTADORES - SALVAR
+    # ===============================
+    if request.method == "POST" and "salvar_prestador" in request.POST:
         try:
             nome = request.POST.get('nome_prestador')
+            id_prest = request.POST.get('id_prestador')
 
-            if nome:
-                with connection.cursor() as cursor:
+            if not nome:
+                raise Exception("Nome obrigatório")
+
+            with connection.cursor() as cursor:
+                if id_prest:
+                    cursor.execute("UPDATE prestadores SET nome=%s WHERE id=%s", [nome, id_prest])
+                else:
                     cursor.execute("INSERT INTO prestadores (nome) VALUES (%s)", [nome])
 
-                mensagem = '<div class="alert alert-success">✅ Prestador cadastrado!</div>'
+            return HttpResponseRedirect('/exames/')
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-  # ===============================
-    # LANÇAMENTO CAIXA EXAMES (IGUAL AO DIVERSOS)
+    # ===============================
+    # LANÇAMENTO CAIXA EXAMES
     # ===============================
     if request.method == "POST" and "lancar_exame" in request.POST:
         try:
@@ -805,52 +830,47 @@ def exames_geral(request):
             forma = request.POST.get('forma')
             unidade_id = request.POST.get('unidade_id')
 
-            # ✅ CAPTURA O USUÁRIO EXATAMENTE COMO NO DIVERSOS
             usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
             if not paciente or not exame_id:
                 raise Exception("Paciente e exame obrigatórios")
 
             with connection.cursor() as cursor:
-                # Busca o nome do exame para colocar na descrição
                 cursor.execute("SELECT nome FROM exames WHERE id = %s", [exame_id])
                 ex = cursor.fetchone()
                 nome_exame = ex[0] if ex else "Exame"
 
-                # ✅ SQL COM A CONTAGEM EXATA DE COLUNAS (Igual ao Diversos)
                 cursor.execute("""
                     INSERT INTO caixa
                     (paciente_nome, profissional_nome, valor, forma_pagamento, 
                      status, categoria, descricao, data_pagamento, unidade_id, usuario_lancamento)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_DATE,%s,%s)
                 """, [
-                    paciente,      # %s
-                    prestador,     # %s
-                    valor,         # %s
-                    forma,         # %s
-                    'Pago',        # %s
-                    'Exame',       # %s
-                    nome_exame,    # %s
-                    unidade_id,    # %s
-                    usuario_nome   # %s
+                    paciente,
+                    prestador,
+                    valor,
+                    forma,
+                    'Pago',
+                    'Exame',
+                    nome_exame,
+                    unidade_id,
+                    usuario_nome
                 ])
 
             mensagem = '<div class="alert alert-success">✅ Exame lançado com sucesso!</div>'
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
+
     # ===============================
-    # CADASTRO / EDIÇÃO EXAMES
+    # EXAMES - CADASTRO
     # ===============================
     edit_id = request.GET.get('edit_exame')
     e_dados = ["", "", "", 0.00]
 
     if edit_id:
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT nome, grupo, preparo, valor_particular 
-                FROM exames WHERE id = %s
-            """, [edit_id])
+            cursor.execute("SELECT nome, grupo, preparo, valor_particular FROM exames WHERE id = %s", [edit_id])
             res = cursor.fetchone()
             if res:
                 e_dados = res
@@ -858,7 +878,6 @@ def exames_geral(request):
     if request.method == "POST" and "salvar_exame" in request.POST:
         try:
             id_post = request.POST.get('id_exame')
-
             nome = request.POST.get('nome')
             grupo = request.POST.get('grupo')
             preparo = request.POST.get('preparo')
@@ -895,10 +914,7 @@ def exames_geral(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        cursor.execute("""
-            SELECT id, nome, grupo, valor_particular 
-            FROM exames ORDER BY nome
-        """)
+        cursor.execute("SELECT id, nome, grupo, valor_particular FROM exames ORDER BY nome")
         exames_lista = cursor.fetchall()
 
     # ===============================
@@ -922,6 +938,21 @@ def exames_geral(request):
         """
 
     # ===============================
+    # LISTA PRESTADORES
+    # ===============================
+    linhas_prest = ""
+    for p in prestadores:
+        linhas_prest += f"""
+        <tr>
+            <td>{p[1]}</td>
+            <td>
+                <a href="/exames/?edit_prestador={p[0]}" class="btn btn-sm btn-info">Editar</a>
+                <a href="/exames/?delete_prestador={p[0]}" class="btn btn-sm btn-danger">Excluir</a>
+            </td>
+        </tr>
+        """
+
+    # ===============================
     # HTML
     # ===============================
     conteudo = f"""
@@ -929,35 +960,35 @@ def exames_geral(request):
 
     {mensagem}
 
-    <!-- CADASTRO EXAME -->
-    <div class="card p-3 mb-3">
+    <!-- PRESTADORES -->
+    <div class="card p-3 mb-3 border-warning">
+        <h5>👨‍⚕️ Prestadores</h5>
+
         <form method="POST" class="row g-2">
-            <input type="hidden" name="id_exame" value="{edit_id or ''}">
+            <input type="hidden" name="id_prestador" value="{edit_prest or ''}">
 
-            <div class="col-md-4">
-                <input type="text" name="nome" class="form-control" placeholder="Nome do exame" required>
+            <div class="col-md-9">
+                <input type="text" name="nome_prestador" class="form-control" 
+                       placeholder="Nome do prestador" value="{prest_nome}" required>
             </div>
 
             <div class="col-md-3">
-                <input type="text" name="grupo" class="form-control" placeholder="Grupo">
-            </div>
-
-            <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
-            </div>
-
-            <div class="col-md-3">
-                <button name="salvar_exame" class="btn btn-primary w-100">Salvar</button>
+                <button name="salvar_prestador" class="btn btn-warning w-100">
+                    {"Atualizar" if edit_prest else "Incluir"}
+                </button>
             </div>
         </form>
+
+        <table class="table table-sm mt-3">
+            <tr><th>Nome</th><th>Ações</th></tr>
+            {linhas_prest}
+        </table>
     </div>
 
-    <!-- CAIXA EXAMES -->
+    <!-- RESTANTE DO CÓDIGO MANTIDO -->
     <div class="card p-3 mb-3 border-success">
         <h5>💰 Caixa de Exames</h5>
-
         <form method="POST" class="row g-2">
-
             <div class="col-md-2">
                 <select name="unidade_id" class="form-select" required>
                     <option value="">Unidade</option>
@@ -984,7 +1015,7 @@ def exames_geral(request):
             </div>
 
             <div class="col-md-1">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+                <input type="number" step="0.01" name="valor" class="form-control">
             </div>
 
             <div class="col-md-2">
@@ -998,11 +1029,9 @@ def exames_geral(request):
             <div class="col-md-1">
                 <button name="lancar_exame" class="btn btn-success w-100">OK</button>
             </div>
-
         </form>
     </div>
 
-    <!-- LISTA -->
     <table class="table table-sm">
         <tr><th>Exame</th><th>Grupo</th><th>Valor</th></tr>
         {linhas}
