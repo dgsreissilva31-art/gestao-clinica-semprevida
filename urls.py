@@ -79,7 +79,7 @@ def base_html(*args):
                 <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda Geral</a></li>
 
                 <div class="menu-label">Cadastros</div>
-                <li><a href="/pacientes/"><i class="bi bi-people-fill"></i> Pacientes</a></li>
+                <li><a href="/pacientes/"><i class="bi bi-people-fill"></i> Cadastro Pacientes</a></li>
                 <li><a href="/profissionais/"><i class="bi bi-person-md"></i> Profissionais</a></li>
                 <li><a href="/unidades/"><i class="bi bi-building"></i> Unidades</a></li>
                 <li><a href="/especialidades/"><i class="bi bi-hospital"></i> Especialidades</a></li>
@@ -168,7 +168,7 @@ def painel_controle(request):
 
             <div class="col-md-4">
                 <div class="p-4 bg-danger text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-people fs-1"></i><br><h5 class="mt-2 fw-bold">Pacientes</h5>
+                    <i class="bi bi-people fs-1"></i><br><h5 class="mt-2 fw-bold">Cadastro Pacientes</h5>
                     <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
                 </div>
             </div>
