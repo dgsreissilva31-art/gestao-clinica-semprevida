@@ -760,7 +760,7 @@ def convenios_geral(request):
 
 # --- 7. TELA 5: EXAMES ---
 # --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM PRESTADORES CRUD) ---
-# --- 7. TELA 5: EXAMES + CAIXA EXAMES (COM PRESTADORES + CRUD EXAMES COMPLETO) ---
+# --- 7. TELA 5: EXAMES + CAIXA EXAMES (AJUSTADO - CAIXA NO TOPO) ---
 @csrf_exempt
 def exames_geral(request):
     from django.db import connection
@@ -971,33 +971,65 @@ def exames_geral(request):
     <h4>🧪 Exames</h4>
     {mensagem}
 
-    <!-- EXAMES CADASTRO -->
+    <!-- CAIXA NO TOPO -->
+    <div class="card p-3 mb-3 border-success">
+        <h5>💰 Caixa de Exames</h5>
+        <form method="POST" class="row g-2">
+
+            <div class="col-md-2">
+                <select name="unidade_id" class="form-select" required>
+                    <option value="">Unidade</option>
+                    {opts_uni}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <input type="text" name="paciente" class="form-control" placeholder="Paciente" required>
+            </div>
+
+            <div class="col-md-2">
+                <select name="exame_id" class="form-select" required>
+                    <option value="">Exame</option>
+                    {opts_exames}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <select name="prestador" class="form-select">
+                    <option value="">Prestador</option>
+                    {opts_prest}
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor">
+            </div>
+
+            <div class="col-md-2">
+                <select name="forma" class="form-select">
+                    <option>Pix</option>
+                    <option>Cartão</option>
+                    <option>Dinheiro</option>
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <button name="lancar_exame" class="btn btn-success w-100">OK</button>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- EXAMES -->
     <div class="card p-3 mb-3 border-primary">
         <h5>Cadastro de Exames</h5>
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_exame" value="{edit_id or ''}">
-
-            <div class="col-md-3">
-                <input type="text" name="nome" class="form-control" placeholder="Exame" value="{e_dados[0]}" required>
-            </div>
-
-            <div class="col-md-2">
-                <input type="text" name="grupo" class="form-control" placeholder="Grupo" value="{e_dados[1]}">
-            </div>
-
-            <div class="col-md-3">
-                <input type="text" name="preparo" class="form-control" placeholder="Preparo" value="{e_dados[2]}">
-            </div>
-
-            <div class="col-md-2">
-                <input type="number" step="0.01" name="valor" class="form-control" placeholder="Valor" value="{e_dados[3]}">
-            </div>
-
-            <div class="col-md-2">
-                <button name="salvar_exame" class="btn btn-primary w-100">
-                    {"Atualizar" if edit_id else "Salvar"}
-                </button>
-            </div>
+            <div class="col-md-3"><input type="text" name="nome" class="form-control" value="{e_dados[0]}" required></div>
+            <div class="col-md-2"><input type="text" name="grupo" class="form-control" value="{e_dados[1]}"></div>
+            <div class="col-md-3"><input type="text" name="preparo" class="form-control" value="{e_dados[2]}"></div>
+            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control" value="{e_dados[3]}"></div>
+            <div class="col-md-2"><button name="salvar_exame" class="btn btn-primary w-100">Salvar</button></div>
         </form>
     </div>
 
@@ -1006,33 +1038,14 @@ def exames_geral(request):
         <h5>Prestadores</h5>
         <form method="POST" class="row g-2">
             <input type="hidden" name="id_prestador" value="{edit_prest or ''}">
-            <div class="col-md-9">
-                <input type="text" name="nome_prestador" class="form-control" value="{prest_nome}" required>
-            </div>
-            <div class="col-md-3">
-                <button name="salvar_prestador" class="btn btn-warning w-100">
-                    {"Atualizar" if edit_prest else "Incluir"}
-                </button>
-            </div>
+            <div class="col-md-9"><input type="text" name="nome_prestador" class="form-control" value="{prest_nome}" required></div>
+            <div class="col-md-3"><button name="salvar_prestador" class="btn btn-warning w-100">Salvar</button></div>
         </form>
 
         <table class="table table-sm mt-2">
             <tr><th>Nome</th><th>Ações</th></tr>
             {linhas_prest}
         </table>
-    </div>
-
-    <!-- CAIXA -->
-    <div class="card p-3 mb-3 border-success">
-        <h5>Caixa de Exames</h5>
-        <form method="POST" class="row g-2">
-            <div class="col-md-2">{opts_uni}</div>
-            <div class="col-md-2"><input type="text" name="paciente" class="form-control" placeholder="Paciente"></div>
-            <div class="col-md-2"><select name="exame_id" class="form-select">{opts_exames}</select></div>
-            <div class="col-md-2"><select name="prestador" class="form-select">{opts_prest}</select></div>
-            <div class="col-md-2"><input type="number" step="0.01" name="valor" class="form-control"></div>
-            <div class="col-md-1"><button name="lancar_exame" class="btn btn-success w-100">OK</button></div>
-        </form>
     </div>
 
     <!-- LISTA -->
@@ -1043,6 +1056,8 @@ def exames_geral(request):
     """
 
     return HttpResponse(base_html("Exames", conteudo))
+
+
 
 
 
