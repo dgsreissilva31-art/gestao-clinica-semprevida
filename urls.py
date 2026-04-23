@@ -70,7 +70,7 @@ def base_html(*args):
         <div class="sidebar shadow">
             <ul class="sidebar-menu">
                 <div class="menu-label">Principal</div>
-                <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Painel de Controle</a></li>
                 
                 <div class="menu-label">Operacional Hoje</div>
                 <li><a href="/recepcao/"><i class="bi bi-person-check-fill"></i> Recepção / Prontuario</a></li>
