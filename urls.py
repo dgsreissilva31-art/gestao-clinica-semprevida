@@ -73,7 +73,7 @@ def base_html(*args):
                 <li><a href="/admin-painel/"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
                 
                 <div class="menu-label">Operacional Hoje</div>
-                <li><a href="/recepcao/"><i class="bi bi-person-check-fill"></i> Recepção / Check-in</a></li>
+                <li><a href="/recepcao/"><i class="bi bi-person-check-fill"></i> Recepção / Prontuario</a></li>
                 <li><a href="/agendar/"><i class="bi bi-calendar-plus-fill"></i> Novo Agendamento</a></li>
                 <li><a href="/caixa/"><i class="bi bi-cash-stack"></i> Caixa do Dia</a></li>
                 <li><a href="/agenda-diaria/"><i class="bi bi-calendar3"></i> Agenda Geral</a></li>
@@ -86,8 +86,8 @@ def base_html(*args):
                 
                 <div class="menu-label">Serviços e Preços</div>
                 <li><a href="/convenios/"><i class="bi bi-card-checklist"></i> Convênios</a></li>
-                <li><a href="/exames/"><i class="bi bi-microscope"></i> Exames/Prestadores</a></li>
-                <li><a href="/odontologia/"><i class="bi bi-mask"></i> Odontologia</a></li>
+                <li><a href="/exames/"><i class="bi bi-microscope"></i> Caixa Exames/Prestadores</a></li>
+                <li><a href="/odontologia/"><i class="bi bi-mask"></i> Caixa Odontologia</a></li>
                 <li><a href="/precos/"><i class="bi bi-currency-dollar"></i> Preços Consultas</a></li>
                 <li><a href="/precos-exames/"><i class="bi bi-tags-fill"></i> Preços Exames</a></li>
 
