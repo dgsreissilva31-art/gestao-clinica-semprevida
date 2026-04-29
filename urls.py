@@ -2627,10 +2627,10 @@ def recepcao_geral(request):
     data_hoje = datetime.date.today()
     mensagem = ""
     
-    # ✅ CAPTURA O USUÁRIO NO INÍCIO
     usuario_nome = request.user.username if request.user.is_authenticated else "sistema"
 
     unidade_filtro = request.POST.get('unidade_id_hidden') or request.GET.get('unidade') or ""
+    profissional_filtro = request.GET.get('profissional') or ""
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
 
@@ -2713,20 +2713,35 @@ def recepcao_geral(request):
                         unidade_id, usuario_nome
                     ])
 
-                # Atualiza status do agendamento
                 cursor.execute("UPDATE agendamentos SET status = 'Chegada' WHERE id = %s", [ag_id])
 
-            return redirect(f"/recepcao/?unidade={unidade_filtro}")
+            return redirect(f"/recepcao/?unidade={unidade_filtro}&profissional={profissional_filtro}")
 
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ {e}</div>'
 
-    # --- O RESTANTE DO CÓDIGO (Buscas e HTML) SEGUE IGUAL ---
+    # ===============================
+    # BUSCA DADOS
+    # ===============================
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades_lista = cursor.fetchall()
+
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios_lista = cursor.fetchall()
+
+        # ✅ NOVO: Profissionais filtrados pela unidade selecionada
+        if unidade_filtro:
+            cursor.execute("""
+                SELECT DISTINCT prof.id, prof.nome
+                FROM profissionais prof
+                JOIN agendas_config ac ON ac.profissional_id = prof.id
+                WHERE ac.unidade_id = %s
+                ORDER BY prof.nome
+            """, [unidade_filtro])
+        else:
+            cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+        profissionais_lista = cursor.fetchall()
 
         sql = """
             SELECT ag.id, pac.nome, prof.nome, ag.horario_selecionado, ag.status
@@ -2741,25 +2756,30 @@ def recepcao_geral(request):
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
+        # ✅ NOVO: Filtro por profissional na query
+        if profissional_filtro:
+            sql += " AND prof.id = %s"
+            params.append(profissional_filtro)
         sql += " ORDER BY ag.horario_selecionado"
         cursor.execute(sql, params)
         agenda = cursor.fetchall()
 
     opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_lista])
     opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios_lista])
+    # ✅ NOVO: Options de profissionais
+    opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(profissional_filtro)==str(p[0]) else ""}>{p[1]}</option>' for p in profissionais_lista])
 
     linhas = ""
     for a in agenda:
         status = a[4] or "Agendado"
         if status == "Agendado":
-            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
+            btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}&profissional={profissional_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
         linhas += f"<tr><td>{str(a[3])[:5]}</td><td>{a[1]}</td><td>{a[2]}</td><td>{btn_acao}</td></tr>"
 
-    # HTML do Modal e Conteúdo (Inalterado)
     modal_html = ""
     if agendamento_id and etapa == '2':
         modal_html = f"""
@@ -2805,13 +2825,22 @@ def recepcao_geral(request):
         </script>
         """
 
+    # ✅ ÚNICA MUDANÇA NO HTML: dois selects lado a lado
     conteudo = f"""
     <h4>Recepção</h4>
-    <form method="GET">
-        <select name="unidade" class="form-select mb-2" onchange="this.form.submit()">
-            <option value="">Todas as Unidades</option>
-            {opts_unidades}
-        </select>
+    <form method="GET" class="row g-2 mb-3">
+        <div class="col-md-6">
+            <select name="unidade" class="form-select" onchange="this.form.submit()">
+                <option value="">Todas as Unidades</option>
+                {opts_unidades}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <select name="profissional" class="form-select" onchange="this.form.submit()">
+                <option value="">Todos os Profissionais</option>
+                {opts_prof}
+            </select>
+        </div>
     </form>
     {mensagem}
     <table class="table table-hover">
@@ -2821,6 +2850,8 @@ def recepcao_geral(request):
     {modal_html}
     """
     return HttpResponse(base_html("Recepção", conteudo))
+
+
 
 
 
