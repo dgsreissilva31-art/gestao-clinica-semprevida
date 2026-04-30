@@ -2634,6 +2634,12 @@ def recepcao_geral(request):
     agendamento_id = request.GET.get('fluxo_id')
     etapa = request.GET.get('etapa', '1')
 
+    # ✅ Busca cargo do usuário logado
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
+        cargo_res = cursor.fetchone()
+    cargo_atual = cargo_res[0] if cargo_res else ""
+
     # ===============================
     # FINALIZAR CHECK-IN
     # ===============================
@@ -2667,7 +2673,6 @@ def recepcao_geral(request):
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0: raise Exception("Informe o valor")
                     forma = request.POST.get('forma_pagamento') or "Pix"
-
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
@@ -2682,7 +2687,6 @@ def recepcao_geral(request):
                         cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
                         c = cursor.fetchone()
                         if c: convenio_nome = c[0]
-
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
@@ -2695,13 +2699,11 @@ def recepcao_geral(request):
                     valor = float(request.POST.get('valor') or 0)
                     if valor <= 0: raise Exception("Informe o valor")
                     forma = request.POST.get('forma_pagamento') or "Pix"
-
                     convenio_nome = ""
                     if convenio_id:
                         cursor.execute("SELECT nome FROM convenios WHERE id = %s", [convenio_id])
                         c = cursor.fetchone()
                         if c: convenio_nome = c[0]
-
                     cursor.execute("""
                         INSERT INTO caixa
                         (paciente_nome, profissional_nome, valor, forma_pagamento, status, 
@@ -2730,7 +2732,6 @@ def recepcao_geral(request):
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
         convenios_lista = cursor.fetchall()
 
-        # ✅ NOVO: Profissionais filtrados pela unidade selecionada
         if unidade_filtro:
             cursor.execute("""
                 SELECT DISTINCT prof.id, prof.nome
@@ -2756,7 +2757,6 @@ def recepcao_geral(request):
         if unidade_filtro:
             sql += " AND u.id = %s"
             params.append(unidade_filtro)
-        # ✅ NOVO: Filtro por profissional na query
         if profissional_filtro:
             sql += " AND prof.id = %s"
             params.append(profissional_filtro)
@@ -2766,9 +2766,11 @@ def recepcao_geral(request):
 
     opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_filtro)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades_lista])
     opts_conv = "".join([f'<option value="{c[0]}">{c[1]}</option>' for c in convenios_lista])
-    # ✅ NOVO: Options de profissionais
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(profissional_filtro)==str(p[0]) else ""}>{p[1]}</option>' for p in profissionais_lista])
 
+    # ===============================
+    # LINHAS
+    # ===============================
     linhas = ""
     for a in agenda:
         status = a[4] or "Agendado"
@@ -2776,10 +2778,15 @@ def recepcao_geral(request):
             btn_acao = f'<a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}&profissional={profissional_filtro}" class="btn btn-warning btn-sm">Check-in</a>'
         elif status == "Chegada":
             btn_acao = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm">Prontuário</a>'
+            if cargo_atual != "Médico":
+                btn_acao += f' <a href="?fluxo_id={a[0]}&etapa=2&unidade={unidade_filtro}&profissional={profissional_filtro}" class="btn btn-outline-danger btn-sm">Alterar Check-in</a>'
         else:
             btn_acao = f'<span class="badge bg-secondary">{status}</span>'
         linhas += f"<tr><td>{str(a[3])[:5]}</td><td>{a[1]}</td><td>{a[2]}</td><td>{btn_acao}</td></tr>"
 
+    # ===============================
+    # MODAL CHECK-IN
+    # ===============================
     modal_html = ""
     if agendamento_id and etapa == '2':
         modal_html = f"""
@@ -2799,7 +2806,9 @@ def recepcao_geral(request):
                             <option value="">Selecione Convênio</option>
                             {opts_conv}
                         </select>
-                        <div class="mb-2" id="div_retorno" style="display:none;"><input type="checkbox" name="retorno" value="1"> Retorno</div>
+                        <div class="mb-2" id="div_retorno" style="display:none;">
+                            <input type="checkbox" name="retorno" value="1"> Retorno
+                        </div>
                         <div id="pagamento">
                             <input type="number" step="0.01" name="valor" class="form-control mb-2" placeholder="Valor">
                             <select name="forma_pagamento" class="form-select mb-3">
@@ -2807,6 +2816,8 @@ def recepcao_geral(request):
                             </select>
                         </div>
                         <button name="finalizar_fluxo" class="btn btn-success w-100">FINALIZAR</button>
+                        <a href="/recepcao/?unidade={unidade_filtro}&profissional={profissional_filtro}" 
+                           class="btn btn-outline-secondary w-100 mt-2">Cancelar</a>
                     </form>
                 </div>
             </div>
@@ -2825,7 +2836,6 @@ def recepcao_geral(request):
         </script>
         """
 
-    # ✅ ÚNICA MUDANÇA NO HTML: dois selects lado a lado
     conteudo = f"""
     <h4>Recepção</h4>
     <form method="GET" class="row g-2 mb-3">
@@ -2844,14 +2854,14 @@ def recepcao_geral(request):
     </form>
     {mensagem}
     <table class="table table-hover">
-        <thead class="table-light"><tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr></thead>
+        <thead class="table-light">
+            <tr><th>Hora</th><th>Paciente</th><th>Médico</th><th>Ação</th></tr>
+        </thead>
         <tbody>{linhas}</tbody>
     </table>
     {modal_html}
     """
     return HttpResponse(base_html("Recepção", conteudo))
-
-
 
 
 
