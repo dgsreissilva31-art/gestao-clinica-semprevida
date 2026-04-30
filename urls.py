@@ -3605,6 +3605,7 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('medico/prontuario/', views.prontuario_medico, name='prontuario_medico'),
-
+    path('dentista/prontuario/', views.prontuario_dentista_agenda, name='dentista_agenda'),
+    path('dentista/prontuario/atender/', views.prontuario_dentista, name='prontuario_dentista'),
    
 ]
