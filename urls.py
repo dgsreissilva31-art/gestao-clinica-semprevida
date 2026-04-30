@@ -2873,6 +2873,7 @@ def recepcao_geral(request):
 
 # --- 17. TELA 15: PRONTUÁRIO ---
 # --- 17. TELA 15: PRONTUÁRIO ---
+# --- 17. TELA 15: PRONTUÁRIO ---
 @csrf_exempt
 def prontuario_geral(request):
     from django.db import connection
@@ -2884,73 +2885,80 @@ def prontuario_geral(request):
     ver = request.GET.get('ver')
     mensagem = ""
 
-    # ✅ Verifica se é médico para usar layout limpo
+    # ✅ Verifica cargo do usuário logado
     with connection.cursor() as cursor:
         cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
         cargo_res = cursor.fetchone()
     cargo_atual = cargo_res[0] if cargo_res else ""
     is_medico = cargo_atual == "Médico"
 
-    # ✅ Função de layout condicional
+    # ✅ BLOQUEIA NÃO-MÉDICOS
+    if not is_medico:
+        return HttpResponse(base_html("Acesso Negado", """
+            <div class="text-center py-5">
+                <h3 class="text-danger">🔒 Acesso Restrito</h3>
+                <p class="text-muted">Somente médicos podem acessar o prontuário.</p>
+                <a href="/recepcao/" class="btn btn-primary">Voltar à Recepção</a>
+            </div>
+        """))
+
+    # ✅ Função de layout limpo para médico
     def render_page(titulo, conteudo):
-        if is_medico:
-            return HttpResponse(f"""
-            <!DOCTYPE html>
-            <html lang="pt-br">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-                <title>{titulo} - Sempre Vida</title>
-                <style>
-                    body {{ background: #f0f4f8; font-family: 'Segoe UI', sans-serif; }}
-                    .topbar {{
-                        background: linear-gradient(135deg, #1a6b3c, #27ae60);
-                        color: white;
-                        padding: 12px 24px;
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-                        position: fixed;
-                        width: 100%;
-                        top: 0;
-                        z-index: 1000;
-                    }}
-                    .topbar .titulo {{ font-size: 18px; font-weight: bold; letter-spacing: 1px; }}
-                    .topbar .usuario {{ font-size: 13px; opacity: 0.92; }}
-                    .conteudo-medico {{
-                        max-width: 960px;
-                        margin: 80px auto 40px;
-                        background: white;
-                        border-radius: 10px;
-                        box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-                        padding: 28px;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="topbar">
-                    <div class="titulo"><i class="bi bi-heart-pulse-fill"></i> &nbsp;SEMPRE VIDA</div>
-                    <div class="usuario">
-                        <i class="bi bi-person-circle"></i> {request.user.username} &nbsp;|&nbsp;
-                        <a href="/medico/prontuario/" class="text-white text-decoration-none me-2">
-                            <i class="bi bi-arrow-left"></i> Agenda
-                        </a>
-                        <a href="/logout/" class="text-white text-decoration-none">
-                            <i class="bi bi-box-arrow-right"></i> Sair
-                        </a>
-                    </div>
+        return HttpResponse(f"""
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+            <title>{titulo} - Sempre Vida</title>
+            <style>
+                body {{ background: #f0f4f8; font-family: 'Segoe UI', sans-serif; }}
+                .topbar {{
+                    background: linear-gradient(135deg, #1a6b3c, #27ae60);
+                    color: white;
+                    padding: 12px 24px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                    position: fixed;
+                    width: 100%;
+                    top: 0;
+                    z-index: 1000;
+                }}
+                .topbar .titulo {{ font-size: 18px; font-weight: bold; letter-spacing: 1px; }}
+                .topbar .usuario {{ font-size: 13px; opacity: 0.92; }}
+                .conteudo-medico {{
+                    max-width: 960px;
+                    margin: 80px auto 40px;
+                    background: white;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+                    padding: 28px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="topbar">
+                <div class="titulo"><i class="bi bi-heart-pulse-fill"></i> &nbsp;SEMPRE VIDA</div>
+                <div class="usuario">
+                    <i class="bi bi-person-circle"></i> {request.user.username} &nbsp;|&nbsp;
+                    <a href="/medico/prontuario/" class="text-white text-decoration-none me-2">
+                        <i class="bi bi-arrow-left"></i> Agenda
+                    </a>
+                    <a href="/logout/" class="text-white text-decoration-none">
+                        <i class="bi bi-box-arrow-right"></i> Sair
+                    </a>
                 </div>
-                <div class="conteudo-medico">
-                    {conteudo}
-                </div>
-            </body>
-            </html>
-            """)
-        else:
-            return HttpResponse(base_html(titulo, conteudo))
+            </div>
+            <div class="conteudo-medico">
+                {conteudo}
+            </div>
+        </body>
+        </html>
+        """)
 
     # ===============================
     # VISUALIZAÇÃO COMPLETA
@@ -2958,7 +2966,8 @@ def prontuario_geral(request):
     if ver:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT p.nome, pr.data_atendimento, prof.nome, pr.queixa, pr.diagnostico, pr.procedimentos
+                SELECT p.nome, pr.data_atendimento, prof.nome,
+                       pr.queixa, pr.diagnostico, pr.procedimentos
                 FROM prontuarios pr
                 JOIN pacientes p ON pr.paciente_id = p.id
                 JOIN profissionais prof ON pr.profissional_id = prof.id
@@ -2970,19 +2979,21 @@ def prontuario_geral(request):
             return render_page("Erro", "Prontuário não encontrado.")
 
         data = d[1].strftime('%d/%m/%Y') if d[1] else ""
-        voltar_url = "?consultar=1"
 
         conteudo = f"""
         <h4>📄 Prontuário Completo</h4>
-        <a href="{voltar_url}" class="btn btn-secondary mb-3">⬅ Voltar</a>
+        <a href="?consultar=1" class="btn btn-secondary mb-3">⬅ Voltar</a>
         <div class="card p-4 shadow-sm">
             <p><b>Paciente:</b> {d[0]}</p>
             <p><b>Data:</b> {data}</p>
             <p><b>Médico:</b> {d[2]}</p>
             <hr>
-            <p><b>Histórico:</b><br><div style="white-space:pre-wrap;">{d[3]}</div></p>
-            <p><b>Diagnóstico:</b><br><div style="white-space:pre-wrap;">{d[4]}</div></p>
-            <p><b>Tratamento:</b><br><div style="white-space:pre-wrap;">{d[5]}</div></p>
+            <p><b>Histórico:</b><br>
+            <div style="white-space:pre-wrap;">{d[3]}</div></p>
+            <p><b>Diagnóstico:</b><br>
+            <div style="white-space:pre-wrap;">{d[4]}</div></p>
+            <p><b>Tratamento:</b><br>
+            <div style="white-space:pre-wrap;">{d[5]}</div></p>
         </div>
         """
         return render_page("Prontuário Completo", conteudo)
@@ -3016,10 +3027,9 @@ def prontuario_geral(request):
                 <td><div style='max-height:80px; overflow:auto;'>{d[4]}</div></td>
                 <td><div style='max-height:80px; overflow:auto;'>{d[5]}</div></td>
                 <td><div style='max-height:80px; overflow:auto;'>{d[6]}</div></td>
-                <td><a href='?consultar=1&ver={d[0]}' class='btn btn-sm btn-primary'>Abrir Completo</a></td>
+                <td><a href='?consultar=1&ver={d[0]}'
+                       class='btn btn-sm btn-primary'>Abrir Completo</a></td>
             </tr>""" for d in dados])
-
-        voltar_url = "/medico/prontuario/" if is_medico else "/recepcao/"
 
         conteudo = f"""
         <h4>📋 Prontuários</h4>
@@ -3033,16 +3043,19 @@ def prontuario_geral(request):
                 <button class="btn btn-primary w-100">Buscar</button>
             </div>
         </form>
-        <a href="{voltar_url}" class="btn btn-secondary mb-3">Voltar</a>
+        <a href="/medico/prontuario/" class="btn btn-secondary mb-3">Voltar</a>
         <div style="overflow-x:auto;">
             <table class="table table-bordered table-hover">
                 <thead class="table-dark">
                     <tr>
                         <th>Paciente</th><th>Data</th><th>Médico</th>
-                        <th>Histórico</th><th>Diagnóstico</th><th>Tratamento</th><th>Ação</th>
+                        <th>Histórico</th><th>Diagnóstico</th>
+                        <th>Tratamento</th><th>Ação</th>
                     </tr>
                 </thead>
-                <tbody>{linhas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}</tbody>
+                <tbody>
+                    {linhas or '<tr><td colspan="7" class="text-center">Sem registros</td></tr>'}
+                </tbody>
             </table>
         </div>
         """
@@ -3096,10 +3109,7 @@ def prontuario_geral(request):
                     "UPDATE agendamentos SET status = 'Finalizado' WHERE id = %s",
                     [agendamento_id]
                 )
-            # ✅ Médico volta para agenda, outros para recepção
-            if is_medico:
-                return HttpResponseRedirect('/medico/prontuario/')
-            return HttpResponseRedirect('/recepcao/')
+            return HttpResponseRedirect('/medico/prontuario/')
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro ao salvar: {e}</div>'
 
@@ -3124,18 +3134,15 @@ def prontuario_geral(request):
             </div>
         </div>""" for h in historico_lista])
 
-    voltar_url = "/medico/prontuario/" if is_medico else "/recepcao/"
-    consultar_url = "?consultar=1"
-
     conteudo = f"""
     <div class="container-fluid py-2">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4>Atendimento Profissional</h4>
             <div>
-                <a href="{consultar_url}" class="btn btn-info btn-sm me-2">
+                <a href="?consultar=1" class="btn btn-info btn-sm me-2">
                     📋 Consultar Prontuários
                 </a>
-                <a href="{voltar_url}" class="btn btn-outline-secondary btn-sm">
+                <a href="/medico/prontuario/" class="btn btn-outline-secondary btn-sm">
                     Sair sem salvar
                 </a>
             </div>
@@ -3165,7 +3172,6 @@ def prontuario_geral(request):
     </div>
     """
     return render_page("Prontuário", conteudo)
-
 
 
 
