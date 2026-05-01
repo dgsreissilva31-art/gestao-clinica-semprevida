@@ -2874,6 +2874,7 @@ def recepcao_geral(request):
 # --- 17. TELA 15: PRONTUÁRIO ---
 # --- 17. TELA 15: PRONTUÁRIO ---
 # --- 17. TELA 15: PRONTUÁRIO ---
+# --- 17. TELA 15: PRONTUÁRIO ---
 
 
 # --- PRONTUÁRIO MÉDICO (TELA 15) ---
@@ -3356,6 +3357,16 @@ def acesso_geral(request):
             <div class='col-12'><button class='btn btn-dark w-100'>Criar Usuário</button></div>
         </form>
     """))
+
+
+
+
+
+
+
+
+
+
 
 
 
