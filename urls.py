@@ -1540,7 +1540,7 @@ def pacientes_geral(request):
 
 # --- 10. TELA 8: ACESSOS ---
 # --- 10. TELA 8: ACESSOS ---
-
+# --- 10. TELA 8: ACESSOS ---
 from django.contrib.auth.decorators import login_required
 
 @login_required
@@ -1550,9 +1550,8 @@ def acesso_geral(request):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-
     mensagem = ""
-    
+
     # --- LISTAR UNIDADES ---
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
@@ -1563,6 +1562,7 @@ def acesso_geral(request):
         for u in unidades
     ])
 
+    # --- CRIAR USUÁRIO ---
     if request.method == "POST":
         nome = request.POST.get('nome')
         username = request.POST.get('username')
@@ -1575,7 +1575,7 @@ def acesso_geral(request):
             with connection.cursor() as cursor:
                 cursor.execute("""
                     SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
+                        SELECT FROM information_schema.tables
                         WHERE table_name = 'auth_user'
                     )
                 """)
@@ -1586,17 +1586,12 @@ def acesso_geral(request):
             else:
                 if not User.objects.filter(username=username).exists():
                     user = User.objects.create_user(username=username, password=senha)
-                    
                     with connection.cursor() as cursor:
-                        cursor.execute(
-                            """
-                            INSERT INTO perfis_usuario 
-                            (user_id, nome_completo, cargo, cpf, unidade_id) 
+                        cursor.execute("""
+                            INSERT INTO perfis_usuario
+                            (user_id, nome_completo, cargo, cpf, unidade_id)
                             VALUES (%s, %s, %s, %s, %s)
-                            """,
-                            [user.id, nome, cargo, cpf, unidade_id]
-                        )
-
+                        """, [user.id, nome, cargo, cpf, unidade_id])
                     mensagem = f'<div class="alert alert-success">✅ Usuário {username} criado!</div>'
                 else:
                     mensagem = '<div class="alert alert-danger">❌ Login já existe</div>'
@@ -1604,18 +1599,14 @@ def acesso_geral(request):
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- EXCLUIR (CORRIGIDO) ---
+    # --- EXCLUIR ---
     if request.GET.get("delete"):
         user_id = request.GET.get("delete")
         try:
             with connection.cursor() as cursor:
-                # remove perfil
                 cursor.execute("DELETE FROM perfis_usuario WHERE user_id = %s", [user_id])
-                # remove usuário direto (SEM ORM)
                 cursor.execute("DELETE FROM auth_user WHERE id = %s", [user_id])
-
             return HttpResponseRedirect("/acessos/")
-
         except Exception as e:
             mensagem = f"<div class='alert alert-danger'>Erro ao excluir: {e}</div>"
 
@@ -1629,8 +1620,7 @@ def acesso_geral(request):
         """)
         funcionarios = cursor.fetchall()
 
-    linhas = "".join([
-        f"""
+    linhas = "".join([f"""
         <tr>
             <td>
                 <b>{f[1]}</b><br>
@@ -1639,45 +1629,57 @@ def acesso_geral(request):
                    onclick="return confirm('Excluir usuário?')">Excluir</a>
             </td>
             <td>{f[2]}</td>
-            <td>{f[3]}</td>
+            <td>{f[3] or '-'}</td>
             <td>{f[4] or '-'}</td>
         </tr>
-        """
-        for f in funcionarios
-    ])
+    """ for f in funcionarios])
 
     conteudo = f"""
         <h4>Controle de Acesso</h4><hr>
         {mensagem}
 
-        <form method="POST">
-            <input type="hidden" name="csrfmiddlewaretoken" value="{request.META.get('CSRF_COOKIE', '')}">
-
-            <input name="nome" placeholder="Nome" class="form-control mb-2" required>
-            <input name="username" placeholder="Usuário" class="form-control mb-2" required>
-            <input name="senha" type="password" placeholder="Senha" class="form-control mb-2" required>
-
-            <select name="cargo" class="form-control mb-2">
-                <option>Recepção</option>
-                <option>Médico</option>
-                <option>Dentista</option>
-                <option>Administrador</option>
-            </select>
-
-            <select name="unidade_id" class="form-control mb-2">
-                <option value="">Selecione a Unidade</option>
-                {opcoes_unidades}
-            </select>
-
-            <input name="cpf" placeholder="CPF" class="form-control mb-2">
-
-            <button class="btn btn-dark w-100">Criar</button>
+        <form method="POST" class="row g-3" style="max-width:500px;">
+            <div class="col-12">
+                <label class="fw-bold">Nome Completo</label>
+                <input name="nome" class="form-control" placeholder="Nome completo" required>
+            </div>
+            <div class="col-12">
+                <label class="fw-bold">Login</label>
+                <input name="username" class="form-control" placeholder="Usuário de acesso" required>
+            </div>
+            <div class="col-12">
+                <label class="fw-bold">Senha</label>
+                <input name="senha" type="password" class="form-control" placeholder="Senha" required>
+            </div>
+            <div class="col-12">
+                <label class="fw-bold">Cargo</label>
+                <select name="cargo" class="form-select">
+                    <option>Recepção</option>
+                    <option>Médico</option>
+                    <option>Dentista</option>
+                    <option>Administrador</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="fw-bold">Unidade</label>
+                <select name="unidade_id" class="form-select">
+                    <option value="">Selecione a Unidade</option>
+                    {opcoes_unidades}
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="fw-bold">CPF</label>
+                <input name="cpf" class="form-control" placeholder="CPF">
+            </div>
+            <div class="col-12">
+                <button class="btn btn-dark w-100 fw-bold">Criar Usuário</button>
+            </div>
         </form>
 
         <hr>
 
-        <table class="table">
-            <thead>
+        <table class="table table-hover">
+            <thead class="table-dark">
                 <tr>
                     <th>Nome</th>
                     <th>Cargo</th>
@@ -1685,13 +1687,11 @@ def acesso_geral(request):
                     <th>Unidade</th>
                 </tr>
             </thead>
-            {linhas}
+            <tbody>{linhas}</tbody>
         </table>
     """
 
     return HttpResponse(base_html("Acessos", conteudo))
-
-
 
 
 
