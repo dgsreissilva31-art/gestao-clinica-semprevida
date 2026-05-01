@@ -1,3 +1,317 @@
+import datetime, urllib.parse, re
+from functools import wraps
+from django.http import HttpResponse, HttpResponseRedirect
+from django.db import connection
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
+
+
+# --- FUNÇÃO BASE ---
+def base_html(titulo, conteudo):
+    return f"""
+    <!DOCTYPE html>
+    <html lang="pt-br">
+    <head>
+        <meta charset="UTF-8">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        <title>{titulo} - Grupo Sempre Vida</title>
+        <style>
+            :root {{ --sidebar-width: 260px; --top-bg: #3c8dbc; --sidebar-bg: #222d32; }}
+            body {{ background-color: #ecf0f5; font-family: 'Segoe UI', sans-serif; margin: 0; overflow-x: hidden; }}
+            .navbar-top {{ background-color: var(--top-bg); height: 50px; position: fixed; width: 100%; top: 0; z-index: 1000; color: white; display: flex; align-items: center; padding: 0 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            .sidebar {{ background-color: var(--sidebar-bg); width: var(--sidebar-width); height: 100vh; position: fixed; top: 0; left: 0; padding-top: 50px; z-index: 999; overflow-y: auto; transition: all 0.3s; }}
+            .main-content {{ margin-left: var(--sidebar-width); padding: 70px 20px 20px; min-height: 100vh; }}
+            .card-panel {{ background: white; border-top: 3px solid #3c8dbc; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="navbar-top d-flex justify-content-between">
+            <div><span class="ms-2 fw-bold text-uppercase">SEMPRE VIDA</span></div>
+            <div class="small"><i class="bi bi-person-circle"></i> Douglas Silva | <a href="/logout/" class="text-white text-decoration-none">Sair</a></div>
+        </div>
+        <div class="sidebar">
+            <div style="padding: 20px 15px; color: #4b646f; font-size: 12px; background: #1a2226;">MENU PRINCIPAL</div>
+            <ul class="list-unstyled">
+                <li><a href="/admin-painel/" style="color: #b8c7ce; padding: 10px 15px; display: block; text-decoration: none;"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                <li><a href="/recepcao/" style="color: #b8c7ce; padding: 10px 15px; display: block; text-decoration: none;"><i class="bi bi-person-check"></i> Recepção</a></li>
+                <li><a href="/unidades/lista/" style="color: #b8c7ce; padding: 10px 15px; display: block; text-decoration: none;"><i class="bi bi-building"></i> Unidades</a></li>
+            </ul>
+        </div>
+        <div class="main-content">
+            <div class="card-panel">{conteudo}</div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+# --- DECORATOR DE PERMISSÃO ---
+from functools import wraps
+
+def cargo_required(cargo_permitido):
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped_view(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return HttpResponseRedirect("/login/")
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
+                res = cursor.fetchone()
+            if not res:
+                return HttpResponse("Acesso negado")
+            if res[0] != cargo_permitido:
+                return HttpResponse("Acesso restrito")
+            return view_func(request, *args, **kwargs)
+        return _wrapped_view
+    return decorator
+
+
+# --- LOGIN / LOGOUT ---
+@csrf_exempt
+def login_view(request):
+    mensagem = ""
+    if request.method == "POST":
+        u = request.POST.get("username", "").strip()
+        s = request.POST.get("senha", "").strip()
+        user = authenticate(username=u, password=s)
+        if user:
+            login(request, user)
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [user.id])
+                res = cursor.fetchone()
+            if res and res[0] == 'Médico':
+                return HttpResponseRedirect("/medico/prontuario/")
+            if res and res[0] == 'Dentista':
+                return HttpResponseRedirect("/dentista/prontuario/")
+            return HttpResponseRedirect("/admin-painel/")
+        mensagem = '<div class="alert alert-danger">Login ou senha inválidos</div>'
+
+    return HttpResponse(f"""
+    <html><head><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+    <body class="bg-light d-flex justify-content-center align-items-center" style="height:100vh;">
+        <div class="card shadow p-4" style="width:350px;">
+            <h4 class="text-center mb-3">🔐 Sempre Vida</h4>
+            {mensagem}
+            <form method="POST">
+                <div class="mb-3"><label>Usuário</label><input name="username" class="form-control" required></div>
+                <div class="mb-3"><label>Senha</label><input name="senha" type="password" class="form-control" required></div>
+                <button class="btn btn-primary w-100">Entrar</button>
+            </form>
+        </div>
+    </body></html>
+    """)
+
+
+def logout_view(request):
+    logout(request)
+    return HttpResponseRedirect("/login/")
+
+
+# --- TELA EXCLUSIVA DO MÉDICO ---
+@login_required
+@cargo_required('Médico')
+def prontuario_medico(request):
+    data_hoje = datetime.date.today()
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT prof.id, prof.nome
+            FROM profissionais prof
+            JOIN perfis_usuario pu ON pu.user_id = %s
+            WHERE prof.nome = pu.nome_completo
+            LIMIT 1
+        """, [request.user.id])
+        profissional = cursor.fetchone()
+
+    if not profissional:
+        return HttpResponse("""
+            <!DOCTYPE html><html lang="pt-br"><head><meta charset="UTF-8">
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            </head><body class="bg-light d-flex justify-content-center align-items-center" style="height:100vh;">
+            <div class="text-center">
+                <h3>⚠️ Profissional não encontrado</h3>
+                <p class="text-muted">Seu usuário não está vinculado a nenhum profissional cadastrado.</p>
+                <a href="/logout/" class="btn btn-danger">Sair</a>
+            </div></body></html>
+        """)
+
+    prof_id, prof_nome = profissional
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT ag.id, pac.nome, ag.horario_selecionado, ag.status, u.nome
+            FROM agendamentos ag
+            JOIN pacientes pac ON ag.paciente_id = pac.id
+            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            JOIN unidades u ON ac.unidade_id = u.id
+            WHERE ac.profissional_id = %s AND ag.data_agendamento = %s
+            ORDER BY ag.horario_selecionado
+        """, [prof_id, data_hoje])
+        agenda = cursor.fetchall()
+
+    linhas = ""
+    for a in agenda:
+        status = a[3] or "Agendado"
+        if status == "Chegada":
+            btn = f'<a href="/prontuario/?id={a[0]}" class="btn btn-success btn-sm"><i class="bi bi-clipboard2-pulse"></i> Prontuário</a>'
+        elif status == "Agendado":
+            btn = '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Aguardando Check-in</span>'
+        else:
+            btn = f'<span class="badge bg-secondary">{status}</span>'
+        linhas += f"<tr><td class='fw-bold'>{str(a[2])[:5]}</td><td>{a[1]}</td><td><span class='badge bg-light text-dark border'>{a[4]}</span></td><td>{btn}</td></tr>"
+
+    corpo = f"""
+        {"<p class='text-muted mt-3'>Nenhum agendamento para hoje.</p>" if not agenda else f'''
+        <table class="table table-hover align-middle mt-3">
+            <thead class="table-light"><tr><th>Hora</th><th>Paciente</th><th>Unidade</th><th>Ação</th></tr></thead>
+            <tbody>{linhas}</tbody>
+        </table>'''}
+    """
+
+    return HttpResponse(f"""
+    <!DOCTYPE html><html lang="pt-br">
+    <head>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        <title>Painel do Médico - Sempre Vida</title>
+        <style>
+            body {{ background:#f0f4f8; font-family:'Segoe UI',sans-serif; }}
+            .topbar {{ background:linear-gradient(135deg,#1a6b3c,#27ae60); color:white; padding:12px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,0.2); position:fixed; width:100%; top:0; z-index:1000; }}
+            .container-medico {{ max-width:900px; margin:80px auto 40px; background:white; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,0.1); overflow:hidden; }}
+            .cabecalho {{ background:linear-gradient(135deg,#1a6b3c,#27ae60); color:white; padding:24px 28px; }}
+            .cabecalho h5 {{ margin:0; font-size:13px; opacity:0.8; text-transform:uppercase; letter-spacing:1px; }}
+            .cabecalho h3 {{ margin:6px 0 0; font-size:24px; font-weight:700; }}
+            .corpo {{ padding:24px 28px; }}
+            .badge-data {{ background:#e8f5e9; color:#1a6b3c; padding:6px 16px; border-radius:20px; font-size:13px; font-weight:600; display:inline-block; border:1px solid #c8e6c9; }}
+        </style>
+    </head>
+    <body>
+        <div class="topbar">
+            <div style="font-size:18px;font-weight:bold;"><i class="bi bi-heart-pulse-fill"></i> &nbsp;SEMPRE VIDA</div>
+            <div style="font-size:13px;">
+                <i class="bi bi-person-circle"></i> {prof_nome} &nbsp;|&nbsp;
+                <a href="/logout/" class="text-white text-decoration-none"><i class="bi bi-box-arrow-right"></i> Sair</a>
+            </div>
+        </div>
+        <div class="container-medico">
+            <div class="cabecalho">
+                <h5><i class="bi bi-calendar2-check"></i> Agenda do dia</h5>
+                <h3>Dr(a). {prof_nome}</h3>
+            </div>
+            <div class="corpo">
+                <div class="badge-data">📅 {data_hoje.strftime('%d/%m/%Y')}</div>
+                {corpo}
+            </div>
+        </div>
+    </body></html>
+    """)
+
+
+# --- TELA EXCLUSIVA DO DENTISTA ---
+@login_required
+@cargo_required('Dentista')
+def prontuario_dentista_agenda(request):
+    data_hoje = datetime.date.today()
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT prof.id, prof.nome
+            FROM profissionais prof
+            JOIN perfis_usuario pu ON pu.user_id = %s
+            WHERE prof.nome = pu.nome_completo
+            LIMIT 1
+        """, [request.user.id])
+        profissional = cursor.fetchone()
+
+    if not profissional:
+        return HttpResponse("""
+            <!DOCTYPE html><html lang="pt-br"><head><meta charset="UTF-8">
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            </head><body class="bg-light d-flex justify-content-center align-items-center" style="height:100vh;">
+            <div class="text-center">
+                <h3>⚠️ Profissional não encontrado</h3>
+                <p class="text-muted">Seu usuário não está vinculado a nenhum profissional cadastrado.</p>
+                <a href="/logout/" class="btn btn-danger">Sair</a>
+            </div></body></html>
+        """)
+
+    prof_id, prof_nome = profissional
+
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT ag.id, pac.nome, ag.horario_selecionado, ag.status, u.nome
+            FROM agendamentos ag
+            JOIN pacientes pac ON ag.paciente_id = pac.id
+            JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+            JOIN unidades u ON ac.unidade_id = u.id
+            WHERE ac.profissional_id = %s AND ag.data_agendamento = %s
+            ORDER BY ag.horario_selecionado
+        """, [prof_id, data_hoje])
+        agenda = cursor.fetchall()
+
+    linhas = ""
+    for a in agenda:
+        status = a[3] or "Agendado"
+        if status == "Chegada":
+            btn = f'<a href="/dentista/prontuario/atender/?id={a[0]}" class="btn btn-success btn-sm"><i class="bi bi-clipboard2-pulse"></i> Prontuário</a>'
+        elif status == "Agendado":
+            btn = '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> Aguardando Check-in</span>'
+        else:
+            btn = f'<span class="badge bg-secondary">{status}</span>'
+        linhas += f"<tr><td class='fw-bold'>{str(a[2])[:5]}</td><td>{a[1]}</td><td><span class='badge bg-light text-dark border'>{a[4]}</span></td><td>{btn}</td></tr>"
+
+    corpo = f"""
+        {"<p class='text-muted mt-3'>Nenhum agendamento para hoje.</p>" if not agenda else f'''
+        <table class="table table-hover align-middle mt-3">
+            <thead class="table-light"><tr><th>Hora</th><th>Paciente</th><th>Unidade</th><th>Ação</th></tr></thead>
+            <tbody>{linhas}</tbody>
+        </table>'''}
+    """
+
+    return HttpResponse(f"""
+    <!DOCTYPE html><html lang="pt-br">
+    <head>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        <title>Painel do Dentista - Sempre Vida</title>
+        <style>
+            body {{ background:#f0f4f8; font-family:'Segoe UI',sans-serif; }}
+            .topbar {{ background:linear-gradient(135deg,#1a3a6b,#2e5ebc); color:white; padding:12px 24px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,0.2); position:fixed; width:100%; top:0; z-index:1000; }}
+            .container-dentista {{ max-width:900px; margin:80px auto 40px; background:white; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,0.1); overflow:hidden; }}
+            .cabecalho {{ background:linear-gradient(135deg,#1a3a6b,#2e5ebc); color:white; padding:24px 28px; }}
+            .cabecalho h5 {{ margin:0; font-size:13px; opacity:0.8; text-transform:uppercase; letter-spacing:1px; }}
+            .cabecalho h3 {{ margin:6px 0 0; font-size:24px; font-weight:700; }}
+            .corpo {{ padding:24px 28px; }}
+            .badge-data {{ background:#e8edf5; color:#1a3a6b; padding:6px 16px; border-radius:20px; font-size:13px; font-weight:600; display:inline-block; border:1px solid #c8d4e6; }}
+        </style>
+    </head>
+    <body>
+        <div class="topbar">
+            <div style="font-size:18px;font-weight:bold;"><i class="bi bi-mask"></i> &nbsp;SEMPRE VIDA</div>
+            <div style="font-size:13px;">
+                <i class="bi bi-person-circle"></i> {prof_nome} &nbsp;|&nbsp;
+                <a href="/logout/" class="text-white text-decoration-none"><i class="bi bi-box-arrow-right"></i> Sair</a>
+            </div>
+        </div>
+        <div class="container-dentista">
+            <div class="cabecalho">
+                <h5><i class="bi bi-calendar2-check"></i> Agenda do dia</h5>
+                <h3>Dr(a). {prof_nome}</h3>
+            </div>
+            <div class="corpo">
+                <div class="badge-data">📅 {data_hoje.strftime('%d/%m/%Y')}</div>
+                {corpo}
+            </div>
+        </div>
+    </body></html>
+    """)
+
+
 # --- PRONTUÁRIO MÉDICO ---
 @csrf_exempt
 def prontuario_geral(request):
@@ -76,7 +390,8 @@ def prontuario_geral(request):
         <h4>📄 Prontuário Completo</h4>
         <a href="?consultar=1" class="btn btn-secondary mb-3">⬅ Voltar</a>
         <div class="card p-4 shadow-sm">
-            <p><b>Paciente:</b> {d[0]}</p><p><b>Data:</b> {data}</p><p><b>Médico:</b> {d[2]}</p><hr>
+            <p><b>Paciente:</b> {d[0]}</p><p><b>Data:</b> {data}</p>
+            <p><b>Médico:</b> {d[2]}</p><hr>
             <p><b>Histórico:</b><br><div style="white-space:pre-wrap;">{d[3]}</div></p>
             <p><b>Diagnóstico:</b><br><div style="white-space:pre-wrap;">{d[4]}</div></p>
             <p><b>Tratamento:</b><br><div style="white-space:pre-wrap;">{d[5]}</div></p>
@@ -96,7 +411,7 @@ def prontuario_geral(request):
             params = [prof_id_logado]
             if busca:
                 sql += " AND p.nome ILIKE %s"; params.append(f"%{busca}%")
-            sql += " ORDER BY pr.data_atendimento DESC"
+            sql += " ORDER BY pr.data_atendimento DESC, p.nome ASC"
             cursor.execute(sql, params)
             dados = cursor.fetchall()
 
@@ -105,7 +420,7 @@ def prontuario_geral(request):
             <td><div style='max-height:80px;overflow:auto;'>{d[4]}</div></td>
             <td><div style='max-height:80px;overflow:auto;'>{d[5]}</div></td>
             <td><div style='max-height:80px;overflow:auto;'>{d[6]}</div></td>
-            <td><a href='?consultar=1&ver={d[0]}' class='btn btn-sm btn-primary'>Abrir</a></td>
+            <td><a href='?consultar=1&ver={d[0]}' class='btn btn-sm btn-primary'>Abrir Completo</a></td>
         </tr>""" for d in dados])
 
         conteudo = f"""
@@ -308,7 +623,7 @@ def prontuario_dentista(request):
             params = [prof_id_logado]
             if busca:
                 sql += " AND p.nome ILIKE %s"; params.append(f"%{busca}%")
-            sql += " ORDER BY po.data_atendimento DESC"
+            sql += " ORDER BY po.data_atendimento DESC, p.nome ASC"
             cursor.execute(sql, params)
             dados = cursor.fetchall()
 
@@ -318,7 +633,7 @@ def prontuario_dentista(request):
             <td><div style='max-height:80px;overflow:auto;'>{d[4]}</div></td>
             <td><div style='max-height:80px;overflow:auto;'>{d[5]}</div></td>
             <td><div style='max-height:80px;overflow:auto;'>{d[6]}</div></td>
-            <td><a href='?consultar=1&ver={d[0]}' class='btn btn-sm btn-primary'>Abrir</a></td>
+            <td><a href='?consultar=1&ver={d[0]}' class='btn btn-sm btn-primary'>Abrir Completo</a></td>
         </tr>""" for d in dados])
 
         conteudo = f"""
@@ -418,15 +733,15 @@ def prontuario_dentista(request):
                     </div>
                     <div class="col-12">
                         <label class="fw-bold">Queixa Principal</label>
-                        <textarea name="queixa" class="form-control" rows="3" required></textarea>
+                        <textarea name="queixa" class="form-control mb-2" rows="3" required></textarea>
                     </div>
                     <div class="col-12">
                         <label class="fw-bold">Diagnóstico</label>
-                        <textarea name="diagnostico" class="form-control" rows="3"></textarea>
+                        <textarea name="diagnostico" class="form-control mb-2" rows="3"></textarea>
                     </div>
                     <div class="col-12">
                         <label class="fw-bold">Observações</label>
-                        <textarea name="observacoes" class="form-control" rows="2"></textarea>
+                        <textarea name="observacoes" class="form-control mb-3" rows="2"></textarea>
                     </div>
                     <div class="col-12">
                         <button class="btn btn-primary w-100 fw-bold">Salvar Prontuário Odontológico</button>
