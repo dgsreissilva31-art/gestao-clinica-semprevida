@@ -175,21 +175,29 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
-        # Profissionais sem grade futura
+        # ✅ Busca profissionais com unidade via agendas_config anteriores
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+            cursor.execute("""
+                SELECT p.id, p.nome, u.nome
+                FROM profissionais p
+                LEFT JOIN (
+                    SELECT DISTINCT ON (profissional_id) profissional_id, unidade_id
+                    FROM agendas_config
+                    ORDER BY profissional_id, data_especifica DESC
+                ) ac_last ON ac_last.profissional_id = p.id
+                LEFT JOIN unidades u ON u.id = ac_last.unidade_id
+                ORDER BY p.nome
+            """)
             todos_profs = cursor.fetchall()
 
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT DISTINCT ac.profissional_id, u.nome
-                FROM agendas_config ac
-                JOIN unidades u ON ac.unidade_id = u.id
-                WHERE ac.data_especifica >= %s
+                SELECT DISTINCT profissional_id FROM agendas_config
+                WHERE data_especifica >= %s
             """, [hoje])
-            profs_com_grade = {r[0]: r[1] for r in cursor.fetchall()}
+            profs_com_grade = set([r[0] for r in cursor.fetchall()])
 
-        sem_grade = [(p[1], profs_com_grade.get(p[0], '')) for p in todos_profs if p[0] not in profs_com_grade]
+        sem_grade = [(p[1], p[2] or '-') for p in todos_profs if p[0] not in profs_com_grade]
 
     except Exception as ex:
         return HttpResponse(base_html("Erro", f'<div class="alert alert-danger">❌ Erro: {ex}</div>'))
@@ -212,11 +220,10 @@ def painel_controle(request):
             <td class="text-center">{badge(gr_a.get(nome, 0))}</td>
         </tr>"""
 
-    # ✅ Tabela com Unidade + Nome lado a lado
     if sem_grade:
         linhas_sg = "".join([f"""
         <tr>
-            <td>{s[1] or '-'}</td>
+            <td>{s[1]}</td>
             <td><b>{s[0]}</b></td>
         </tr>""" for s in sem_grade])
         tabela_sg = f"""
@@ -269,7 +276,6 @@ def painel_controle(request):
     setInterval(tick, 1000); tick();
     </script>
 
-    <!-- CARDS TOTAIS -->
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card border-0 shadow-sm text-center p-3 bg-primary text-white">
@@ -297,7 +303,6 @@ def painel_controle(request):
         </div>
     </div>
 
-    <!-- COMPARATIVO -->
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-dark text-white fw-bold">
             <i class="bi bi-bar-chart-fill"></i> Comparativo de Desempenho por Unidade
@@ -329,10 +334,8 @@ def painel_controle(request):
         </div>
     </div>
 
-    <!-- PROFISSIONAIS SEM GRADE -->
     {tabela_sg}
 
-    <!-- ✅ ATALHOS ATUALIZADOS -->
     <div class="row g-3">
         <div class="col-md-4">
             <div class="p-3 bg-success text-white rounded shadow-sm text-center">
@@ -373,8 +376,6 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
-
 
 
 
