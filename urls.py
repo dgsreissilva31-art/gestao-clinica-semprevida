@@ -2423,115 +2423,183 @@ def agenda_diaria(request):
 
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
 # --- TELA 13: NOVO AGENDAMENTO (COM TRAVA DE CLIQUE DUPLO) ---
+# --- 15. TELA 13: NOVO AGENDAMENTO ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
     hoje = datetime.date.today()
 
-    if request.GET.get('sucesso'):
-        conteudo_sucesso = f"""
-            <div class="container py-5 text-center">
-                <div class="card shadow-lg p-4 border-0">
-                    <div class="display-1 text-success mb-3"><i class="bi bi-check-circle-fill"></i></div>
-                    <h2 class="fw-bold">Agendamento Realizado!</h2>
-                    <hr>
-                    <a href="{request.path}" class="btn btn-primary btn-lg fw-bold shadow">NOVO AGENDAMENTO</a>
-                    <br><br>
-                    <a href="/admin-painel/" class="text-secondary small">Voltar ao Painel</a>
+    # ✅ Layout condicional: logado = com sidebar, público = sem sidebar
+    def render_page(titulo, conteudo):
+        if request.user.is_authenticated:
+            return HttpResponse(base_html(titulo, conteudo))
+        else:
+            return HttpResponse(f"""
+            <!DOCTYPE html>
+            <html lang="pt-br">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+                <title>{titulo} - Sempre Vida</title>
+                <style>
+                    body {{ background: #f0f4f8; font-family: 'Segoe UI', sans-serif; }}
+                    .topbar {{
+                        background: linear-gradient(135deg, #3c8dbc, #1a5276);
+                        color: white;
+                        padding: 12px 24px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                        position: fixed;
+                        width: 100%;
+                        top: 0;
+                        z-index: 1000;
+                    }}
+                    .conteudo-publico {{
+                        max-width: 960px;
+                        margin: 80px auto 40px;
+                        padding: 0 16px;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="topbar">
+                    <div style="font-size:18px; font-weight:bold;">
+                        <i class="bi bi-heart-pulse-fill"></i> &nbsp;SEMPRE VIDA
+                    </div>
+                    <div style="font-size:13px;">
+                        <i class="bi bi-calendar-check"></i> Agendamento Online
+                    </div>
                 </div>
+                <div class="conteudo-publico">
+                    {conteudo}
+                </div>
+            </body>
+            </html>
+            """)
+
+    # ✅ TELA DE SUCESSO COM INFORMAÇÕES
+    if request.GET.get('sucesso'):
+        prof_nome = request.GET.get('prof_nome', '')
+        data_fmt = request.GET.get('data_fmt', '')
+        hora_fmt = request.GET.get('hora_fmt', '')
+        endereco = request.GET.get('endereco', '')
+        unid_nome = request.GET.get('unid_nome', '')
+
+        conteudo_sucesso = f"""
+        <div class="py-5 text-center">
+            <div class="card shadow-lg p-4 border-0 mx-auto" style="max-width:500px;">
+                <div class="display-1 text-success mb-3">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <h2 class="fw-bold mb-4">Agendamento Realizado!</h2>
+                <div class="card bg-light p-3 mb-4 text-start">
+                    <p class="mb-2"><i class="bi bi-person-fill text-primary"></i> <b>Profissional:</b> {prof_nome}</p>
+                    <p class="mb-2"><i class="bi bi-calendar-fill text-primary"></i> <b>Data:</b> {data_fmt}</p>
+                    <p class="mb-2"><i class="bi bi-clock-fill text-primary"></i> <b>Horário:</b> {hora_fmt}</p>
+                    <p class="mb-0"><i class="bi bi-geo-alt-fill text-primary"></i> <b>Endereço:</b> {endereco} - {unid_nome}</p>
+                </div>
+                <a href="/agendar/" class="btn btn-primary btn-lg fw-bold shadow w-100">
+                    <i class="bi bi-calendar-plus"></i> NOVO AGENDAMENTO
+                </a>
             </div>
+        </div>
         """
-        return HttpResponse(base_html("Sucesso", conteudo_sucesso))
+        return render_page("Agendamento Realizado", conteudo_sucesso)
 
     unid_id = request.GET.get('unidade_id')
     esp_id = request.GET.get('especialidade_id')
     prof_id = request.GET.get('profissional_id')
-    data_sel = request.GET.get('data_sel') 
+    data_sel = request.GET.get('data_sel')
     hora_sel = request.GET.get('hora_sel')
 
     with connection.cursor() as cursor:
-        # 🔹 1. UNIDADES
         cursor.execute("""
-            SELECT DISTINCT u.id, u.nome FROM unidades u 
-            JOIN agendas_config ac ON u.id = ac.unidade_id 
+            SELECT DISTINCT u.id, u.nome FROM unidades u
+            JOIN agendas_config ac ON u.id = ac.unidade_id
             WHERE ac.data_especifica >= %s ORDER BY u.nome
         """, [hoje])
         unidades = cursor.fetchall()
 
-        # 🔹 2. ESPECIALIDADES
         especialidades = []
         if unid_id:
             cursor.execute("""
-                SELECT DISTINCT e.id, e.nome FROM especialidades e 
-                JOIN profissionais p ON e.id = p.especialidade_id 
-                JOIN agendas_config ac ON p.id = ac.profissional_id 
+                SELECT DISTINCT e.id, e.nome FROM especialidades e
+                JOIN profissionais p ON e.id = p.especialidade_id
+                JOIN agendas_config ac ON p.id = ac.profissional_id
                 WHERE ac.unidade_id = %s AND ac.data_especifica >= %s ORDER BY e.nome
             """, [unid_id, hoje])
             especialidades = cursor.fetchall()
 
-        # 🔹 3. PROFISSIONAIS
         profs_filtrados = []
         if unid_id and esp_id:
             cursor.execute("""
-                SELECT DISTINCT p.id, p.nome FROM profissionais p 
-                JOIN agendas_config ac ON p.id = ac.profissional_id 
-                WHERE ac.unidade_id = %s AND p.especialidade_id = %s AND ac.data_especifica >= %s ORDER BY p.nome
+                SELECT DISTINCT p.id, p.nome FROM profissionais p
+                JOIN agendas_config ac ON p.id = ac.profissional_id
+                WHERE ac.unidade_id = %s AND p.especialidade_id = %s
+                AND ac.data_especifica >= %s ORDER BY p.nome
             """, [unid_id, esp_id, hoje])
             profs_filtrados = cursor.fetchall()
 
-        # 🔹 4. DATAS
         datas_disponiveis = []
         agenda_existe = True
-        
+
         if prof_id and unid_id:
             cursor.execute("""
-                SELECT data_especifica, horario_inicio, horario_fim, intervalo_minutos, id 
-                FROM agendas_config 
-                WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s 
+                SELECT data_especifica, horario_inicio, horario_fim, intervalo_minutos, id
+                FROM agendas_config
+                WHERE profissional_id = %s AND unidade_id = %s AND data_especifica >= %s
                 ORDER BY data_especifica
             """, [prof_id, unid_id, hoje])
             grades_candidatas = cursor.fetchall()
-            
+
             if not grades_candidatas:
                 agenda_existe = False
-            
+
             for gf in grades_candidatas:
                 d_grade, h_ini, h_fim, inter, g_id = gf
                 total_minutos = (datetime.datetime.combine(hoje, h_fim) - datetime.datetime.combine(hoje, h_ini)).seconds / 60
                 slots_possiveis = total_minutos / (inter or 20)
-                
-                cursor.execute("SELECT count(*) FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [g_id, d_grade])
+                cursor.execute("""
+                    SELECT count(*) FROM agendamentos
+                    WHERE agenda_config_id = %s AND data_agendamento = %s
+                    AND status != 'Cancelado'
+                """, [g_id, d_grade])
                 total_ocupados = cursor.fetchone()[0]
-                
                 if total_ocupados < slots_possiveis:
                     datas_disponiveis.append(d_grade)
-            
+
             if grades_candidatas and not datas_disponiveis:
                 agenda_existe = False
 
-        # 🔹 5. HORÁRIOS
         horarios_list = []
         if prof_id and data_sel and unid_id:
             cursor.execute("""
-                SELECT horario_inicio, horario_fim, intervalo_minutos, id 
-                FROM agendas_config 
+                SELECT horario_inicio, horario_fim, intervalo_minutos, id
+                FROM agendas_config
                 WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s
             """, [prof_id, data_sel, unid_id])
             grade = cursor.fetchone()
-            
+
             if grade:
                 d_obj = datetime.datetime.strptime(data_sel, '%Y-%m-%d').date()
                 inicio = datetime.datetime.combine(d_obj, grade[0])
                 fim = datetime.datetime.combine(d_obj, grade[1])
                 intervalo = datetime.timedelta(minutes=grade[2] or 20)
-                
-                cursor.execute("SELECT horario_selecionado FROM agendamentos WHERE agenda_config_id = %s AND data_agendamento = %s AND status != 'Cancelado'", [grade[3], data_sel])
+                cursor.execute("""
+                    SELECT horario_selecionado FROM agendamentos
+                    WHERE agenda_config_id = %s AND data_agendamento = %s
+                    AND status != 'Cancelado'
+                """, [grade[3], data_sel])
                 ocupados = [r[0].strftime('%H:%M') if not isinstance(r[0], str) else r[0][:5] for r in cursor.fetchall()]
-                
                 atual = inicio
                 while atual < fim:
                     h_str = atual.strftime('%H:%M')
-                    if h_str not in ocupados: horarios_list.append(h_str)
+                    if h_str not in ocupados:
+                        horarios_list.append(h_str)
                     atual += intervalo
 
         cursor.execute("SELECT id, nome FROM convenios ORDER BY nome")
@@ -2541,73 +2609,160 @@ def agendar_consulta(request):
     if request.method == "POST":
         try:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT id FROM agendas_config WHERE profissional_id = %s AND data_especifica = %s AND unidade_id = %s", [prof_id, data_sel, unid_id])
-                id_conf_save = cursor.fetchone()[0]
+                cursor.execute("""
+                    SELECT ac.id, prof.nome, u.nome, u.endereco
+                    FROM agendas_config ac
+                    JOIN profissionais prof ON ac.profissional_id = prof.id
+                    JOIN unidades u ON ac.unidade_id = u.id
+                    WHERE ac.profissional_id = %s
+                    AND ac.data_especifica = %s
+                    AND ac.unidade_id = %s
+                """, [prof_id, data_sel, unid_id])
+                conf = cursor.fetchone()
+                if not conf:
+                    raise Exception("Configuração de agenda não encontrada")
+
+                id_conf_save, prof_nome, unid_nome, endereco = conf
                 nome_pac = request.POST.get('nome')
                 quem_agenda = request.POST.get('quem_agenda')
                 whatsapp = request.POST.get('whatsapp')
                 conv_id = request.POST.get('convenio_id') or None
                 nome_completo = f"{nome_pac} (Ag: {quem_agenda})" if quem_agenda else nome_pac
-                cursor.execute("INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id", [nome_completo, whatsapp, conv_id])
+
+                cursor.execute(
+                    "INSERT INTO pacientes (nome, telefone, convenio_id) VALUES (%s, %s, %s) RETURNING id",
+                    [nome_completo, whatsapp, conv_id]
+                )
                 paciente_id = cursor.fetchone()[0]
-                cursor.execute("INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')", [paciente_id, id_conf_save, data_sel, hora_sel])
-            return HttpResponseRedirect(f"{request.path}?sucesso=1")
+                cursor.execute(
+                    "INSERT INTO agendamentos (paciente_id, agenda_config_id, data_agendamento, horario_selecionado, status) VALUES (%s, %s, %s, %s, 'Agendado')",
+                    [paciente_id, id_conf_save, data_sel, hora_sel]
+                )
+
+            # ✅ Redireciona para sucesso com informações
+            data_fmt = datetime.datetime.strptime(data_sel, '%Y-%m-%d').strftime('%d/%m/%Y')
+            params = urllib.parse.urlencode({
+                'sucesso': '1',
+                'prof_nome': prof_nome,
+                'data_fmt': data_fmt,
+                'hora_fmt': hora_sel,
+                'endereco': endereco or 'Consultar unidade',
+                'unid_nome': unid_nome
+            })
+            return HttpResponseRedirect(f"/agendar/?{params}")
+
         except Exception as e:
             mensagem = f'<div class="alert alert-danger">❌ Erro: {e}</div>'
 
-    # --- HTML DINÂMICO ---
+    # --- HTML ---
     opts_unid = "".join([f'<option value="{u[0]}" {"selected" if str(u[0])==unid_id else ""}>{u[1]}</option>' for u in unidades])
     opts_esp = "".join([f'<option value="{e[0]}" {"selected" if str(e[0])==esp_id else ""}>{e[1]}</option>' for e in especialidades])
     opts_prof = "".join([f'<option value="{p[0]}" {"selected" if str(p[0])==prof_id else ""}>{p[1]}</option>' for p in profs_filtrados])
     opts_datas = "".join([f'<option value="{d}" {"selected" if str(d)==data_sel else ""}>{d.strftime("%d/%m/%Y")}</option>' for d in datas_disponiveis])
-    
+
     label_data = "4. Data Disponível"
-    placeholder_data = "Selecione..."
     estilo_data = "border-danger"
+    placeholder_data = "Selecione..."
     if prof_id and not agenda_existe:
         placeholder_data = "⚠️ Agenda não aberta"
         estilo_data = "border-warning bg-warning-subtle"
 
-    btns_horas = "".join([f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>' for h in horarios_list])
+    btns_horas = "".join([
+        f'<a href="?unidade_id={unid_id}&especialidade_id={esp_id}&profissional_id={prof_id}&data_sel={data_sel}&hora_sel={h}" class="btn btn-sm m-1 {"btn-primary shadow" if h==hora_sel else "btn-outline-primary"}">{h}</a>'
+        for h in horarios_list
+    ])
 
-    # Script para bloquear múltiplos envios
     script_bloqueio = """
-        <script>
-        function bloquearBotao(form) {
-            const btn = form.querySelector('button[type="submit"]');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
-            return true;
-        }
-        </script>
+    <script>
+    function bloquearBotao(form) {
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
+        return true;
+    }
+    </script>
     """
 
     conteudo = f"""
-        {script_bloqueio}
-        <div class="container py-3">
-            <h4 class="text-center mb-4 fw-bold"><i class="bi bi-calendar-check text-primary"></i> Novo Agendamento</h4>
-            {mensagem}
-            <div class="card p-3 shadow-sm border-0 bg-light mb-4">
-                <form method="GET" class="row g-2">
-                    <div class="col-md-3"><label class="small fw-bold">1. Unidade</label><select name="unidade_id" class="form-select border-primary" onchange="this.form.submit()"><option value="">Selecione...</option>{opts_unid}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold">2. Especialidade</label><select name="especialidade_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not unid_id else ""}><option value="">Selecione...</option>{opts_esp}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold">3. Profissional</label><select name="profissional_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not esp_id else ""}><option value="">Selecione...</option>{opts_prof}</select></div>
-                    <div class="col-md-3"><label class="small fw-bold text-danger">{label_data}</label><select name="data_sel" class="form-select {estilo_data}" onchange="this.form.submit()" {"disabled" if not datas_disponiveis else ""}><option value="">{placeholder_data}</option>{opts_datas}</select></div>
-                </form>
+    {script_bloqueio}
+    <h4 class="text-center mb-4 fw-bold mt-3">
+        <i class="bi bi-calendar-check text-primary"></i> Novo Agendamento
+    </h4>
+    {mensagem}
+
+    <div class="card p-3 shadow-sm border-0 bg-light mb-4">
+        <form method="GET" class="row g-2">
+            <div class="col-md-3">
+                <label class="small fw-bold">1. Unidade</label>
+                <select name="unidade_id" class="form-select border-primary" onchange="this.form.submit()">
+                    <option value="">Selecione...</option>{opts_unid}
+                </select>
             </div>
-            {f'<div class="card p-3 shadow-sm mb-4 text-center border-0"><h6>Horários em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6><div class="d-flex flex-wrap justify-content-center">{btns_horas if horarios_list else "Sem horários livres."}</div></div>' if data_sel else ""}
-            {f'''<div class="card p-4 shadow border-success">
-                <form method="POST" class="row g-3" onsubmit="return bloquearBotao(this)">
-                    <div class="col-md-6"><label class="small fw-bold">Paciente</label><input type="text" name="nome" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">Quem Agendando?</label><input type="text" name="quem_agenda" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="whatsapp" class="form-control" required></div>
-                    <div class="col-md-6"><label class="small fw-bold">Convênio</label><select name="convenio_id" class="form-select">{"".join([f"<option value='{c[0]}'>{c[1]}</option>" for c in lista_convenios])}</select></div>
-                    <div class="col-12 mt-3"><button type="submit" class="btn btn-success w-100 fw-bold shadow">CONFIRMAR PARA {hora_sel}</button></div>
-                </form>
-            </div>''' if hora_sel else ""}
+            <div class="col-md-3">
+                <label class="small fw-bold">2. Especialidade</label>
+                <select name="especialidade_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not unid_id else ""}>
+                    <option value="">Selecione...</option>{opts_esp}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold">3. Profissional</label>
+                <select name="profissional_id" class="form-select border-primary" onchange="this.form.submit()" {"disabled" if not esp_id else ""}>
+                    <option value="">Selecione...</option>{opts_prof}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold text-danger">{label_data}</label>
+                <select name="data_sel" class="form-select {estilo_data}" onchange="this.form.submit()" {"disabled" if not datas_disponiveis else ""}>
+                    <option value="">{placeholder_data}</option>{opts_datas}
+                </select>
+            </div>
+        </form>
+    </div>
+
+    {f'''<div class="card p-3 shadow-sm mb-4 text-center border-0">
+        <h6>Horários em {datetime.datetime.strptime(data_sel, "%Y-%m-%d").strftime("%d/%m/%Y") if data_sel else ""}</h6>
+        <div class="d-flex flex-wrap justify-content-center">
+            {btns_horas if horarios_list else "Sem horários livres."}
         </div>
+    </div>''' if data_sel else ""}
+
+    {f'''<div class="card p-4 shadow border-success">
+        <h5 class="fw-bold mb-3 text-success">
+            <i class="bi bi-person-plus"></i> Dados do Paciente
+        </h5>
+        <form method="POST" class="row g-3" onsubmit="return bloquearBotao(this)">
+            <div class="col-md-6">
+                <label class="small fw-bold">Paciente</label>
+                <input type="text" name="nome" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label class="small fw-bold">Quem Agendando?</label>
+                <input type="text" name="quem_agenda" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label class="small fw-bold">WhatsApp</label>
+                <input type="text" name="whatsapp" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label class="small fw-bold">Convênio</label>
+                <select name="convenio_id" class="form-select">
+                    {"".join([f"<option value='{c[0]}'>{c[1]}</option>" for c in lista_convenios])}
+                </select>
+            </div>
+            <div class="col-12 mt-3">
+                <button type="submit" class="btn btn-success w-100 fw-bold shadow py-2">
+                    <i class="bi bi-check-circle"></i> CONFIRMAR PARA {hora_sel}
+                </button>
+            </div>
+        </form>
+    </div>''' if hora_sel else ""}
     """
-    return HttpResponse(base_html("Agendar", conteudo))
+
+    return render_page("Novo Agendamento", conteudo)
+
+
+
+
 
 
 
