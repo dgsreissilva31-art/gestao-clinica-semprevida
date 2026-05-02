@@ -2424,6 +2424,7 @@ def agenda_diaria(request):
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
 # --- TELA 13: NOVO AGENDAMENTO (COM TRAVA DE CLIQUE DUPLO) ---
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
+# --- 15. TELA 13: NOVO AGENDAMENTO ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
@@ -2481,9 +2482,10 @@ def agendar_consulta(request):
             </html>
             """)
 
-    # ✅ TELA DE SUCESSO COM INFORMAÇÕES
+    # ✅ TELA DE SUCESSO COM ESPECIALIDADE
     if request.GET.get('sucesso'):
         prof_nome = request.GET.get('prof_nome', '')
+        especialidade_nome = request.GET.get('especialidade_nome', '')
         data_fmt = request.GET.get('data_fmt', '')
         hora_fmt = request.GET.get('hora_fmt', '')
         endereco = request.GET.get('endereco', '')
@@ -2498,6 +2500,7 @@ def agendar_consulta(request):
                 <h2 class="fw-bold mb-4">Agendamento Realizado!</h2>
                 <div class="card bg-light p-3 mb-4 text-start">
                     <p class="mb-2"><i class="bi bi-person-fill text-primary"></i> <b>Profissional:</b> {prof_nome}</p>
+                    <p class="mb-2"><i class="bi bi-hospital text-primary"></i> <b>Especialidade:</b> {especialidade_nome}</p>
                     <p class="mb-2"><i class="bi bi-calendar-fill text-primary"></i> <b>Data:</b> {data_fmt}</p>
                     <p class="mb-2"><i class="bi bi-clock-fill text-primary"></i> <b>Horário:</b> {hora_fmt}</p>
                     <p class="mb-0"><i class="bi bi-geo-alt-fill text-primary"></i> <b>Endereço:</b> {endereco} - {unid_nome}</p>
@@ -2609,11 +2612,13 @@ def agendar_consulta(request):
     if request.method == "POST":
         try:
             with connection.cursor() as cursor:
+                # ✅ Busca especialidade junto
                 cursor.execute("""
-                    SELECT ac.id, prof.nome, u.nome, u.endereco
+                    SELECT ac.id, prof.nome, u.nome, u.endereco, e.nome
                     FROM agendas_config ac
                     JOIN profissionais prof ON ac.profissional_id = prof.id
                     JOIN unidades u ON ac.unidade_id = u.id
+                    LEFT JOIN especialidades e ON prof.especialidade_id = e.id
                     WHERE ac.profissional_id = %s
                     AND ac.data_especifica = %s
                     AND ac.unidade_id = %s
@@ -2622,7 +2627,7 @@ def agendar_consulta(request):
                 if not conf:
                     raise Exception("Configuração de agenda não encontrada")
 
-                id_conf_save, prof_nome, unid_nome, endereco = conf
+                id_conf_save, prof_nome, unid_nome, endereco, especialidade_nome = conf
                 nome_pac = request.POST.get('nome')
                 quem_agenda = request.POST.get('quem_agenda')
                 whatsapp = request.POST.get('whatsapp')
@@ -2639,11 +2644,11 @@ def agendar_consulta(request):
                     [paciente_id, id_conf_save, data_sel, hora_sel]
                 )
 
-            # ✅ Redireciona para sucesso com informações
             data_fmt = datetime.datetime.strptime(data_sel, '%Y-%m-%d').strftime('%d/%m/%Y')
             params = urllib.parse.urlencode({
                 'sucesso': '1',
                 'prof_nome': prof_nome,
+                'especialidade_nome': especialidade_nome or '',
                 'data_fmt': data_fmt,
                 'hora_fmt': hora_sel,
                 'endereco': endereco or 'Consultar unidade',
@@ -2759,6 +2764,7 @@ def agendar_consulta(request):
     """
 
     return render_page("Novo Agendamento", conteudo)
+
 
 
 
