@@ -115,15 +115,15 @@ def base_html(*args):
 
 
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
+# --- 2. TELA 0: PAINEL DE GESTÃO ---
 @login_required
 def painel_controle(request):
-    from datetime import date, timedelta
-    hoje = date.today()
-    ontem = hoje - timedelta(days=1)
-    anteontem = hoje - timedelta(days=2)
+    import datetime as dt
+    hoje = dt.date.today()
+    ontem = hoje - dt.timedelta(days=1)
+    anteontem = hoje - dt.timedelta(days=2)
 
     with connection.cursor() as cursor:
-        # Nome do usuário logado
         cursor.execute("SELECT nome_completo, cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
         perfil = cursor.fetchone()
     nome_usuario = perfil[0] if perfil else request.user.username
@@ -134,7 +134,7 @@ def painel_controle(request):
         cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
         unidades = cursor.fetchall()
 
-        # Agendados por unidade - hoje, ontem, anteontem
+        # Agendados por unidade
         def agendados_por_unidade(data):
             cursor.execute("""
                 SELECT u.nome, COUNT(ag.id)
@@ -150,7 +150,7 @@ def painel_controle(request):
         ag_ontem = agendados_por_unidade(ontem)
         ag_anteontem = agendados_por_unidade(anteontem)
 
-        # Grades abertas por unidade
+        # Grades por unidade
         def grades_por_unidade(data):
             cursor.execute("""
                 SELECT u.nome, COUNT(ac.id)
@@ -172,55 +172,46 @@ def painel_controle(request):
         cursor.execute("SELECT COUNT(*) FROM agendas_config")
         total_grades = cursor.fetchone()[0]
 
-        # Médicos sem grade futura
+        # ✅ Médicos sem grade futura - query corrigida
         cursor.execute("""
-            SELECT p.nome, e.nome, u.nome
+            SELECT p.nome, e.nome
             FROM profissionais p
             LEFT JOIN especialidades e ON p.especialidade_id = e.id
-            LEFT JOIN agendas_config ac ON ac.profissional_id = p.id AND ac.data_especifica >= %s
-            LEFT JOIN unidades u ON ac.unidade_id = u.id
-            WHERE ac.id IS NULL
+            WHERE p.id NOT IN (
+                SELECT DISTINCT profissional_id
+                FROM agendas_config
+                WHERE data_especifica >= %s
+            )
             ORDER BY p.nome
         """, [hoje])
         sem_grade = cursor.fetchall()
 
-    # Nomes das unidades
-    nomes_unidades = [u[1] for u in unidades]
+    # Comparativo por unidade
+    def badge(v):
+        cor = "success" if v > 0 else "secondary"
+        return f'<span class="badge bg-{cor} fs-6 px-3">{v}</span>'
 
-    # --- COMPARATIVO POR UNIDADE ---
     def linha_unidade(nome):
-        h = ag_hoje.get(nome, 0)
-        o = ag_ontem.get(nome, 0)
-        a = ag_anteontem.get(nome, 0)
-        gh = gr_hoje.get(nome, 0)
-        go = gr_ontem.get(nome, 0)
-        ga = gr_anteontem.get(nome, 0)
-
-        def badge(v):
-            cor = "success" if v > 0 else "secondary"
-            return f'<span class="badge bg-{cor} fs-6 px-3">{v}</span>'
-
         return f"""
         <tr>
-            <td class="fw-bold">{nome}</td>
-            <td class="text-center">{badge(h)}</td>
-            <td class="text-center">{badge(o)}</td>
-            <td class="text-center">{badge(a)}</td>
-            <td class="text-center">{badge(gh)}</td>
-            <td class="text-center">{badge(go)}</td>
-            <td class="text-center">{badge(ga)}</td>
+            <td class="fw-bold text-start">{nome}</td>
+            <td class="text-center">{badge(ag_hoje.get(nome, 0))}</td>
+            <td class="text-center">{badge(ag_ontem.get(nome, 0))}</td>
+            <td class="text-center">{badge(ag_anteontem.get(nome, 0))}</td>
+            <td class="text-center">{badge(gr_hoje.get(nome, 0))}</td>
+            <td class="text-center">{badge(gr_ontem.get(nome, 0))}</td>
+            <td class="text-center">{badge(gr_anteontem.get(nome, 0))}</td>
         </tr>
         """
 
     linhas_unidades = "".join([linha_unidade(u[1]) for u in unidades])
 
-    # --- MÉDICOS SEM GRADE ---
+    # Médicos sem grade
     if sem_grade:
         linhas_sem_grade = "".join([f"""
         <tr>
             <td><b>{s[0]}</b></td>
             <td>{s[1] or '-'}</td>
-            <td>{s[2] or 'Sem unidade'}</td>
         </tr>""" for s in sem_grade])
         tabela_sem_grade = f"""
         <div class="card shadow-sm mb-4 border-warning">
@@ -230,7 +221,7 @@ def painel_controle(request):
             <div class="card-body p-0">
                 <table class="table table-hover mb-0">
                     <thead class="table-light">
-                        <tr><th>Nome</th><th>Especialidade</th><th>Unidade</th></tr>
+                        <tr><th>Nome</th><th>Especialidade</th></tr>
                     </thead>
                     <tbody>{linhas_sem_grade}</tbody>
                 </table>
@@ -238,16 +229,21 @@ def painel_controle(request):
         </div>
         """
     else:
-        tabela_sem_grade = '<div class="alert alert-success">✅ Todos os profissionais têm grade aberta!</div>'
+        tabela_sem_grade = '<div class="alert alert-success mb-4">✅ Todos os profissionais têm grade aberta!</div>'
+
+    total_ag_hoje = sum(ag_hoje.values())
+    total_gr_hoje = sum(gr_hoje.values())
 
     conteudo = f"""
-    <!-- CABEÇALHO COM BOAS VINDAS E DATA/HORA -->
+    <!-- CABEÇALHO -->
     <div class="d-flex justify-content-between align-items-start mb-4">
         <div>
             <h3 class="fw-bold text-dark mb-0">
                 <i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão
             </h3>
-            <p class="text-muted mb-0">Bem-vindo, <b>{nome_usuario}</b> — {cargo_usuario}</p>
+            <p class="text-muted mb-0">
+                Bem-vindo, <b>{nome_usuario}</b> — {cargo_usuario}
+            </p>
         </div>
         <div class="text-end">
             <div class="badge bg-primary fs-6 px-3 py-2 mb-1 d-block">
@@ -265,7 +261,8 @@ def painel_controle(request):
         const h = String(agora.getHours()).padStart(2,'0');
         const m = String(agora.getMinutes()).padStart(2,'0');
         const s = String(agora.getSeconds()).padStart(2,'0');
-        document.getElementById('relogio').innerHTML = '<i class="bi bi-clock"></i> ' + h + ':' + m + ':' + s;
+        document.getElementById('relogio').innerHTML =
+            '<i class="bi bi-clock"></i> ' + h + ':' + m + ':' + s;
     }}
     setInterval(atualizarRelogio, 1000);
     atualizarRelogio();
@@ -275,13 +272,13 @@ def painel_controle(request):
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card border-0 shadow-sm text-center p-3 h-100 bg-primary text-white">
-                <div class="fs-1 fw-bold">{ag_hoje.get('total', sum(ag_hoje.values()))}</div>
+                <div class="fs-1 fw-bold">{total_ag_hoje}</div>
                 <div class="small">Agendados Hoje</div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card border-0 shadow-sm text-center p-3 h-100 bg-success text-white">
-                <div class="fs-1 fw-bold">{sum(gr_hoje.values())}</div>
+                <div class="fs-1 fw-bold">{total_gr_hoje}</div>
                 <div class="small">Grades Abertas Hoje</div>
             </div>
         </div>
@@ -299,32 +296,32 @@ def painel_controle(request):
         </div>
     </div>
 
-    <!-- COMPARATIVO DE DESEMPENHO POR UNIDADE -->
+    <!-- COMPARATIVO DE DESEMPENHO -->
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-dark text-white fw-bold">
             <i class="bi bi-bar-chart-fill"></i> Comparativo de Desempenho por Unidade
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 text-center">
+                <table class="table table-hover mb-0 text-center align-middle">
                     <thead class="table-dark">
                         <tr>
                             <th class="text-start">Unidade</th>
-                            <th colspan="3" class="border-end">Pacientes Agendados</th>
-                            <th colspan="3">Grades Abertas</th>
+                            <th colspan="3" class="border-end">📋 Pacientes Agendados</th>
+                            <th colspan="3">📅 Grades Abertas</th>
                         </tr>
                         <tr class="table-secondary">
                             <th class="text-start"></th>
-                            <th>Hoje<br><small>{hoje.strftime('%d/%m')}</small></th>
-                            <th>Ontem<br><small>{ontem.strftime('%d/%m')}</small></th>
-                            <th class="border-end">Anteontem<br><small>{anteontem.strftime('%d/%m')}</small></th>
-                            <th>Hoje<br><small>{hoje.strftime('%d/%m')}</small></th>
-                            <th>Ontem<br><small>{ontem.strftime('%d/%m')}</small></th>
-                            <th>Anteontem<br><small>{anteontem.strftime('%d/%m')}</small></th>
+                            <th>Hoje<br><small class="text-muted">{hoje.strftime('%d/%m')}</small></th>
+                            <th>Ontem<br><small class="text-muted">{ontem.strftime('%d/%m')}</small></th>
+                            <th class="border-end">Anteontem<br><small class="text-muted">{anteontem.strftime('%d/%m')}</small></th>
+                            <th>Hoje<br><small class="text-muted">{hoje.strftime('%d/%m')}</small></th>
+                            <th>Ontem<br><small class="text-muted">{ontem.strftime('%d/%m')}</small></th>
+                            <th>Anteontem<br><small class="text-muted">{anteontem.strftime('%d/%m')}</small></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {linhas_unidades or '<tr><td colspan="7" class="text-center text-muted">Nenhuma unidade cadastrada</td></tr>'}
+                        {linhas_unidades or '<tr><td colspan="7" class="text-center text-muted py-3">Nenhuma unidade cadastrada</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -381,8 +378,6 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
-
 
 
 
