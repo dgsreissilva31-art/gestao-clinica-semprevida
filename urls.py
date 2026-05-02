@@ -175,16 +175,7 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
-        # ✅ Unidade direto da tabela profissionais
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT p.id, p.nome, u.nome
-                FROM profissionais p
-                LEFT JOIN unidades u ON u.id = p.unidade
-                ORDER BY u.nome, p.nome
-            """)
-            todos_profs = cursor.fetchall()
-
+        # ✅ IDs com grade futura
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT profissional_id FROM agendas_config
@@ -192,8 +183,23 @@ def painel_controle(request):
             """, [hoje])
             profs_com_grade = set([r[0] for r in cursor.fetchall()])
 
+        # ✅ Unidades por profissional (histórico completo)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT profissional_id, string_agg(DISTINCT u.nome, ', ')
+                FROM agendas_config ac
+                JOIN unidades u ON ac.unidade_id = u.id
+                GROUP BY profissional_id
+            """)
+            unidade_por_prof = {r[0]: r[1] for r in cursor.fetchall()}
+
+        # ✅ Todos os profissionais
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+            todos_profs = cursor.fetchall()
+
         sem_grade = [
-            (p[1], p[2] or '-')
+            (p[1], unidade_por_prof.get(p[0], '-'))
             for p in todos_profs
             if p[0] not in profs_com_grade
         ]
@@ -375,8 +381,6 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
-
 
 
 
