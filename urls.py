@@ -6,6 +6,7 @@ from django.db import connection
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.shortcuts import render, HttpResponse, HttpResponseRedirect
+from django.contrib.auth.decorators import login_required
 import views 
  
 
@@ -117,9 +118,10 @@ def base_html(*args):
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
-# --- 2. TELA 0: PAINEL DE GESTÃO ---
-@login_required
 def painel_controle(request):
+    if not request.user.is_authenticated:
+        return HttpResponseRedirect("/login/")
+
     hoje = datetime.date.today()
     ontem = hoje - datetime.timedelta(days=1)
     anteontem = hoje - datetime.timedelta(days=2)
@@ -173,16 +175,12 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
-        # ✅ Médicos sem grade - query ultra simples
         with connection.cursor() as cursor:
             cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
             todos_profs = cursor.fetchall()
 
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT DISTINCT profissional_id FROM agendas_config
-                WHERE data_especifica >= %s
-            """, [hoje])
+            cursor.execute("SELECT DISTINCT profissional_id FROM agendas_config WHERE data_especifica >= %s", [hoje])
             profs_com_grade = set([r[0] for r in cursor.fetchall()])
 
         sem_grade = [(p[1],) for p in todos_profs if p[0] not in profs_com_grade]
@@ -358,6 +356,7 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
 
 
 
