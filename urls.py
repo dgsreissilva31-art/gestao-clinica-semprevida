@@ -175,21 +175,7 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
-        # ✅ Busca profissionais com unidade via agendas_config anteriores
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT p.id, p.nome, u.nome
-                FROM profissionais p
-                LEFT JOIN (
-                    SELECT DISTINCT ON (profissional_id) profissional_id, unidade_id
-                    FROM agendas_config
-                    ORDER BY profissional_id, data_especifica DESC
-                ) ac_last ON ac_last.profissional_id = p.id
-                LEFT JOIN unidades u ON u.id = ac_last.unidade_id
-                ORDER BY p.nome
-            """)
-            todos_profs = cursor.fetchall()
-
+        # ✅ IDs com grade futura
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT profissional_id FROM agendas_config
@@ -197,7 +183,26 @@ def painel_controle(request):
             """, [hoje])
             profs_com_grade = set([r[0] for r in cursor.fetchall()])
 
-        sem_grade = [(p[1], p[2] or '-') for p in todos_profs if p[0] not in profs_com_grade]
+        # ✅ Unidades por profissional (histórico completo)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT profissional_id, string_agg(DISTINCT u.nome, ', ')
+                FROM agendas_config ac
+                JOIN unidades u ON ac.unidade_id = u.id
+                GROUP BY profissional_id
+            """)
+            unidade_por_prof = {r[0]: r[1] for r in cursor.fetchall()}
+
+        # ✅ Todos os profissionais
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+            todos_profs = cursor.fetchall()
+
+        sem_grade = [
+            (p[1], unidade_por_prof.get(p[0], '-'))
+            for p in todos_profs
+            if p[0] not in profs_com_grade
+        ]
 
     except Exception as ex:
         return HttpResponse(base_html("Erro", f'<div class="alert alert-danger">❌ Erro: {ex}</div>'))
@@ -223,7 +228,7 @@ def painel_controle(request):
     if sem_grade:
         linhas_sg = "".join([f"""
         <tr>
-            <td>{s[1]}</td>
+            <td class="text-muted small">{s[1]}</td>
             <td><b>{s[0]}</b></td>
         </tr>""" for s in sem_grade])
         tabela_sg = f"""
@@ -376,6 +381,7 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
 
 
 
