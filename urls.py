@@ -2425,14 +2425,24 @@ def agenda_diaria(request):
 # --- TELA 13: NOVO AGENDAMENTO (COM TRAVA DE CLIQUE DUPLO) ---
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
 # --- 15. TELA 13: NOVO AGENDAMENTO ---
+# --- 15. TELA 13: NOVO AGENDAMENTO ---
 @csrf_exempt
 def agendar_consulta(request):
     mensagem = ""
     hoje = datetime.date.today()
 
-    # ✅ Layout condicional: logado = com sidebar, público = sem sidebar
+    # ✅ Layout condicional por cargo
     def render_page(titulo, conteudo):
+        usar_sidebar = False
         if request.user.is_authenticated:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
+                res = cursor.fetchone()
+            cargo = res[0] if res else ""
+            if cargo in ('Administrador', 'Recepção'):
+                usar_sidebar = True
+
+        if usar_sidebar:
             return HttpResponse(base_html(titulo, conteudo))
         else:
             return HttpResponse(f"""
@@ -2612,7 +2622,6 @@ def agendar_consulta(request):
     if request.method == "POST":
         try:
             with connection.cursor() as cursor:
-                # ✅ Busca especialidade junto
                 cursor.execute("""
                     SELECT ac.id, prof.nome, u.nome, u.endereco, e.nome
                     FROM agendas_config ac
@@ -2764,8 +2773,6 @@ def agendar_consulta(request):
     """
 
     return render_page("Novo Agendamento", conteudo)
-
-
 
 
 
