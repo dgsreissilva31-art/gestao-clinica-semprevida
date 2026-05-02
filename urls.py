@@ -114,118 +114,278 @@ def base_html(*args):
 
 
 
-
-
-
-# --- 2. TELA 0: PAINEL DE GESTÃO (VERSÃO PROFISSIONAL CORRIGIDA) ---
-
+# --- 2. TELA 0: PAINEL DE GESTÃO ---
+@login_required
 def painel_controle(request):
-    # Definimos o conteúdo usando o grid system col-md-4 para 3 colunas perfeitas
-    conteudo = """
-        <div class="mb-4">
-            <h3 class="fw-bold text-dark"><i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão</h3>
-            <p class="text-muted">Bem-vindo, COLABORADOR. Gerencie as operações da clínica Sempre Vida.</p>
+    from datetime import date, timedelta
+    hoje = date.today()
+    ontem = hoje - timedelta(days=1)
+    anteontem = hoje - timedelta(days=2)
+
+    with connection.cursor() as cursor:
+        # Nome do usuário logado
+        cursor.execute("SELECT nome_completo, cargo FROM perfis_usuario WHERE user_id = %s", [request.user.id])
+        perfil = cursor.fetchone()
+    nome_usuario = perfil[0] if perfil else request.user.username
+    cargo_usuario = perfil[1] if perfil else ""
+
+    with connection.cursor() as cursor:
+        # Unidades
+        cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
+        unidades = cursor.fetchall()
+
+        # Agendados por unidade - hoje, ontem, anteontem
+        def agendados_por_unidade(data):
+            cursor.execute("""
+                SELECT u.nome, COUNT(ag.id)
+                FROM agendamentos ag
+                JOIN agendas_config ac ON ag.agenda_config_id = ac.id
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ag.data_agendamento = %s AND ag.status != 'Cancelado'
+                GROUP BY u.nome ORDER BY u.nome
+            """, [data])
+            return {r[0]: r[1] for r in cursor.fetchall()}
+
+        ag_hoje = agendados_por_unidade(hoje)
+        ag_ontem = agendados_por_unidade(ontem)
+        ag_anteontem = agendados_por_unidade(anteontem)
+
+        # Grades abertas por unidade
+        def grades_por_unidade(data):
+            cursor.execute("""
+                SELECT u.nome, COUNT(ac.id)
+                FROM agendas_config ac
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ac.data_especifica = %s
+                GROUP BY u.nome ORDER BY u.nome
+            """, [data])
+            return {r[0]: r[1] for r in cursor.fetchall()}
+
+        gr_hoje = grades_por_unidade(hoje)
+        gr_ontem = grades_por_unidade(ontem)
+        gr_anteontem = grades_por_unidade(anteontem)
+
+        # Totais gerais
+        cursor.execute("SELECT COUNT(*) FROM agendamentos WHERE status != 'Cancelado'")
+        total_agendamentos = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM agendas_config")
+        total_grades = cursor.fetchone()[0]
+
+        # Médicos sem grade futura
+        cursor.execute("""
+            SELECT p.nome, e.nome, u.nome
+            FROM profissionais p
+            LEFT JOIN especialidades e ON p.especialidade_id = e.id
+            LEFT JOIN agendas_config ac ON ac.profissional_id = p.id AND ac.data_especifica >= %s
+            LEFT JOIN unidades u ON ac.unidade_id = u.id
+            WHERE ac.id IS NULL
+            ORDER BY p.nome
+        """, [hoje])
+        sem_grade = cursor.fetchall()
+
+    # Nomes das unidades
+    nomes_unidades = [u[1] for u in unidades]
+
+    # --- COMPARATIVO POR UNIDADE ---
+    def linha_unidade(nome):
+        h = ag_hoje.get(nome, 0)
+        o = ag_ontem.get(nome, 0)
+        a = ag_anteontem.get(nome, 0)
+        gh = gr_hoje.get(nome, 0)
+        go = gr_ontem.get(nome, 0)
+        ga = gr_anteontem.get(nome, 0)
+
+        def badge(v):
+            cor = "success" if v > 0 else "secondary"
+            return f'<span class="badge bg-{cor} fs-6 px-3">{v}</span>'
+
+        return f"""
+        <tr>
+            <td class="fw-bold">{nome}</td>
+            <td class="text-center">{badge(h)}</td>
+            <td class="text-center">{badge(o)}</td>
+            <td class="text-center">{badge(a)}</td>
+            <td class="text-center">{badge(gh)}</td>
+            <td class="text-center">{badge(go)}</td>
+            <td class="text-center">{badge(ga)}</td>
+        </tr>
+        """
+
+    linhas_unidades = "".join([linha_unidade(u[1]) for u in unidades])
+
+    # --- MÉDICOS SEM GRADE ---
+    if sem_grade:
+        linhas_sem_grade = "".join([f"""
+        <tr>
+            <td><b>{s[0]}</b></td>
+            <td>{s[1] or '-'}</td>
+            <td>{s[2] or 'Sem unidade'}</td>
+        </tr>""" for s in sem_grade])
+        tabela_sem_grade = f"""
+        <div class="card shadow-sm mb-4 border-warning">
+            <div class="card-header bg-warning text-dark fw-bold">
+                ⚠️ Médicos sem Grade Aberta (Futuro)
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Nome</th><th>Especialidade</th><th>Unidade</th></tr>
+                    </thead>
+                    <tbody>{linhas_sem_grade}</tbody>
+                </table>
+            </div>
         </div>
+        """
+    else:
+        tabela_sem_grade = '<div class="alert alert-success">✅ Todos os profissionais têm grade aberta!</div>'
 
-
-        <div class="row g-3">
-            <div class="col-md-4">
-                <div class="p-4 bg-primary text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-building fs-1"></i><br><h5 class="mt-2 fw-bold">Unidades</h5>
-                    <a href="/unidades/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
+    conteudo = f"""
+    <!-- CABEÇALHO COM BOAS VINDAS E DATA/HORA -->
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <h3 class="fw-bold text-dark mb-0">
+                <i class="bi bi-speedometer2 text-primary"></i> Painel de Gestão
+            </h3>
+            <p class="text-muted mb-0">Bem-vindo, <b>{nome_usuario}</b> — {cargo_usuario}</p>
+        </div>
+        <div class="text-end">
+            <div class="badge bg-primary fs-6 px-3 py-2 mb-1 d-block">
+                <i class="bi bi-calendar3"></i> {hoje.strftime('%d/%m/%Y')}
             </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-success text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-hospital fs-1"></i><br><h5 class="mt-2 fw-bold">Especialidades</h5>
-                    <a href="/especialidades/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center h-100">
-                    <i class="bi bi-person-badge fs-1"></i><br><h5 class="mt-2 fw-bold">Profissionais</h5>
-                    <a href="/profissionais/" class="btn btn-sm btn-dark mt-2 fw-bold w-100 text-white">Acessar</a>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="p-4 bg-info text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-card-checklist fs-1"></i><br><h5 class="mt-2 fw-bold">Convênios</h5>
-                    <a href="/convenios/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-secondary text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-microscope fs-1"></i><br><h5 class="mt-2 fw-bold">Caixa Exames/Prestadores</h5>
-                    <a href="/exames/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-dark text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-mask fs-1"></i><br><h5 class="mt-2 fw-bold">Caixa Odontologia</h5>
-                    <a href="/odontologia/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="p-4 bg-danger text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-people fs-1"></i><br><h5 class="mt-2 fw-bold">Cadastro Pacientes</h5>
-                    <a href="/pacientes/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Acessar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-dark text-white rounded shadow-sm text-center h-100 border-secondary border">
-                    <i class="bi bi-shield-lock fs-1"></i><br><h5 class="mt-2 fw-bold">Acessos</h5>
-                    <a href="/acessos/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-primary text-white rounded shadow-sm text-center h-100 border-light border">
-                    <i class="bi bi-currency-dollar fs-1"></i><br><h5 class="mt-2 fw-bold">Tabela de Preços</h5>
-                    <a href="/precos/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="p-4 bg-info text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-tags fs-1"></i><br><h5 class="mt-2 fw-bold">Preços Exames</h5>
-                    <a href="/precos-exames/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-success text-white rounded shadow-sm text-center h-100">
-                    <i class="bi bi-calendar-check fs-1"></i><br><h5 class="mt-2 fw-bold">Configurar Agendas</h5>
-                    <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 fw-bold w-100">Configurar</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-white text-dark rounded shadow-sm text-center h-100 border border-primary">
-                    <i class="bi bi-calendar-plus fs-1 text-primary"></i><br><h5 class="mt-2 fw-bold text-primary">Novo Agendamento</h5>
-                    <a href="/agendar/" class="btn btn-sm btn-primary mt-2 fw-bold w-100 text-white">Iniciar</a>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="p-4 bg-warning text-dark rounded shadow-sm text-center h-100 border border-dark">
-                    <i class="bi bi-person-check fs-1"></i><br><h5 class="mt-2 fw-bold">Recepção / Check-in</h5>
-                    <a href="/recepcao/" class="btn btn-sm btn-dark mt-2 fw-bold w-100 text-white">Abrir Painel</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-light text-dark rounded shadow-sm text-center h-100 border">
-                    <i class="bi bi-cash-stack fs-1 text-success"></i><br><h5 class="mt-2 fw-bold">Caixa / Financeiro</h5>
-                    <a href="/caixa/" class="btn btn-sm btn-success mt-2 fw-bold w-100">Abrir Caixa</a>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="p-4 bg-white text-dark rounded shadow-sm text-center h-100 border">
-                    <i class="bi bi-file-earmark-medical fs-1 text-purple" style="color: #605ca8;"></i><br><h5 class="mt-2 fw-bold">Prontuário Médico</h5>
-                    <a href="/recepcao/" class="btn btn-sm btn-outline-dark mt-2 fw-bold w-100">Atender</a>
-                </div>
+            <div class="badge bg-secondary fs-6 px-3 py-2 d-block" id="relogio">
+                <i class="bi bi-clock"></i> --:--:--
             </div>
         </div>
+    </div>
+
+    <script>
+    function atualizarRelogio() {{
+        const agora = new Date();
+        const h = String(agora.getHours()).padStart(2,'0');
+        const m = String(agora.getMinutes()).padStart(2,'0');
+        const s = String(agora.getSeconds()).padStart(2,'0');
+        document.getElementById('relogio').innerHTML = '<i class="bi bi-clock"></i> ' + h + ':' + m + ':' + s;
+    }}
+    setInterval(atualizarRelogio, 1000);
+    atualizarRelogio();
+    </script>
+
+    <!-- CARDS TOTAIS -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-center p-3 h-100 bg-primary text-white">
+                <div class="fs-1 fw-bold">{ag_hoje.get('total', sum(ag_hoje.values()))}</div>
+                <div class="small">Agendados Hoje</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-center p-3 h-100 bg-success text-white">
+                <div class="fs-1 fw-bold">{sum(gr_hoje.values())}</div>
+                <div class="small">Grades Abertas Hoje</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-center p-3 h-100 bg-info text-white">
+                <div class="fs-1 fw-bold">{total_agendamentos}</div>
+                <div class="small">Total Agendamentos (Sistema)</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm text-center p-3 h-100 bg-warning text-dark">
+                <div class="fs-1 fw-bold">{total_grades}</div>
+                <div class="small">Total Grades (Sistema)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMPARATIVO DE DESEMPENHO POR UNIDADE -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-white fw-bold">
+            <i class="bi bi-bar-chart-fill"></i> Comparativo de Desempenho por Unidade
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 text-center">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="text-start">Unidade</th>
+                            <th colspan="3" class="border-end">Pacientes Agendados</th>
+                            <th colspan="3">Grades Abertas</th>
+                        </tr>
+                        <tr class="table-secondary">
+                            <th class="text-start"></th>
+                            <th>Hoje<br><small>{hoje.strftime('%d/%m')}</small></th>
+                            <th>Ontem<br><small>{ontem.strftime('%d/%m')}</small></th>
+                            <th class="border-end">Anteontem<br><small>{anteontem.strftime('%d/%m')}</small></th>
+                            <th>Hoje<br><small>{hoje.strftime('%d/%m')}</small></th>
+                            <th>Ontem<br><small>{ontem.strftime('%d/%m')}</small></th>
+                            <th>Anteontem<br><small>{anteontem.strftime('%d/%m')}</small></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {linhas_unidades or '<tr><td colspan="7" class="text-center text-muted">Nenhuma unidade cadastrada</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MÉDICOS SEM GRADE -->
+    {tabela_sem_grade}
+
+    <!-- ATALHOS -->
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="p-3 bg-primary text-white rounded shadow-sm text-center">
+                <i class="bi bi-person-check fs-2"></i><br>
+                <b>Recepção / Check-in</b>
+                <a href="/recepcao/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Abrir</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-success text-white rounded shadow-sm text-center">
+                <i class="bi bi-calendar-plus fs-2"></i><br>
+                <b>Novo Agendamento</b>
+                <a href="/agendar/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Agendar</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-warning text-dark rounded shadow-sm text-center">
+                <i class="bi bi-cash-stack fs-2"></i><br>
+                <b>Caixa / Financeiro</b>
+                <a href="/caixa/" class="btn btn-sm btn-dark mt-2 w-100 fw-bold text-white">Abrir Caixa</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-info text-white rounded shadow-sm text-center">
+                <i class="bi bi-building fs-2"></i><br>
+                <b>Unidades</b>
+                <a href="/unidades/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Acessar</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-secondary text-white rounded shadow-sm text-center">
+                <i class="bi bi-calendar-check fs-2"></i><br>
+                <b>Configurar Agendas</b>
+                <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Configurar</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-dark text-white rounded shadow-sm text-center">
+                <i class="bi bi-shield-lock fs-2"></i><br>
+                <b>Acessos / Usuários</b>
+                <a href="/acessos/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Configurar</a>
+            </div>
+        </div>
+    </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
+
+
+
+
 
 
 
