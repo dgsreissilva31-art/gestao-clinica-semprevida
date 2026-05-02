@@ -175,15 +175,21 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
+        # Profissionais sem grade futura
         with connection.cursor() as cursor:
             cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
             todos_profs = cursor.fetchall()
 
         with connection.cursor() as cursor:
-            cursor.execute("SELECT DISTINCT profissional_id FROM agendas_config WHERE data_especifica >= %s", [hoje])
-            profs_com_grade = set([r[0] for r in cursor.fetchall()])
+            cursor.execute("""
+                SELECT DISTINCT ac.profissional_id, u.nome
+                FROM agendas_config ac
+                JOIN unidades u ON ac.unidade_id = u.id
+                WHERE ac.data_especifica >= %s
+            """, [hoje])
+            profs_com_grade = {r[0]: r[1] for r in cursor.fetchall()}
 
-        sem_grade = [(p[1],) for p in todos_profs if p[0] not in profs_com_grade]
+        sem_grade = [(p[1], profs_com_grade.get(p[0], '')) for p in todos_profs if p[0] not in profs_com_grade]
 
     except Exception as ex:
         return HttpResponse(base_html("Erro", f'<div class="alert alert-danger">❌ Erro: {ex}</div>'))
@@ -206,8 +212,13 @@ def painel_controle(request):
             <td class="text-center">{badge(gr_a.get(nome, 0))}</td>
         </tr>"""
 
+    # ✅ Tabela com Unidade + Nome lado a lado
     if sem_grade:
-        linhas_sg = "".join([f"<tr><td><b>{s[0]}</b></td></tr>" for s in sem_grade])
+        linhas_sg = "".join([f"""
+        <tr>
+            <td>{s[1] or '-'}</td>
+            <td><b>{s[0]}</b></td>
+        </tr>""" for s in sem_grade])
         tabela_sg = f"""
         <div class="card shadow-sm mb-4 border-warning">
             <div class="card-header bg-warning text-dark fw-bold">
@@ -215,7 +226,9 @@ def painel_controle(request):
             </div>
             <div class="card-body p-0">
                 <table class="table table-hover mb-0">
-                    <thead class="table-light"><tr><th>Nome</th></tr></thead>
+                    <thead class="table-light">
+                        <tr><th>Unidade</th><th>Nome</th></tr>
+                    </thead>
                     <tbody>{linhas_sg}</tbody>
                 </table>
             </div>
@@ -256,6 +269,7 @@ def painel_controle(request):
     setInterval(tick, 1000); tick();
     </script>
 
+    <!-- CARDS TOTAIS -->
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card border-0 shadow-sm text-center p-3 bg-primary text-white">
@@ -283,6 +297,7 @@ def painel_controle(request):
         </div>
     </div>
 
+    <!-- COMPARATIVO -->
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-dark text-white fw-bold">
             <i class="bi bi-bar-chart-fill"></i> Comparativo de Desempenho por Unidade
@@ -314,50 +329,50 @@ def painel_controle(request):
         </div>
     </div>
 
+    <!-- PROFISSIONAIS SEM GRADE -->
     {tabela_sg}
 
+    <!-- ✅ ATALHOS ATUALIZADOS -->
     <div class="row g-3">
         <div class="col-md-4">
-            <div class="p-3 bg-primary text-white rounded shadow-sm text-center">
-                <i class="bi bi-person-check fs-2"></i><br><b>Recepção / Check-in</b>
-                <a href="/recepcao/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Abrir</a>
+            <div class="p-3 bg-success text-white rounded shadow-sm text-center">
+                <i class="bi bi-calendar-check fs-2"></i><br><b>Configurar Grades</b>
+                <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Configurar</a>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="p-3 bg-success text-white rounded shadow-sm text-center">
+            <div class="p-3 bg-primary text-white rounded shadow-sm text-center">
                 <i class="bi bi-calendar-plus fs-2"></i><br><b>Novo Agendamento</b>
                 <a href="/agendar/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Agendar</a>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="p-3 bg-warning text-dark rounded shadow-sm text-center">
-                <i class="bi bi-cash-stack fs-2"></i><br><b>Caixa / Financeiro</b>
-                <a href="/caixa/" class="btn btn-sm btn-dark mt-2 w-100 fw-bold text-white">Abrir Caixa</a>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="p-3 bg-info text-white rounded shadow-sm text-center">
-                <i class="bi bi-building fs-2"></i><br><b>Unidades</b>
-                <a href="/unidades/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Acessar</a>
+            <div class="p-3 bg-danger text-white rounded shadow-sm text-center">
+                <i class="bi bi-people fs-2"></i><br><b>Cadastro Pacientes</b>
+                <a href="/pacientes/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Acessar</a>
             </div>
         </div>
         <div class="col-md-4">
             <div class="p-3 bg-secondary text-white rounded shadow-sm text-center">
-                <i class="bi bi-calendar-check fs-2"></i><br><b>Configurar Agendas</b>
-                <a href="/agendas-config/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Configurar</a>
+                <i class="bi bi-microscope fs-2"></i><br><b>Caixa Exames/Prestadores</b>
+                <a href="/exames/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Acessar</a>
             </div>
         </div>
         <div class="col-md-4">
             <div class="p-3 bg-dark text-white rounded shadow-sm text-center">
-                <i class="bi bi-shield-lock fs-2"></i><br><b>Acessos / Usuários</b>
-                <a href="/acessos/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Configurar</a>
+                <i class="bi bi-mask fs-2"></i><br><b>Caixa Odontologia</b>
+                <a href="/odontologia/" class="btn btn-sm btn-light mt-2 w-100 fw-bold">Acessar</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-warning text-dark rounded shadow-sm text-center">
+                <i class="bi bi-cash-stack fs-2"></i><br><b>Caixa do Dia</b>
+                <a href="/caixa/" class="btn btn-sm btn-dark mt-2 w-100 fw-bold text-white">Abrir Caixa</a>
             </div>
         </div>
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
-
-
 
 
 
