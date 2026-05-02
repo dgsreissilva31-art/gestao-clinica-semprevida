@@ -2381,28 +2381,26 @@ def agendas_config_geral(request):
 
 # --- 14. TELA 12: AGENDA GERAL CONSULTAS ---
 # --- 14. TELA 12: AGENDA GERAL (COM COLUNA QUEM AGENDOU) ---
+# --- 14. TELA 12: AGENDA GERAL ---
 @csrf_exempt
 def agenda_diaria(request):
-    import datetime, urllib.parse
     hoje_str = datetime.date.today().strftime('%Y-%m-%d')
     data_sel = request.GET.get('data') or hoje_str
     unidade_id = request.GET.get('unidade')
-    
+
     try:
         with connection.cursor() as cursor:
-            # 1. BUSCAR UNIDADES
             cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
             unidades = cursor.fetchall()
 
-            # 2. BUSCAR AGENDAMENTOS EXISTENTES
             sql_ocupados = """
-                SELECT 
-                    ag.horario_selecionado, 
-                    pac.nome, 
-                    prof.nome, 
-                    conv.nome, 
-                    pac.telefone, 
-                    u.nome, 
+                SELECT
+                    ag.horario_selecionado,
+                    pac.nome,
+                    prof.nome,
+                    conv.nome,
+                    pac.telefone,
+                    u.nome,
                     u.endereco,
                     esp.nome,
                     ag.id
@@ -2419,7 +2417,7 @@ def agenda_diaria(request):
             if unidade_id:
                 sql_ocupados += " AND u.id = %s"
                 params_oc.append(unidade_id)
-            
+
             cursor.execute(sql_ocupados, params_oc)
             agendados = cursor.fetchall()
 
@@ -2431,7 +2429,6 @@ def agenda_diaria(request):
                     "tel": a[4], "unidade": a[5], "endereco": a[6], "especialidade": a[7], "id": a[8]
                 }
 
-            # 3. BUSCAR GRADES
             sql_grades = """
                 SELECT ac.id, prof.nome, ac.horario_inicio, ac.horario_fim, ac.intervalo_minutos, u.nome
                 FROM agendas_config ac
@@ -2443,26 +2440,22 @@ def agenda_diaria(request):
             if unidade_id:
                 sql_grades += " AND u.id = %s"
                 params_gr.append(unidade_id)
-            
+
             cursor.execute(sql_grades, params_gr)
             grades = cursor.fetchall()
 
-        # 4. GERAR LISTA DE HORÁRIOS
         lista_final = []
         for g in grades:
             id_conf, nome_p, h_ini, h_fim, inter, u_nome = g
             inter = inter or 20
-            
             atual = datetime.datetime.combine(datetime.date.today(), h_ini)
             fim = datetime.datetime.combine(datetime.date.today(), h_fim)
-            
+
             while atual.time() < fim.time():
                 h_str = atual.strftime('%H:%M')
-                
+
                 if h_str in dict_ocupados:
                     dados = dict_ocupados[h_str]
-                    
-                    # --- LÓGICA DE SEPARAÇÃO DE NOMES ---
                     nome_completo = dados['paciente'] or "---"
                     nome_paciente = nome_completo
                     quem_agendou = "Próprio"
@@ -2473,99 +2466,133 @@ def agenda_diaria(request):
                         quem_agendou = partes[1].replace(")", "").strip()
 
                     tel_limpo = "".join(filter(str.isdigit, str(dados['tel'] or "")))
-                    # Mensagem Zap sempre com o nome limpo
                     msg = f"Olá, {nome_paciente}. Gentileza confirmar consulta com {dados['medico']} ({dados['especialidade']}) hoje às {h_str} na unidade {dados['unidade']} - {dados['endereco']}"
-                    link_zap = f"https://wa.me/55{tel_limpo}?text={urllib.parse.quote(msg)}"
-                    
+                    # ✅ web.whatsapp.com ao invés de api.whatsapp.com
+                    link_zap = f"https://web.whatsapp.com/send?phone=55{tel_limpo}&text={urllib.parse.quote(msg)}"
+
                     lista_final.append({
                         "hora": h_str, "medico": dados['medico'], "paciente": nome_paciente,
-                        "quem_agendou": quem_agendou, "convenio": dados['convenio'], 
-                        "tel": dados['tel'], "status": "Ocupado", "zap": link_zap
+                        "quem_agendou": quem_agendou, "convenio": dados['convenio'],
+                        "tel": dados['tel'], "status": "Ocupado", "zap": link_zap,
+                        "ag_id": dados['id']
                     })
                 else:
                     lista_final.append({
                         "hora": h_str, "medico": nome_p, "paciente": "---",
-                        "quem_agendou": "---", "convenio": "---", "tel": "---", "status": "Livre", "zap": None
+                        "quem_agendou": "---", "convenio": "---", "tel": "---",
+                        "status": "Livre", "zap": None, "ag_id": None
                     })
                 atual += datetime.timedelta(minutes=inter)
 
-        # 5. MONTAR TABELA
         linhas = ""
         for item in sorted(lista_final, key=lambda x: x['hora']):
-            col_acoes = ""
+            ag_id = item.get('ag_id', '')
             if item['status'] == "Ocupado":
                 col_acoes = f"""
-                    <div class="d-flex align-items-center gap-2">
-                        <input type="checkbox" class="form-check-input border-primary" title="Confirmado?">
-                        <a href="{item['zap']}" target="_blank" class="btn btn-sm btn-success py-0 shadow-sm">
-                            <i class="bi bi-whatsapp"></i> Zap
-                        </a>
-                    </div>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="checkbox" class="form-check-input border-primary" title="Confirmado?">
+                    <a href="{item['zap']}" target="_blank"
+                       id="zap_{ag_id}"
+                       onclick="marcarEnviado('{ag_id}')"
+                       class="btn btn-sm btn-success py-0 shadow-sm">
+                        <i class="bi bi-whatsapp"></i> Zap
+                    </a>
+                </div>
                 """
             else:
                 col_acoes = f'<a href="/agendar/?hora={item["hora"]}&prof={item["medico"]}&data={data_sel}" class="btn btn-sm btn-outline-primary py-0">Agendar</a>'
 
             linhas += f"""
-                <tr>
-                    <td><b class="text-primary">{item['hora']}</b></td>
-                    <td>{item['medico']}</td>
-                    <td>{item['paciente']}</td>
-                    <td class="text-muted small">{item['quem_agendou']}</td>
-                    <td><small>{item['convenio']}</small></td>
-                    <td><small>{item['tel']}</small></td>
-                    <td>{col_acoes}</td>
-                </tr>"""
+            <tr>
+                <td><b class="text-primary">{item['hora']}</b></td>
+                <td>{item['medico']}</td>
+                <td>{item['paciente']}</td>
+                <td class="text-muted small">{item['quem_agendou']}</td>
+                <td><small>{item['convenio']}</small></td>
+                <td><small>{item['tel']}</small></td>
+                <td>{col_acoes}</td>
+            </tr>"""
 
-        opts_unidades = "".join([f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>' for u in unidades])
+        opts_unidades = "".join([
+            f'<option value="{u[0]}" {"selected" if str(unidade_id)==str(u[0]) else ""}>{u[1]}</option>'
+            for u in unidades
+        ])
 
         conteudo = f"""
-            <div class="container-fluid py-3">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h4 class="fw-bold"><i class="bi bi-calendar3 text-primary"></i> Agenda Geral</h4>
-                    <span class="badge bg-dark">Horários: {len(lista_final)}</span>
-                </div>
-
-                <form method="GET" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
-                    <div class="col-md-3">
-                        <label class="small fw-bold">Unidade</label>
-                        <select name="unidade" class="form-select border-primary shadow-sm">
-                            <option value="">Todas as Unidades</option>{opts_unidades}
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="small fw-bold">Data</label>
-                        <input type="date" name="data" value="{data_sel}" class="form-control border-primary shadow-sm">
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button class="btn btn-primary w-100 fw-bold shadow-sm">BUSCAR</button>
-                    </div>
-                </form>
-
-                <div class="table-responsive card shadow border-0 overflow-hidden">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Hora</th>
-                                <th>Profissional</th>
-                                <th>Paciente</th>
-                                <th>Quem Agendou</th>
-                                <th>Convênio</th>
-                                <th>Telefone</th>
-                                <th>Ações / Confirmação</th>
-                            </tr>
-                        </thead>
-                        <tbody style="font-size: 0.9rem;">
-                            {linhas if linhas else '<tr><td colspan="7" class="text-center py-5">Nenhuma grade aberta.</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
+        <div class="container-fluid py-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="fw-bold"><i class="bi bi-calendar3 text-primary"></i> Agenda Geral</h4>
+                <span class="badge bg-dark">Horários: {len(lista_final)}</span>
             </div>
+
+            <form method="GET" class="row g-2 mb-4 bg-light p-3 rounded border shadow-sm">
+                <div class="col-md-3">
+                    <label class="small fw-bold">Unidade</label>
+                    <select name="unidade" class="form-select border-primary shadow-sm">
+                        <option value="">Todas as Unidades</option>{opts_unidades}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="small fw-bold">Data</label>
+                    <input type="date" name="data" value="{data_sel}" class="form-control border-primary shadow-sm">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button class="btn btn-primary w-100 fw-bold shadow-sm">BUSCAR</button>
+                </div>
+            </form>
+
+            <div class="table-responsive card shadow border-0 overflow-hidden">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Hora</th>
+                            <th>Profissional</th>
+                            <th>Paciente</th>
+                            <th>Quem Agendou</th>
+                            <th>Convênio</th>
+                            <th>Telefone</th>
+                            <th>Ações / Confirmação</th>
+                        </tr>
+                    </thead>
+                    <tbody style="font-size: 0.9rem;">
+                        {linhas if linhas else '<tr><td colspan="7" class="text-center py-5">Nenhuma grade aberta.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <script>
+        // ✅ Salva no localStorage quais zaps já foram enviados
+        document.addEventListener('DOMContentLoaded', function() {{
+            document.querySelectorAll('[id^="zap_"]').forEach(function(btn) {{
+                const id = btn.id.replace('zap_', '');
+                const chave = 'zap_enviado_' + id + '_{data_sel}';
+                if (localStorage.getItem(chave) === '1') {{
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                    btn.innerHTML = '<i class="bi bi-check2-circle"></i> Enviado';
+                }}
+            }});
+        }});
+
+        function marcarEnviado(id) {{
+            const chave = 'zap_enviado_' + id + '_{data_sel}';
+            localStorage.setItem(chave, '1');
+            setTimeout(function() {{
+                const btn = document.getElementById('zap_' + id);
+                if (btn) {{
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                    btn.innerHTML = '<i class="bi bi-check2-circle"></i> Enviado';
+                }}
+            }}, 500);
+        }}
+        </script>
         """
         return HttpResponse(base_html("Agenda Geral", conteudo))
 
     except Exception as e:
         return HttpResponse(base_html("Erro", f"<h4>Erro:</h4><pre>{e}</pre>"))
-
 
 
 
