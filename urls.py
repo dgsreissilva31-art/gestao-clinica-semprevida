@@ -117,6 +117,7 @@ def base_html(*args):
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
 # --- 2. TELA 0: PAINEL DE GESTÃO ---
+# --- 2. TELA 0: PAINEL DE GESTÃO ---
 @login_required
 def painel_controle(request):
     hoje = datetime.date.today()
@@ -134,7 +135,6 @@ def painel_controle(request):
             cursor.execute("SELECT id, nome FROM unidades ORDER BY nome")
             unidades = cursor.fetchall()
 
-        # Agendados por unidade
         def ag_unidade(data):
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -147,7 +147,6 @@ def painel_controle(request):
                 """, [data])
                 return {r[0]: r[1] for r in cursor.fetchall()}
 
-        # Grades por unidade
         def gr_unidade(data):
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -174,29 +173,27 @@ def painel_controle(request):
             cursor.execute("SELECT COUNT(*) FROM agendas_config")
             total_gr = cursor.fetchone()[0]
 
-        # ✅ Médicos sem grade futura - query simples
+        # ✅ Médicos sem grade - query ultra simples
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id, nome FROM profissionais ORDER BY nome")
+            todos_profs = cursor.fetchall()
+
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT p.nome, e.nome
-                FROM profissionais p
-                LEFT JOIN especialidades e ON p.especialidade_id = e.id
-                WHERE p.id NOT IN (
-                    SELECT profissional_id FROM agendas_config
-                    WHERE data_especifica >= %s
-                )
-                ORDER BY p.nome
+                SELECT DISTINCT profissional_id FROM agendas_config
+                WHERE data_especifica >= %s
             """, [hoje])
-            sem_grade = cursor.fetchall()
+            profs_com_grade = set([r[0] for r in cursor.fetchall()])
+
+        sem_grade = [(p[1],) for p in todos_profs if p[0] not in profs_com_grade]
 
     except Exception as ex:
-        return HttpResponse(base_html("Erro", f'<div class="alert alert-danger">Erro: {ex}</div>'))
+        return HttpResponse(base_html("Erro", f'<div class="alert alert-danger">❌ Erro: {ex}</div>'))
 
-    # Badge colorido
     def badge(v):
         cor = "success" if v > 0 else "secondary"
         return f'<span class="badge bg-{cor} fs-6 px-3">{v}</span>'
 
-    # Linhas da tabela por unidade
     linhas_unidades = ""
     for u in unidades:
         nome = u[1]
@@ -211,19 +208,16 @@ def painel_controle(request):
             <td class="text-center">{badge(gr_a.get(nome, 0))}</td>
         </tr>"""
 
-    # Médicos sem grade
     if sem_grade:
-        linhas_sg = "".join([f"<tr><td><b>{s[0]}</b></td><td>{s[1] or '-'}</td></tr>" for s in sem_grade])
+        linhas_sg = "".join([f"<tr><td><b>{s[0]}</b></td></tr>" for s in sem_grade])
         tabela_sg = f"""
         <div class="card shadow-sm mb-4 border-warning">
             <div class="card-header bg-warning text-dark fw-bold">
-                ⚠️ Médicos sem Grade Aberta (Futuro)
+                ⚠️ Profissionais sem Grade Aberta (Futuro)
             </div>
             <div class="card-body p-0">
                 <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr><th>Nome</th><th>Especialidade</th></tr>
-                    </thead>
+                    <thead class="table-light"><tr><th>Nome</th></tr></thead>
                     <tbody>{linhas_sg}</tbody>
                 </table>
             </div>
@@ -258,7 +252,8 @@ def painel_controle(request):
         const h = String(n.getHours()).padStart(2,'0');
         const m = String(n.getMinutes()).padStart(2,'0');
         const s = String(n.getSeconds()).padStart(2,'0');
-        document.getElementById('relogio').innerHTML = '<i class="bi bi-clock"></i> ' + h+':'+m+':'+s;
+        document.getElementById('relogio').innerHTML =
+            '<i class="bi bi-clock"></i> ' + h+':'+m+':'+s;
     }}
     setInterval(tick, 1000); tick();
     </script>
@@ -363,6 +358,8 @@ def painel_controle(request):
     </div>
     """
     return HttpResponse(base_html("Dashboard", conteudo))
+
+
 
 
 
